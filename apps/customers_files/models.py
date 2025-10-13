@@ -72,6 +72,13 @@ class CustomerFile(models.Model):
         help_text="Status flag for active/inactive files"
     )
     
+    pan_number = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True,
+        help_text="PAN number extracted from document (if applicable)"
+    )
+    
     class Meta:
         db_table = 'customers_files'
         ordering = ['-uploaded_at']

@@ -89,6 +89,7 @@ LOCAL_APPS = [
     'apps.customer_installment',
     'apps.outstanding_amounts',
     'apps.dashboard',
+    'apps.verification',
     # 'apps.communications',
     # 'apps.emails',
     # 'apps.surveys',
@@ -386,6 +387,18 @@ OPENAI_MODEL = config('OPENAI_MODEL', default='gpt-4')
 
 RAZORPAY_KEY_ID = config('RAZORPAY_KEY_ID', default='')
 RAZORPAY_KEY_SECRET = config('RAZORPAY_KEY_SECRET', default='')
+
+# Bureau API Configuration (Customer Verification)
+BUREAU_API_KEY = config('BUREAU_API_KEY', default='your_bureau_api_key_here')
+BUREAU_BASE_URL = config('BUREAU_BASE_URL', default='https://api.sandbox.bureau.id/v2/services')
+
+import platform
+if platform.system() == 'Windows':
+    try:
+        import pytesseract
+        pytesseract.pytesseract.tesseract_cmd = r'C:\Users\Sahina1001\AppData\Local\Programs\Tesseract-OCR\tesseract.exe'
+    except ImportError:
+        pass 
 
 # Feature Flags
 ENABLE_WHATSAPP_CAMPAIGNS = config('ENABLE_WHATSAPP_CAMPAIGNS', default=True, cast=bool)

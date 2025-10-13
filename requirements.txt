@@ -22,6 +22,10 @@ django-storages==1.14.2
 boto3==1.34.0
 botocore==1.34.0
 
+# OCR & Image Processing (for PAN verification)
+pytesseract==0.3.10
+opencv-python==4.8.1.78
+
 # Background tasks
 celery==5.3.4
 django-celery-beat==2.5.0

@@ -12,13 +12,14 @@ class CustomerFileSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(read_only=True)
     customer_id = serializers.IntegerField(write_only=True)
     file = serializers.FileField(write_only=True, required=False)
+    pan_number = serializers.CharField(max_length=10, required=False, allow_blank=True, allow_null=True)
 
     class Meta:
         model = CustomerFile
         fields = [
             'id', 'customer_id', 'customer', 'customer_name', 'file_name', 'file_path', 'file_type',
             'file_size', 'file_size_display', 'uploaded_by', 'uploaded_by_name',
-            'uploaded_at', 'updated_by', 'updated_by_name', 'updated_at', 'is_active', 'file'
+            'uploaded_at', 'updated_by', 'updated_by_name', 'updated_at', 'is_active', 'file', 'pan_number'
         ]
         read_only_fields = ['id', 'uploaded_at', 'updated_at', 'customer', 'file_size']
         extra_kwargs = {
@@ -60,8 +61,13 @@ class CustomerFileSerializer(serializers.ModelSerializer):
         """Custom create method to handle file upload and auto-detection"""
         import os
         import mimetypes
+        import tempfile
+        import logging
         from apps.customers.models import Customer
+        from apps.verification.ocr_utils import extract_pan_from_image
 
+        logger = logging.getLogger(__name__)
+        
         customer_id = validated_data.pop('customer_id')
         customer = Customer.objects.get(id=customer_id)
         validated_data['customer'] = customer
@@ -69,6 +75,8 @@ class CustomerFileSerializer(serializers.ModelSerializer):
         validated_data['is_active'] = True
 
         uploaded_file = validated_data.pop('file', None)
+        temp_file_path = None
+        
         if uploaded_file:
             validated_data['file_size'] = uploaded_file.size
 
@@ -87,6 +95,42 @@ class CustomerFileSerializer(serializers.ModelSerializer):
                 file_extension = os.path.splitext(uploaded_file.name)[1]
                 unique_filename = f"{uuid.uuid4()}{file_extension}"
                 validated_data['file_path'] = f"/uploads/documents/{unique_filename}"
+            
+            # Extract PAN number if it's an image file and pan_number not already provided
+            file_type = validated_data.get('file_type', '')
+            if not validated_data.get('pan_number') and file_type and 'image' in file_type.lower():
+                try:
+                    # Save uploaded file temporarily for OCR processing
+                    file_extension = os.path.splitext(uploaded_file.name)[1]
+                    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=file_extension)
+                    temp_file_path = temp_file.name
+                    
+                    # Write uploaded file content to temp file
+                    for chunk in uploaded_file.chunks():
+                        temp_file.write(chunk)
+                    temp_file.close()
+                    
+                    logger.info(f"Processing image for PAN extraction: {temp_file_path}")
+                    
+                    # Extract PAN number using OCR
+                    result = extract_pan_from_image(temp_file_path)
+                    
+                    if result.get('success') and result.get('pan_number'):
+                        validated_data['pan_number'] = result['pan_number']
+                        logger.info(f"PAN number extracted successfully: {result['pan_number']}")
+                    else:
+                        logger.info(f"PAN extraction failed: {result.get('message')}")
+                        
+                except Exception as e:
+                    logger.error(f"Error during PAN extraction: {str(e)}")
+                    # Continue without PAN number - don't fail the upload
+                finally:
+                    # Clean up temp file
+                    if temp_file_path and os.path.exists(temp_file_path):
+                        try:
+                            os.remove(temp_file_path)
+                        except Exception as e:
+                            logger.warning(f"Failed to delete temp file: {str(e)}")
         else:
             if not validated_data.get('file_type'):
                 file_name = validated_data.get('file_name', '')
@@ -113,5 +157,5 @@ class CustomerFileListSerializer(serializers.ModelSerializer):
         model = CustomerFile
         fields = [
             'id', 'customer_id', 'customer_name', 'file_name', 'file_type',
-            'file_size_display', 'uploaded_at', 'is_active'
+            'file_size_display', 'uploaded_at', 'is_active', 'pan_number'
         ]

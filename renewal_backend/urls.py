@@ -78,6 +78,9 @@ api_patterns = [
     path('whatsapp/', include('apps.whatsapp_provider.urls')),
     path('offers/', include('apps.offers.urls')),
     path('dashboard/', include('apps.dashboard.urls')),
+    
+    # Customer Verification endpoints
+    path('verification/', include('apps.verification.urls')),
 
     # API Documentation
     path('schema/', PublicSchemaView.as_view(), name='schema'),

@@ -161,6 +161,15 @@ class Customer(BaseModel):
         help_text="KYC verification status from Excel"
     )
     kyc_documents = models.CharField(max_length=200, blank=True, help_text="KYC documents list from Excel")
+    
+    # Verification Status (Bureau API)
+    email_verified = models.BooleanField(default=False, db_index=True, help_text="Whether the email has been verified")
+    phone_verified = models.BooleanField(default=False, db_index=True, help_text="Whether the phone number has been verified")
+    pan_verified = models.BooleanField(default=False, db_index=True, help_text="Whether the PAN number has been verified")
+    email_verified_at = models.DateTimeField(blank=True, null=True, help_text="Timestamp when email was verified")
+    phone_verified_at = models.DateTimeField(blank=True, null=True, help_text="Timestamp when phone was verified")
+    pan_verified_at = models.DateTimeField(blank=True, null=True, help_text="Timestamp when PAN was verified")
+    pan_number = models.CharField(blank=True, max_length=10, help_text="PAN number for verification")
 
     # Financial Information
     credit_score = models.PositiveIntegerField(null=True, blank=True)
@@ -195,6 +204,9 @@ class Customer(BaseModel):
             models.Index(fields=['segment']),
             models.Index(fields=['first_policy_date']),
             models.Index(fields=['kyc_status']),
+            models.Index(fields=['email_verified']),
+            models.Index(fields=['phone_verified']),
+            models.Index(fields=['pan_verified']),
         ]
     
     def __str__(self):
