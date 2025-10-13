@@ -128,3 +128,194 @@ class AIInsightHistory(BaseModel):
     
     def __str__(self):
         return f"History for {self.insight.insight_title} - {self.changed_at}"
+
+
+class AIConversation(BaseModel):
+    """Model to store AI conversation sessions"""
+    
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('archived', 'Archived'),
+        ('deleted', 'Deleted'),
+    ]
+    
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='ai_conversations',
+        help_text="User who initiated this conversation"
+    )
+    session_id = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="Unique session identifier for this conversation"
+    )
+    title = models.CharField(
+        max_length=200,
+        help_text="Conversation title (auto-generated from first message)"
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='active',
+        db_index=True,
+        help_text="Current status of the conversation"
+    )
+    context_data = models.JSONField(
+        default=dict,
+        help_text="Additional context data for the conversation"
+    )
+    started_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When this conversation was started"
+    )
+    last_activity = models.DateTimeField(
+        auto_now=True,
+        help_text="Last activity timestamp"
+    )
+    message_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Total number of messages in this conversation"
+    )
+    
+    class Meta:
+        db_table = 'ai_conversations'
+        ordering = ['-last_activity']
+        indexes = [
+            models.Index(fields=['user', 'status']),
+            models.Index(fields=['session_id']),
+            models.Index(fields=['last_activity']),
+        ]
+    
+    def __str__(self):
+        return f"AI Conversation: {self.title} - {self.user.username}"
+    
+    def update_message_count(self):
+        """Update the message count for this conversation"""
+        self.message_count = self.messages.count()
+        self.save(update_fields=['message_count'])
+
+
+class AIMessage(BaseModel):
+    """Model to store individual messages in AI conversations"""
+    
+    ROLE_CHOICES = [
+        ('user', 'User'),
+        ('assistant', 'AI Assistant'),
+        ('system', 'System'),
+    ]
+    
+    conversation = models.ForeignKey(
+        AIConversation,
+        on_delete=models.CASCADE,
+        related_name='messages',
+        help_text="Conversation this message belongs to"
+    )
+    role = models.CharField(
+        max_length=20,
+        choices=ROLE_CHOICES,
+        db_index=True,
+        help_text="Role of the message sender"
+    )
+    content = models.TextField(
+        help_text="Message content"
+    )
+    metadata = models.JSONField(
+        default=dict,
+        help_text="Additional metadata (tokens used, model, etc.)"
+    )
+    timestamp = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When this message was sent"
+    )
+    is_edited = models.BooleanField(
+        default=False,
+        help_text="Whether this message has been edited"
+    )
+    
+    class Meta:
+        db_table = 'ai_messages'
+        ordering = ['timestamp']
+        indexes = [
+            models.Index(fields=['conversation', 'timestamp']),
+            models.Index(fields=['role', 'timestamp']),
+        ]
+    
+    def __str__(self):
+        return f"{self.role}: {self.content[:50]}..."
+
+
+class AIAnalytics(BaseModel):
+    """Model to store AI-generated analytics and insights"""
+    
+    ANALYTICS_TYPE_CHOICES = [
+        ('dashboard_summary', 'Dashboard Summary'),
+        ('renewal_analysis', 'Renewal Analysis'),
+        ('customer_insights', 'Customer Insights'),
+        ('campaign_performance', 'Campaign Performance'),
+        ('payment_analysis', 'Payment Analysis'),
+        ('predictive_insights', 'Predictive Insights'),
+    ]
+    
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='ai_analytics',
+        help_text="User who requested this analysis"
+    )
+    analytics_type = models.CharField(
+        max_length=50,
+        choices=ANALYTICS_TYPE_CHOICES,
+        db_index=True,
+        help_text="Type of analytics generated"
+    )
+    title = models.CharField(
+        max_length=200,
+        help_text="Title of the analytics report"
+    )
+    summary = models.TextField(
+        help_text="Summary of the analytics findings"
+    )
+    detailed_analysis = models.JSONField(
+        default=dict,
+        help_text="Detailed analysis data and metrics"
+    )
+    insights = models.JSONField(
+        default=list,
+        help_text="List of key insights generated"
+    )
+    recommendations = models.JSONField(
+        default=list,
+        help_text="List of actionable recommendations"
+    )
+    confidence_score = models.DecimalField(
+        max_digits=5,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="AI confidence level (0.0000 to 1.0000)"
+    )
+    data_snapshot = models.JSONField(
+        default=dict,
+        help_text="Snapshot of data used for analysis"
+    )
+    generated_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When this analysis was generated"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether this analysis is still relevant"
+    )
+    
+    class Meta:
+        db_table = 'ai_analytics'
+        ordering = ['-generated_at']
+        indexes = [
+            models.Index(fields=['user', 'analytics_type']),
+            models.Index(fields=['analytics_type', 'generated_at']),
+            models.Index(fields=['generated_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.title} - {self.user.username}"
