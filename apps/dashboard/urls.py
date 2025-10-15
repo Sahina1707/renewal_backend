@@ -4,10 +4,8 @@ from . import views
 app_name = 'dashboard'
 
 urlpatterns = [
-    # Dashboard endpoints
     path('summary/', views.dashboard_summary, name='dashboard-summary'),
     
-    # AI Assistant endpoints
     path('ai/chat/', views.ai_chat, name='ai-chat'),
     path('ai/suggestions/', views.ai_suggestions, name='ai-suggestions'),
     path('ai/analytics/', views.ai_analytics, name='ai-analytics'),
