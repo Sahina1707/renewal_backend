@@ -110,7 +110,7 @@ def ai_chat(request):
             content=message
         )
         
-        ai_response = ai_service.generate_ai_response(message)
+        ai_response = ai_service.generate_ai_response(message, user=request.user)
         
         if not ai_response.get('success'):
             return Response(
