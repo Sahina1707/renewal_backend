@@ -329,4 +329,156 @@ class FileProcessingQueue(models.Model):
         ]
     
     def __str__(self):
-        return f"{self.task_type} for {self.file.original_name} - {self.status}" 
+        return f"{self.task_type} for {self.file.original_name} - {self.status}"
+
+
+class UploadFile(BaseModel):
+    """Model for tracking policy data uploads and batch processing"""
+    
+    STATUS_CHOICES = [
+        ('uploading', 'Uploading'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+        ('cancelled', 'Cancelled'),
+    ]
+    
+    FILE_TYPE_CHOICES = [
+        ('xlsx', 'Excel File'),
+        ('csv', 'CSV File'),
+        ('json', 'JSON File'),
+        ('xml', 'XML File'),
+    ]
+    
+    # File information
+    file_name = models.CharField(max_length=255)
+    file_type = models.CharField(max_length=10, choices=FILE_TYPE_CHOICES)
+    file_size = models.PositiveBigIntegerField(help_text="File size in bytes")
+    file_path = models.CharField(max_length=500, help_text="Path to uploaded file")
+    
+    # Processing information
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='uploading', db_index=True)
+    total_records = models.PositiveIntegerField(default=0, help_text="Total records in file")
+    successful_records = models.PositiveIntegerField(default=0, help_text="Successfully processed records")
+    failed_records = models.PositiveIntegerField(default=0, help_text="Failed to process records")
+    skipped_records = models.PositiveIntegerField(default=0, help_text="Skipped records")
+    
+    # Processing details
+    processing_started_at = models.DateTimeField(null=True, blank=True)
+    processing_completed_at = models.DateTimeField(null=True, blank=True)
+    processing_time = models.DurationField(null=True, blank=True, help_text="Total processing time")
+    
+    # Error handling
+    error_message = models.TextField(blank=True, help_text="Error message if processing failed")
+    error_details = models.JSONField(default=dict, blank=True, help_text="Detailed error information")
+    validation_errors = models.JSONField(default=list, blank=True, help_text="Validation errors found")
+    
+    # Results
+    processing_result = models.JSONField(default=dict, blank=True, help_text="Processing results and statistics")
+    created_objects = models.JSONField(default=dict, blank=True, help_text="Objects created during processing")
+    updated_objects = models.JSONField(default=dict, blank=True, help_text="Objects updated during processing")
+    
+    # Metadata
+    upload_session_id = models.CharField(max_length=100, blank=True, help_text="Upload session identifier")
+    batch_id = models.CharField(max_length=100, blank=True, help_text="Batch processing identifier")
+    metadata = models.JSONField(default=dict, blank=True, help_text="Additional metadata")
+    
+    # Notifications
+    notify_on_completion = models.BooleanField(default=True, help_text="Send notification when processing completes")
+    notify_email = models.EmailField(blank=True, help_text="Email to send notifications to")
+    
+    class Meta:
+        db_table = 'uploads_uploadfile'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', 'created_at']),
+            models.Index(fields=['file_type', 'status']),
+            models.Index(fields=['upload_session_id']),
+            models.Index(fields=['batch_id']),
+        ]
+    
+    def __str__(self):
+        return f"{self.file_name} - {self.get_status_display()}"
+    
+    @property
+    def success_rate(self):
+        """Calculate success rate percentage"""
+        if self.total_records == 0:
+            return 0
+        return (self.successful_records / self.total_records) * 100
+    
+    @property
+    def failure_rate(self):
+        """Calculate failure rate percentage"""
+        if self.total_records == 0:
+            return 0
+        return (self.failed_records / self.total_records) * 100
+    
+    @property
+    def formatted_file_size(self):
+        """Return human-readable file size"""
+        size = self.file_size
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size < 1024.0:
+                return f"{size:.1f} {unit}"
+            size /= 1024.0
+        return f"{size:.1f} TB"
+    
+    def mark_as_processing(self):
+        """Mark file as processing"""
+        self.status = 'processing'
+        self.processing_started_at = timezone.now()
+        self.save(update_fields=['status', 'processing_started_at'])
+    
+    def mark_as_completed(self, successful_count=0, failed_count=0, skipped_count=0):
+        """Mark file processing as completed"""
+        self.status = 'completed'
+        self.processing_completed_at = timezone.now()
+        self.successful_records = successful_count
+        self.failed_records = failed_count
+        self.skipped_records = skipped_count
+        
+        if self.processing_started_at:
+            self.processing_time = self.processing_completed_at - self.processing_started_at
+        
+        self.save(update_fields=[
+            'status', 'processing_completed_at', 'successful_records', 
+            'failed_records', 'skipped_records', 'processing_time'
+        ])
+    
+    def mark_as_failed(self, error_message, error_details=None):
+        """Mark file processing as failed"""
+        self.status = 'failed'
+        self.processing_completed_at = timezone.now()
+        self.error_message = error_message
+        if error_details:
+            self.error_details = error_details
+        
+        if self.processing_started_at:
+            self.processing_time = self.processing_completed_at - self.processing_started_at
+        
+        self.save(update_fields=[
+            'status', 'processing_completed_at', 'error_message', 
+            'error_details', 'processing_time'
+        ])
+    
+    def add_validation_error(self, row_number, field, message):
+        """Add a validation error"""
+        if not self.validation_errors:
+            self.validation_errors = []
+        
+        self.validation_errors.append({
+            'row': row_number,
+            'field': field,
+            'message': message
+        })
+        self.save(update_fields=['validation_errors'])
+    
+    def update_processing_result(self, result_data):
+        """Update processing result data"""
+        self.processing_result.update(result_data)
+        self.save(update_fields=['processing_result'])
+    
+    def is_processing_complete(self):
+        """Check if processing is complete"""
+        return self.status in ['completed', 'failed', 'cancelled'] 

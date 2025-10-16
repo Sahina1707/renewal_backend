@@ -78,6 +78,7 @@ api_patterns = [
     path('whatsapp/', include('apps.whatsapp_provider.urls')),
     path('offers/', include('apps.offers.urls')),
     path('dashboard/', include('apps.dashboard.urls')),
+    path('upload-chatbot/', include('apps.upload_chatbot.urls')),
     
     # Customer Verification endpoints
     path('verification/', include('apps.verification.urls')),

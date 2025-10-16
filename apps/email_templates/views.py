@@ -147,7 +147,7 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
         # Filter by category
         category_id = self.request.query_params.get('category_id')
         if category_id:
-            queryset = queryset.filter(category_id=category_id)
+            queryset = queryset.filter(category__id=category_id)
         
         # Filter by tags
         tag_names = self.request.query_params.getlist('tags')
@@ -351,7 +351,7 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
             )
         
         if category_id:
-            queryset = queryset.filter(category_id=category_id)
+            queryset = queryset.filter(category__id=category_id)
         
         if tag_names:
             queryset = queryset.filter(tags__name__in=tag_names).distinct()
