@@ -110,7 +110,21 @@ def ai_chat(request):
             content=message
         )
         
-        ai_response = ai_service.generate_ai_response(message, user=request.user)
+        conversation_history = []
+        if conversation:
+            recent_messages = conversation.messages.all().order_by('-timestamp')[:5]
+            for msg in recent_messages:
+                conversation_history.append({
+                    'role': msg.role,
+                    'content': msg.content,
+                    'timestamp': msg.timestamp.isoformat()
+                })
+        
+        ai_response = ai_service.generate_ai_response(
+            message, 
+            user=request.user,
+            conversation_history=conversation_history
+        )
         
         if not ai_response.get('success'):
             return Response(
