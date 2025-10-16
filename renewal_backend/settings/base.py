@@ -89,6 +89,7 @@ LOCAL_APPS = [
     'apps.customer_installment',
     'apps.outstanding_amounts',
     'apps.dashboard',
+    'apps.upload_chatbot',
     'apps.verification',
     # 'apps.communications',
     # 'apps.emails',
