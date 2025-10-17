@@ -68,7 +68,7 @@ api_patterns = [
     
     # Email Integration endpoints
     path('email-provider/', include('apps.email_provider.urls')),
-    path('communication-provider/', include('apps.email_provider.urls')),  # Alias for communication-provider
+    path('communication-provider/', include('apps.email_provider.urls')),  
     path('email-templates/', include('apps.email_templates.urls')),
     path('email-operations/', include('apps.email_operations.urls')),
     path('email-inbox/', include('apps.email_inbox.urls')),
@@ -79,6 +79,7 @@ api_patterns = [
     path('offers/', include('apps.offers.urls')),
     path('dashboard/', include('apps.dashboard.urls')),
     path('upload-chatbot/', include('apps.upload_chatbot.urls')),
+    path('case-tracking-chatbot/', include('apps.case_tracking_chatbot.urls')),
     
     # Customer Verification endpoints
     path('verification/', include('apps.verification.urls')),

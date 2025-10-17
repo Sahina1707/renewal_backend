@@ -177,7 +177,7 @@ class AIService:
         
         try:
             query_type = self._classify_query(user_message)
-            
+         
             dashboard_data = self.get_dashboard_data()
             specialized_data = self._get_specialized_data(query_type, user_message)
             dashboard_data.update(specialized_data)
