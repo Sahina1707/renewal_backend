@@ -166,7 +166,7 @@ class UploadChatbotService:
             if query_type == 'non_campaign':
                 return {
                     'success': True,
-                    'response': 'Sorry, I can only help with campaign-related questions. Please ask me about campaigns, uploads, or communication management.',
+                    'response': 'Sorry, I can only help with campaign-related questions.',
                     'model': 'direct-response',
                     'usage': {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0},
                     'timestamp': timezone.now().isoformat()
@@ -709,7 +709,7 @@ You ONLY help users with questions related to campaigns, uploads, and communicat
 
 CRITICAL INSTRUCTIONS:
 You MUST respond with EXACTLY this message and nothing else:
-"Sorry, I can only help with campaign-related questions. Please ask me about campaigns, uploads, or communication management."
+"Sorry, I can only help with campaign-related questions."
 
 DO NOT:
 - Provide any other information
