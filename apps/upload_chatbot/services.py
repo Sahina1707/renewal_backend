@@ -1068,7 +1068,6 @@ RESPONSE FORMAT:
         ]
 
 
-# Global upload chatbot service instance - lazy initialization
 _upload_chatbot_service_instance = None
 
 def get_upload_chatbot_service():
@@ -1078,7 +1077,6 @@ def get_upload_chatbot_service():
         _upload_chatbot_service_instance = UploadChatbotService()
     return _upload_chatbot_service_instance
 
-# For backward compatibility - lazy initialization
 class LazyUploadChatbotService:
     def __init__(self):
         self._service = None

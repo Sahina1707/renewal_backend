@@ -23,6 +23,101 @@ from apps.upload_chatbot.serializers import (
 logger = logging.getLogger(__name__)
 
 
+def generate_related_suggestions(user_message, ai_response):
+    """
+    Generate 3 related suggestions based on the user's question and AI response
+    """
+    all_suggestions = [
+        "What is a campaign?",
+        "How do I create a campaign?",
+        "What are the different types of campaigns?",
+        "How do I track campaign performance?",
+        "What is campaign analytics?",
+        "How do I optimize my campaign?",
+        "What is campaign targeting?",
+        "How do I set campaign budgets?",
+        "What is campaign ROI?",
+        "How do I measure campaign success?",
+        "What are campaign metrics?",
+        "How do I run A/B tests for campaigns?",
+        "What is campaign automation?",
+        "How do I schedule campaigns?",
+        "What is campaign segmentation?",
+        "How do I create campaign templates?",
+        "What is campaign personalization?",
+        "How do I manage campaign audiences?",
+        "What is campaign attribution?",
+        "How do I analyze campaign data?"
+    ]
+    
+    message_lower = user_message.lower()
+    
+    filtered_suggestions = []
+    for suggestion in all_suggestions:
+        suggestion_lower = suggestion.lower()
+        if not any(word in message_lower for word in suggestion_lower.split() if len(word) > 3):
+            filtered_suggestions.append(suggestion)
+    
+    if len(filtered_suggestions) < 3:
+        filtered_suggestions = all_suggestions.copy()
+        filtered_suggestions = [s for s in filtered_suggestions if s.lower() not in message_lower]
+    
+    if 'what is' in message_lower or 'explain' in message_lower or 'define' in message_lower:
+        context_suggestions = [
+            "How do I create a campaign?",
+            "What are the different types of campaigns?",
+            "How do I track campaign performance?"
+        ]
+    elif 'how' in message_lower or 'create' in message_lower or 'make' in message_lower:
+        context_suggestions = [
+            "What is a campaign?",
+            "What are campaign metrics?",
+            "How do I optimize my campaign?"
+        ]
+    elif 'track' in message_lower or 'measure' in message_lower or 'analytics' in message_lower:
+        context_suggestions = [
+            "What is campaign analytics?",
+            "What are campaign metrics?",
+            "How do I analyze campaign data?"
+        ]
+    elif 'optimize' in message_lower or 'improve' in message_lower or 'better' in message_lower:
+        context_suggestions = [
+            "How do I run A/B tests for campaigns?",
+            "What is campaign targeting?",
+            "How do I measure campaign success?"
+        ]
+    elif 'budget' in message_lower or 'cost' in message_lower or 'money' in message_lower:
+        context_suggestions = [
+            "What is campaign ROI?",
+            "How do I set campaign budgets?",
+            "What is campaign attribution?"
+        ]
+    elif 'type' in message_lower or 'kind' in message_lower or 'category' in message_lower:
+        context_suggestions = [
+            "What is campaign targeting?",
+            "What is campaign segmentation?",
+            "How do I manage campaign audiences?"
+        ]
+    else:
+        context_suggestions = [
+            "What is a campaign?",
+            "How do I create a campaign?",
+            "What are the different types of campaigns?"
+        ]
+    
+    final_suggestions = []
+    for suggestion in context_suggestions:
+        if suggestion.lower() not in message_lower:
+            final_suggestions.append(suggestion)
+    
+    while len(final_suggestions) < 3 and filtered_suggestions:
+        suggestion = filtered_suggestions.pop(0)
+        if suggestion.lower() not in message_lower and suggestion not in final_suggestions:
+            final_suggestions.append(suggestion)
+    
+    return final_suggestions[:3]
+
+
 class UploadChatbotView(View):
     """Main view for upload chatbot functionality"""
     
@@ -51,10 +146,8 @@ class UploadChatbotView(View):
                 conversation = self._get_or_create_conversation(user, session_id, user_message)
                 conversation_history = self._get_conversation_history(conversation)
             
-            # Get upload chatbot service
             upload_chatbot_service = get_upload_chatbot_service()
             
-            # Check if service is available
             if not upload_chatbot_service.is_available():
                 return JsonResponse({
                     'success': False,
@@ -62,7 +155,6 @@ class UploadChatbotView(View):
                     'message': 'OpenAI API key not configured or service unavailable'
                 }, status=503)
             
-            # Generate AI response
             ai_response = upload_chatbot_service.generate_ai_response(
                 user_message=user_message,
                 user=request.user,
@@ -76,7 +168,6 @@ class UploadChatbotView(View):
                     'message': ai_response.get('message', 'Unknown error occurred')
                 }, status=500)
             
-            # Save user message and AI response only if conversation exists
             if conversation:
                 user_msg = UploadChatbotMessage.objects.create(
                     conversation=conversation,
@@ -84,7 +175,6 @@ class UploadChatbotView(View):
                     content=user_message
                 )
                 
-                # Save AI response
                 ai_msg = UploadChatbotMessage.objects.create(
                     conversation=conversation,
                     role='assistant',
@@ -96,21 +186,15 @@ class UploadChatbotView(View):
                     }
                 )
                 
-                # Update conversation
                 conversation.last_activity = timezone.now()
                 conversation.update_message_count()
                 conversation.save()
             
+            related_suggestions = generate_related_suggestions(user_message, ai_response['response'])
+            
             return JsonResponse({
-                'success': True,
-                'session_id': conversation.session_id if conversation else None,
-                'conversation_id': conversation.id if conversation else None,
                 'response': ai_response['response'],
-                'metadata': {
-                    'model': ai_response.get('model'),
-                    'usage': ai_response.get('usage'),
-                    'timestamp': ai_response.get('timestamp')
-                }
+                'suggestions': related_suggestions
             })
             
         except json.JSONDecodeError:
@@ -139,7 +223,6 @@ class UploadChatbotView(View):
             except UploadChatbotConversation.DoesNotExist:
                 pass
         
-        # Create new conversation
         new_session_id = str(uuid.uuid4())
         title = user_message[:50] + "..." if len(user_message) > 50 else user_message
         

@@ -7,6 +7,121 @@ from django.db.models import Q
 from .models import PolicyTimelineChatbot, PolicyTimelineChatbotMessage
 
 
+def generate_related_suggestions(user_message, ai_response):
+    """
+    Generate 3 related suggestions based on the user's question and AI response
+    """
+    all_suggestions = [
+        "What are my upcoming policy renewals?",
+        "Tell me about my payment history",
+        "What is my policy coverage details?",
+        "Show me my policy timeline events",
+        "What is my financial status?",
+        "Show me my financial profile",
+        "What is my annual income?",
+        "What is my risk profile?",
+        "What are my assets?",
+        "Show me my customer assets",
+        "What assets do I own?",
+        "Tell me about my property",
+        "What is my family medical history?",
+        "Show me my medical history",
+        "What are my family medical conditions?",
+        "Tell me about my health history",
+        "What are my family medical history details?",
+        "Tell me about my other insurance policies",
+        "What is my policy age and tenure?",
+        "What are my policy preferences?",
+        "Tell me about my customer profile",
+        "Show me my policy premium changes over time",
+        "What are my policy modification events?",
+        "Tell me about my claim history",
+        "What communication events do I have?",
+        "Show me my policy creation timeline",
+        "What is my policy status?",
+        "When does my policy expire?",
+        "What is my policy premium?",
+        "How can I renew my policy?"
+    ]
+    
+    message_lower = user_message.lower()
+    
+    if 'family' in message_lower or 'medical' in message_lower or 'health' in message_lower:
+        context_suggestions = [
+            "What are my family medical conditions?",
+            "Show me my medical history",
+            "Tell me about my health history"
+        ]
+    
+    elif 'payment' in message_lower or 'paid' in message_lower or 'premium' in message_lower:
+        context_suggestions = [
+            "Tell me about my payment history",
+            "What is my policy premium?",
+            "When does my policy expire?"
+        ]
+    
+    elif 'financial' in message_lower or 'income' in message_lower or 'salary' in message_lower:
+        context_suggestions = [
+            "What is my financial status?",
+            "Show me my financial profile",
+            "What is my annual income?"
+        ]
+    
+    elif 'asset' in message_lower or 'property' in message_lower or 'vehicle' in message_lower:
+        context_suggestions = [
+            "What are my assets?",
+            "Show me my customer assets",
+            "What assets do I own?"
+        ]
+    
+    elif 'policy' in message_lower or 'renewal' in message_lower or 'coverage' in message_lower:
+        context_suggestions = [
+            "What are my upcoming policy renewals?",
+            "What is my policy coverage details?",
+            "Show me my policy timeline events"
+        ]
+    
+    elif 'timeline' in message_lower or 'event' in message_lower or 'history' in message_lower:
+        context_suggestions = [
+            "Show me my policy timeline events",
+            "What are my policy modification events?",
+            "Tell me about my claim history"
+        ]
+    
+    elif 'customer' in message_lower or 'profile' in message_lower or 'preference' in message_lower:
+        context_suggestions = [
+            "Tell me about my customer profile",
+            "What are my policy preferences?",
+            "What is my policy age and tenure?"
+        ]
+    
+    elif 'what is' in message_lower or 'explain' in message_lower or 'define' in message_lower:
+        context_suggestions = [
+            "What is my policy coverage details?",
+            "What is my financial status?",
+            "What is my family medical history?"
+        ]
+    
+    else:
+        context_suggestions = [
+            "What are my upcoming policy renewals?",
+            "Tell me about my payment history",
+            "What is my policy coverage details?"
+        ]
+    
+    final_suggestions = []
+    for suggestion in context_suggestions:
+        if suggestion.lower() not in message_lower:
+            final_suggestions.append(suggestion)
+    
+    while len(final_suggestions) < 3 and all_suggestions:
+        suggestion = all_suggestions.pop(0)
+        if suggestion.lower() not in message_lower and suggestion not in final_suggestions:
+            final_suggestions.append(suggestion)
+    
+    return final_suggestions[:3]
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_suggestions(request):
@@ -208,7 +323,6 @@ def get_policy_timeline_context(customer_id=None, policy_id=None, user=None):
         except Exception:
             pass
         
-        # Try to get customer financial profile information - prioritize authenticated user's data
         try:
             from apps.customer_financial_profile.models import CustomerFinancialProfile
             if user and hasattr(user, 'id'):
@@ -219,7 +333,6 @@ def get_policy_timeline_context(customer_id=None, policy_id=None, user=None):
                     ).first()
                     
                     if customer:
-                        # Fetch financial profile for this specific customer
                         financial_profile = CustomerFinancialProfile.objects.filter(
                             customer_id=customer.customer_id
                         ).first()
@@ -236,12 +349,10 @@ def get_policy_timeline_context(customer_id=None, policy_id=None, user=None):
                                 'customer_id': getattr(financial_profile, 'customer_id', 'N/A')
                             }
                         else:
-                            # No financial profile found for this customer
                             context_data['financial_profile'] = {}
                             context_data['no_financial_profile_found'] = True
                             context_data['customer_id'] = customer.customer_id
                     else:
-                        # Customer not found, get general data
                         financial_profiles = CustomerFinancialProfile.objects.all()[:5]
                         for profile in financial_profiles:
                             context_data['financial_profile'] = {
@@ -255,7 +366,6 @@ def get_policy_timeline_context(customer_id=None, policy_id=None, user=None):
                             }
                             break
                 except Exception:
-                    # Fallback to general data
                     financial_profiles = CustomerFinancialProfile.objects.all()[:5]
                     for profile in financial_profiles:
                         context_data['financial_profile'] = {
@@ -269,7 +379,6 @@ def get_policy_timeline_context(customer_id=None, policy_id=None, user=None):
                         }
                         break
             else:
-                # No user provided, get general data
                 financial_profiles = CustomerFinancialProfile.objects.all()[:5]
                 for profile in financial_profiles:
                     context_data['financial_profile'] = {
@@ -285,7 +394,6 @@ def get_policy_timeline_context(customer_id=None, policy_id=None, user=None):
         except Exception:
             pass
         
-        # Try to get customer assets information - prioritize authenticated user's data
         try:
             from apps.customer_assets.models import CustomerAssets
             if user and hasattr(user, 'id'):
@@ -296,7 +404,6 @@ def get_policy_timeline_context(customer_id=None, policy_id=None, user=None):
                     ).first()
                     
                     if customer:
-                        # Fetch assets for this specific customer
                         customer_assets = CustomerAssets.objects.filter(
                             customer_id=customer.customer_id
                         ).order_by('-created_at')[:10]
@@ -313,12 +420,10 @@ def get_policy_timeline_context(customer_id=None, policy_id=None, user=None):
                                     'customer_id': getattr(asset, 'customer_id', 'N/A')
                                 })
                         else:
-                            # No assets found for this customer
                             context_data['customer_assets'] = []
                             context_data['no_assets_found'] = True
                             context_data['customer_id'] = customer.customer_id
                     else:
-                        # Customer not found, get general data
                         assets = CustomerAssets.objects.all()[:10]
                         for asset in assets:
                             context_data['customer_assets'].append({
@@ -330,7 +435,6 @@ def get_policy_timeline_context(customer_id=None, policy_id=None, user=None):
                                 'description': getattr(asset, 'description', 'N/A')
                             })
                 except Exception:
-                    # Fallback to general data
                     assets = CustomerAssets.objects.all()[:10]
                     for asset in assets:
                         context_data['customer_assets'].append({
@@ -342,7 +446,6 @@ def get_policy_timeline_context(customer_id=None, policy_id=None, user=None):
                             'description': getattr(asset, 'description', 'N/A')
                         })
             else:
-                # No user provided, get general data
                 assets = CustomerAssets.objects.all()[:10]
                 for asset in assets:
                     context_data['customer_assets'].append({
@@ -356,7 +459,6 @@ def get_policy_timeline_context(customer_id=None, policy_id=None, user=None):
         except Exception:
             pass
         
-        # Try to get customer family medical history information - prioritize authenticated user's data
         try:
             from apps.customer_family_medical_history.models import CustomerFamilyMedicalHistory
             if user and hasattr(user, 'id'):
@@ -367,7 +469,6 @@ def get_policy_timeline_context(customer_id=None, policy_id=None, user=None):
                     ).first()
                     
                     if customer:
-                        # Fetch family medical history for this specific customer
                         family_medical_history = CustomerFamilyMedicalHistory.objects.filter(
                             customer_id=customer.customer_id
                         ).first()
@@ -385,12 +486,10 @@ def get_policy_timeline_context(customer_id=None, policy_id=None, user=None):
                                 'customer_id': getattr(family_medical_history, 'customer_id', 'N/A')
                             }
                         else:
-                            # No family medical history found for this customer
                             context_data['family_medical_history'] = {}
                             context_data['no_family_medical_history_found'] = True
                             context_data['customer_id'] = customer.customer_id
                     else:
-                        # Customer not found, get general data
                         family_medical_histories = CustomerFamilyMedicalHistory.objects.all()[:5]
                         for history in family_medical_histories:
                             context_data['family_medical_history'] = {
@@ -405,7 +504,6 @@ def get_policy_timeline_context(customer_id=None, policy_id=None, user=None):
                             }
                             break
                 except Exception:
-                    # Fallback to general data
                     family_medical_histories = CustomerFamilyMedicalHistory.objects.all()[:5]
                     for history in family_medical_histories:
                         context_data['family_medical_history'] = {
@@ -420,7 +518,6 @@ def get_policy_timeline_context(customer_id=None, policy_id=None, user=None):
                         }
                         break
             else:
-                # No user provided, get general data
                 family_medical_histories = CustomerFamilyMedicalHistory.objects.all()[:5]
                 for history in family_medical_histories:
                     context_data['family_medical_history'] = {
@@ -641,6 +738,9 @@ def send_request_get_response(request):
     chatbot_session.interaction_count += 1
     chatbot_session.save()
     
+    related_suggestions = generate_related_suggestions(user_message, ai_response)
+    
     return Response({
-        'response': ai_response
+        'response': ai_response,
+        'suggestions': related_suggestions
     }, status=status.HTTP_200_OK)
