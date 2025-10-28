@@ -20,75 +20,105 @@ def generate_related_suggestions(user_message, ai_response):
     """
     Generate 3 related suggestions based on the user's question and AI response
     """
-    suggestions = []
+    all_suggestions = [
+        "What is my renewal case status?",
+        "Show me my payment history",
+        "What is my policy information?",
+        "What is my total renewal amount?",
+        "When is my policy expiring?",
+        "What is the renewal amount?",
+        "What is my payment status?",
+        "Who is assigned to my case?",
+        "What are the recent updates?",
+        "When is the payment due?",
+        "What is my case status?",
+        "Show me my case history",
+        "What is my policy status?",
+        "When does my policy expire?",
+        "Show me my renewal cases",
+        "Give me a case summary",
+        "What are my active policies?",
+        "Show me my policy details",
+        "What is my customer information?",
+        "Give me a dashboard overview"
+    ]
     
     message_lower = user_message.lower()
-    response_lower = ai_response.lower()
     
     if 'payment' in message_lower or 'paid' in message_lower:
-        suggestions = [
+        context_suggestions = [
             "What is my total renewal amount?",
             "Show me my payment history",
             "What is the status of my renewal case?"
         ]
     
     elif 'renewal' in message_lower or 'renew' in message_lower:
-        suggestions = [
+        context_suggestions = [
             "What is my renewal case status?",
             "When is my policy expiring?",
             "What is the renewal amount?"
         ]
     
     elif 'status' in message_lower or 'progress' in message_lower:
-        suggestions = [
+        context_suggestions = [
             "What is my payment status?",
             "Who is assigned to my case?",
             "What are the recent updates?"
         ]
     
     elif 'amount' in message_lower or 'cost' in message_lower or 'price' in message_lower:
-        suggestions = [
+        context_suggestions = [
             "What is my payment status?",
             "When is the payment due?",
             "What is my renewal case status?"
         ]
     
     elif 'case' in message_lower or 'cases' in message_lower:
-        suggestions = [
+        context_suggestions = [
             "What is my case status?",
             "Show me my case history",
             "What is the renewal amount?"
         ]
     
     elif 'policy' in message_lower or 'policies' in message_lower:
-        suggestions = [
+        context_suggestions = [
             "What is my policy status?",
             "When does my policy expire?",
             "What is the renewal amount?"
         ]
     
     elif 'customer' in message_lower or 'my' in message_lower:
-        suggestions = [
+        context_suggestions = [
             "What is my renewal case status?",
             "Show me my payment history",
             "What is my policy information?"
         ]
     
     elif 'dashboard' in message_lower or 'summary' in message_lower or 'overview' in message_lower:
-        suggestions = [
+        context_suggestions = [
             "Show me my renewal cases",
             "What is my payment status?",
             "Give me a case summary"
         ]
     
     else:
-        suggestions = [
+        context_suggestions = [
             "What is my renewal case status?",
             "Show me my payment history",
             "What is my policy information?"
         ]
     
-    return suggestions[:3]
+    final_suggestions = []
+    for suggestion in context_suggestions:
+        if suggestion.lower() not in message_lower:
+            final_suggestions.append(suggestion)
+    
+    while len(final_suggestions) < 3 and all_suggestions:
+        suggestion = all_suggestions.pop(0)
+        if suggestion.lower() not in message_lower and suggestion not in final_suggestions:
+            final_suggestions.append(suggestion)
+    
+    return final_suggestions[:3]
 
 
 @api_view(['GET'])
@@ -223,7 +253,6 @@ def ai_chat(request):
         
         conversation.update_message_count()
         
-        # Generate related suggestions based on the response and context
         related_suggestions = generate_related_suggestions(message, ai_response['response'])
         
         return Response({

@@ -25,6 +25,104 @@ from apps.case_tracking_chatbot.serializers import (
 logger = logging.getLogger(__name__)
 
 
+def generate_related_suggestions(user_message, ai_response):
+    """
+    Generate 3 related suggestions based on the user's question and AI response
+    """
+    all_suggestions = [
+        "What is my case status?",
+        "Show me my case details",
+        "What are my active cases?",
+        "How many cases do I have?",
+        "What is the progress of my case?",
+        "Who is handling my case?",
+        "When was my case created?",
+        "What are the case updates?",
+        "Show me case history",
+        "What is the case priority?",
+        "What are the case comments?",
+        "How long has my case been open?",
+        "What is the case resolution?",
+        "Show me case timeline",
+        "What are the case attachments?",
+        "What is the case assignment?",
+        "Show me case activities",
+        "What is the case category?",
+        "What are the case tags?",
+        "Give me a case summary"
+    ]
+    
+    message_lower = user_message.lower()
+    
+    if 'status' in message_lower or 'progress' in message_lower:
+        context_suggestions = [
+            "What is the progress of my case?",
+            "Who is handling my case?",
+            "What are the case updates?"
+        ]
+    
+    elif 'how many' in message_lower or 'count' in message_lower or 'total' in message_lower:
+        context_suggestions = [
+            "What are my active cases?",
+            "Show me my case details",
+            "What is my case status?"
+        ]
+    
+    elif 'case' in message_lower or 'cases' in message_lower:
+        context_suggestions = [
+            "What is my case status?",
+            "Show me my case details",
+            "What are my active cases?"
+        ]
+    
+    elif 'who' in message_lower or 'handling' in message_lower or 'assigned' in message_lower:
+        context_suggestions = [
+            "What is my case status?",
+            "What is the case priority?",
+            "What are the case updates?"
+        ]
+    
+    elif 'when' in message_lower or 'created' in message_lower or 'time' in message_lower:
+        context_suggestions = [
+            "Show me case timeline",
+            "What are the case activities?",
+            "How long has my case been open?"
+        ]
+    
+    elif 'what' in message_lower or 'show' in message_lower or 'tell' in message_lower:
+        context_suggestions = [
+            "Show me my case details",
+            "What is my case status?",
+            "Give me a case summary"
+        ]
+    
+    elif 'update' in message_lower or 'activity' in message_lower or 'history' in message_lower:
+        context_suggestions = [
+            "Show me case history",
+            "What are the case activities?",
+            "Show me case timeline"
+        ]
+    
+    else:
+        context_suggestions = [
+            "What is my case status?",
+            "Show me my case details",
+            "What are my active cases?"
+        ]
+    
+    final_suggestions = []
+    for suggestion in context_suggestions:
+        if suggestion.lower() not in message_lower:
+            final_suggestions.append(suggestion)
+    
+    while len(final_suggestions) < 3 and all_suggestions:
+        suggestion = all_suggestions.pop(0)
+        if suggestion.lower() not in message_lower and suggestion not in final_suggestions:
+            final_suggestions.append(suggestion)
+    
+    return final_suggestions[:3]
+
+
 class CaseTrackingChatbotView(View):
     """Main view for case tracking chatbot functionality"""
     
@@ -45,7 +143,6 @@ class CaseTrackingChatbotView(View):
                     'error': 'Message is required'
                 }, status=400)
             
-            # Handle case where user is not authenticated (for testing)
             user = getattr(request, 'user', None)
             if not user or not user.is_authenticated:
                 conversation = None
@@ -75,7 +172,6 @@ class CaseTrackingChatbotView(View):
                     'message': ai_response.get('message', 'Unknown error occurred')
                 }, status=500)
             
-            # Save user message and AI response only if conversation exists
             if conversation:
                 user_msg = CaseTrackingChatbotMessage.objects.create(
                     conversation=conversation,
@@ -98,16 +194,11 @@ class CaseTrackingChatbotView(View):
                 conversation.update_message_count()
                 conversation.save()
             
+            related_suggestions = generate_related_suggestions(user_message, ai_response['response'])
+            
             return JsonResponse({
-                'success': True,
-                'session_id': conversation.session_id if conversation else None,
-                'conversation_id': conversation.id if conversation else None,
                 'response': ai_response['response'],
-                'metadata': {
-                    'model': ai_response.get('model'),
-                    'usage': ai_response.get('usage'),
-                    'timestamp': ai_response.get('timestamp')
-                }
+                'suggestions': related_suggestions
             })
             
         except json.JSONDecodeError:
@@ -143,7 +234,6 @@ class CaseTrackingChatbotView(View):
                 except CaseTrackingChatbotConversation.DoesNotExist:
                     pass
             
-            # Create new conversation
             conversation = CaseTrackingChatbotConversation.objects.create(
                 user=user,
                 title=user_message[:50] + '...' if len(user_message) > 50 else user_message

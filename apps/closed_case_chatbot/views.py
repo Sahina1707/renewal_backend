@@ -8,6 +8,104 @@ import openai
 from .models import ClosedCaseChatbot, ClosedCaseChatbotMessage
 
 
+def generate_related_suggestions(user_message, ai_response):
+    """
+    Generate 3 related suggestions based on the user's question and AI response
+    """
+    all_suggestions = [
+        "What are closed cases?",
+        "Show me trends in my closed cases",
+        "What are the common reasons for case closures?",
+        "How many closed cases do I have?",
+        "What is the closed case analysis?",
+        "Show me closed case statistics",
+        "What are the closed case patterns?",
+        "How can I improve case closure rates?",
+        "What insights do closed cases provide?",
+        "Show me closed case performance metrics",
+        "What are the closed case trends?",
+        "How do closed cases affect renewal rates?",
+        "What is the closed case summary?",
+        "Show me closed case details",
+        "What are the closed case categories?",
+        "How can I reduce case closures?",
+        "What is the closed case impact?",
+        "Show me closed case reports",
+        "What are the closed case insights?",
+        "How do closed cases compare to active cases?"
+    ]
+    
+    message_lower = user_message.lower()
+    
+    if 'what is' in message_lower or 'explain' in message_lower or 'define' in message_lower:
+        context_suggestions = [
+            "Show me trends in my closed cases",
+            "What are the common reasons for case closures?",
+            "How many closed cases do I have?"
+        ]
+    
+    elif 'trend' in message_lower or 'pattern' in message_lower or 'analysis' in message_lower:
+        context_suggestions = [
+            "What are the common reasons for case closures?",
+            "Show me closed case statistics",
+            "What insights do closed cases provide?"
+        ]
+    
+    elif 'reason' in message_lower or 'why' in message_lower or 'cause' in message_lower:
+        context_suggestions = [
+            "Show me trends in my closed cases",
+            "What are the closed case patterns?",
+            "How can I improve case closure rates?"
+        ]
+    
+    elif 'how many' in message_lower or 'count' in message_lower or 'total' in message_lower:
+        context_suggestions = [
+            "Show me closed case statistics",
+            "What is the closed case analysis?",
+            "Show me closed case performance metrics"
+        ]
+    
+    elif 'statistic' in message_lower or 'metric' in message_lower or 'performance' in message_lower:
+        context_suggestions = [
+            "What are the closed case trends?",
+            "Show me closed case reports",
+            "What insights do closed cases provide?"
+        ]
+    
+    elif 'improve' in message_lower or 'reduce' in message_lower or 'optimize' in message_lower:
+        context_suggestions = [
+            "What are the common reasons for case closures?",
+            "How can I improve case closure rates?",
+            "What insights do closed cases provide?"
+        ]
+    
+    elif 'insight' in message_lower or 'impact' in message_lower or 'effect' in message_lower:
+        context_suggestions = [
+            "Show me closed case statistics",
+            "What are the closed case patterns?",
+            "How do closed cases affect renewal rates?"
+        ]
+    
+    else:
+        context_suggestions = [
+            "Show me trends in my closed cases",
+            "What are the common reasons for case closures?",
+            "How many closed cases do I have?"
+        ]
+    
+    final_suggestions = []
+    for suggestion in context_suggestions:
+        if suggestion.lower() not in message_lower:
+            final_suggestions.append(suggestion)
+    
+    while len(final_suggestions) < 3 and all_suggestions:
+        suggestion = all_suggestions.pop(0)
+        if suggestion.lower() not in message_lower and suggestion not in final_suggestions:
+            final_suggestions.append(suggestion)
+    
+    return final_suggestions[:3]
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_suggestions(request):
@@ -174,6 +272,9 @@ def send_request_get_response(request):
     chatbot_session.interaction_count += 1
     chatbot_session.save()
     
+    related_suggestions = generate_related_suggestions(user_message, ai_response)
+    
     return Response({
-        'response': ai_response
+        'response': ai_response,
+        'suggestions': related_suggestions
     }, status=status.HTTP_200_OK)
