@@ -16,6 +16,81 @@ from .serializers import DashboardSummarySerializer
 logger = logging.getLogger(__name__)
 
 
+def generate_related_suggestions(user_message, ai_response):
+    """
+    Generate 3 related suggestions based on the user's question and AI response
+    """
+    suggestions = []
+    
+    message_lower = user_message.lower()
+    response_lower = ai_response.lower()
+    
+    if 'payment' in message_lower or 'paid' in message_lower:
+        suggestions = [
+            "What is my total renewal amount?",
+            "Show me my payment history",
+            "What is the status of my renewal case?"
+        ]
+    
+    elif 'renewal' in message_lower or 'renew' in message_lower:
+        suggestions = [
+            "What is my renewal case status?",
+            "When is my policy expiring?",
+            "What is the renewal amount?"
+        ]
+    
+    elif 'status' in message_lower or 'progress' in message_lower:
+        suggestions = [
+            "What is my payment status?",
+            "Who is assigned to my case?",
+            "What are the recent updates?"
+        ]
+    
+    elif 'amount' in message_lower or 'cost' in message_lower or 'price' in message_lower:
+        suggestions = [
+            "What is my payment status?",
+            "When is the payment due?",
+            "What is my renewal case status?"
+        ]
+    
+    elif 'case' in message_lower or 'cases' in message_lower:
+        suggestions = [
+            "What is my case status?",
+            "Show me my case history",
+            "What is the renewal amount?"
+        ]
+    
+    elif 'policy' in message_lower or 'policies' in message_lower:
+        suggestions = [
+            "What is my policy status?",
+            "When does my policy expire?",
+            "What is the renewal amount?"
+        ]
+    
+    elif 'customer' in message_lower or 'my' in message_lower:
+        suggestions = [
+            "What is my renewal case status?",
+            "Show me my payment history",
+            "What is my policy information?"
+        ]
+    
+    elif 'dashboard' in message_lower or 'summary' in message_lower or 'overview' in message_lower:
+        suggestions = [
+            "Show me my renewal cases",
+            "What is my payment status?",
+            "Give me a case summary"
+        ]
+    
+    else:
+        suggestions = [
+            "What is my renewal case status?",
+            "Show me my payment history",
+            "What is my policy information?"
+        ]
+    
+    return suggestions[:3]
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def dashboard_summary(request):
@@ -148,16 +223,12 @@ def ai_chat(request):
         
         conversation.update_message_count()
         
+        # Generate related suggestions based on the response and context
+        related_suggestions = generate_related_suggestions(message, ai_response['response'])
+        
         return Response({
-            'success': True,
-            'session_id': conversation.session_id,
-            'conversation_id': conversation.id,
             'response': ai_response['response'],
-            'metadata': {
-                'model': ai_response.get('model'),
-                'usage': ai_response.get('usage'),
-                'timestamp': ai_response.get('timestamp')
-            }
+            'suggestions': related_suggestions
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
