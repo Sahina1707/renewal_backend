@@ -92,6 +92,8 @@ LOCAL_APPS = [
     'apps.upload_chatbot',
     'apps.case_tracking_chatbot',
     'apps.closed_case_chatbot',
+    'apps.policytimeline_chatbot',
+    'apps.case_logs_chatbot',
     'apps.verification',
     # 'apps.communications',
     # 'apps.emails',

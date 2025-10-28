@@ -81,6 +81,8 @@ api_patterns = [
     path('upload-chatbot/', include('apps.upload_chatbot.urls')),
     path('case-tracking-chatbot/', include('apps.case_tracking_chatbot.urls')),
     path('closed-case-chatbot/', include('apps.closed_case_chatbot.urls')),
+    path('policy-timeline-chatbot/', include('apps.policytimeline_chatbot.urls')),
+    path('case-logs-chatbot/', include('apps.case_logs_chatbot.urls')),
     
     # Customer Verification endpoints
     path('verification/', include('apps.verification.urls')),
