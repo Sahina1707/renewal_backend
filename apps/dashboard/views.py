@@ -253,11 +253,38 @@ def ai_chat(request):
         
         conversation.update_message_count()
         
-        related_suggestions = generate_related_suggestions(message, ai_response['response'])
+        cleaned_response = ai_response['response'].replace('\n\n', ' ').replace('\n', ' ').strip()
+        import re
+        cleaned_response = re.sub(r'\s+', ' ', cleaned_response)
+        phrase_replacements = [
+            ('Based on the current system data provided', 'Based on my analysis'),
+            ('Based on current system data provided', 'Based on my analysis'),
+            ('Based on the system data provided', 'Based on my analysis'),
+            ('Based on system data provided', 'Based on my analysis'),
+            ('Based on the data provided', 'Based on my analysis'),
+            ('Based on data provided', 'Based on my analysis'),
+            ('From the data provided', 'Based on my analysis'),
+            ('From the information provided', 'Based on my analysis'),
+            ('Based on the information provided', 'Based on my analysis'),
+            ('Based on the available data', 'Based on my analysis'),
+            ('Based on available data', 'Based on my analysis'),
+            ('From the available data', 'Based on my analysis'),
+            ('Based on the current data', 'Based on my analysis'),
+            ('Based on current data', 'Based on my analysis'),
+            ('From the current data', 'Based on my analysis'),
+            ('Based on the system data', 'Based on my analysis'),
+            ('Based on system data', 'Based on my analysis'),
+            ('From the system data', 'Based on my analysis'),
+            ('Based on the current system data', 'Based on my analysis'),
+            ('Based on current system data', 'Based on my analysis'),
+            ('From the current system data', 'Based on my analysis')
+        ]
+        for old, new in phrase_replacements:
+            if old in cleaned_response:
+                cleaned_response = cleaned_response.replace(old, new)
         
         return Response({
-            'response': ai_response['response'],
-            'suggestions': related_suggestions
+            'response': cleaned_response
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
@@ -274,9 +301,17 @@ def ai_suggestions(request):
     try:
         suggestions = ai_service.get_quick_suggestions()
         
+        # Extract only titles from suggestions
+        title_suggestions = []
+        for suggestion in suggestions:
+            if isinstance(suggestion, dict) and 'title' in suggestion:
+                title_suggestions.append(suggestion['title'])
+            elif isinstance(suggestion, str):
+                title_suggestions.append(suggestion)
+        
         return Response({
             'success': True,
-            'suggestions': suggestions
+            'suggestions': title_suggestions
         }, status=status.HTTP_200_OK)
         
     except Exception as e:

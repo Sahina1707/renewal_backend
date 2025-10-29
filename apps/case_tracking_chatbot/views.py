@@ -194,11 +194,70 @@ class CaseTrackingChatbotView(View):
                 conversation.update_message_count()
                 conversation.save()
             
-            related_suggestions = generate_related_suggestions(user_message, ai_response['response'])
+            cleaned_response = ai_response['response']
+            import re
+            
+            phrase_replacements = [
+                ('The system data shows', 'As for my analysis'),
+                ('The data shows', 'As for my analysis'),
+                ('The system shows', 'As for my analysis'),
+                ('Based on the current system data provided', 'Based on my analysis'),
+                ('Based on current system data provided', 'Based on my analysis'),
+                ('Based on the system data provided', 'Based on my analysis'),
+                ('Based on system data provided', 'Based on my analysis'),
+                ('Based on the data provided', 'Based on my analysis'),
+                ('Based on data provided', 'Based on my analysis'),
+                ('From the data provided', 'Based on my analysis'),
+                ('From the information provided', 'Based on my analysis'),
+                ('Based on the information provided', 'Based on my analysis'),
+                ('Based on the available data', 'Based on my analysis'),
+                ('Based on available data', 'Based on my analysis'),
+                ('From the available data', 'Based on my analysis'),
+                ('Based on the current data', 'Based on my analysis'),
+                ('Based on current data', 'Based on my analysis'),
+                ('From the current data', 'Based on my analysis'),
+                ('Based on the system data', 'Based on my analysis'),
+                ('Based on system data', 'Based on my analysis'),
+                ('From the system data', 'Based on my analysis'),
+                ('Based on the current system data', 'Based on my analysis'),
+                ('Based on current system data', 'Based on my analysis'),
+                ('From the current system data', 'Based on my analysis'),
+                ("As an AI, I'm analyzing the data provided", 'As for my analysis'),
+                ("As an AI, I am analyzing the data provided", 'As for my analysis'),
+                ("I'm analyzing the data provided", 'As for my analysis'),
+                ("I am analyzing the data provided", 'As for my analysis'),
+                ('analyzing the data provided', 'As for my analysis'),
+                ('analyzing the data', 'As for my analysis'),
+                ('As an AI, I\'m analyzing', 'As for my analysis'),
+                ('As an AI, I am analyzing', 'As for my analysis'),
+                ('As an AI', '')
+            ]
+            
+            phrase_replacements_sorted = sorted(phrase_replacements, key=lambda x: len(x[0]), reverse=True)
+            
+            for old, new in phrase_replacements_sorted:
+                if ',' in old or '.' in old or "'" in old or 'AI' in old or 'shows' in old.lower():
+                    pattern = re.compile(re.escape(old.lower()), re.IGNORECASE)
+                else:
+                    pattern = re.compile(r'\b' + re.escape(old.lower()) + r'\b', re.IGNORECASE)
+                replacement = new.lower() if new else ''
+                cleaned_response = pattern.sub(replacement, cleaned_response)
+            
+            cleaned_response = re.sub(r'^based on my analysis', 'Based on my analysis', cleaned_response, flags=re.IGNORECASE)
+            cleaned_response = re.sub(r'([.!?]\s+)based on my analysis', r'\1Based on my analysis', cleaned_response, flags=re.IGNORECASE)
+            cleaned_response = re.sub(r'(\s+but\s+)based on my analysis', r'\1Based on my analysis', cleaned_response, flags=re.IGNORECASE)
+            
+            cleaned_response = re.sub(r'^as for my analysis', 'As for my analysis', cleaned_response, flags=re.IGNORECASE)
+            cleaned_response = re.sub(r'([.!?]\s+)as for my analysis', r'\1As for my analysis', cleaned_response, flags=re.IGNORECASE)
+            
+            cleaned_response = re.sub(r'\s+', ' ', cleaned_response)
+            cleaned_response = re.sub(r',\s*,', ',', cleaned_response)
+            cleaned_response = re.sub(r'^,\s*', '', cleaned_response)
+            cleaned_response = re.sub(r'\s+,\s+', ' ', cleaned_response)
+            cleaned_response = cleaned_response.strip()
             
             return JsonResponse({
-                'response': ai_response['response'],
-                'suggestions': related_suggestions
+                'response': cleaned_response
             })
             
         except json.JSONDecodeError:
@@ -272,9 +331,16 @@ def case_tracking_chatbot_quick_suggestions(request):
         service = get_case_tracking_chatbot_service()
         suggestions = service.get_quick_suggestions()
         
+        title_suggestions = []
+        for suggestion in suggestions:
+            if isinstance(suggestion, dict) and 'title' in suggestion:
+                title_suggestions.append(suggestion['title'])
+            elif isinstance(suggestion, str):
+                title_suggestions.append(suggestion)
+        
         return Response({
             'success': True,
-            'suggestions': suggestions
+            'suggestions': title_suggestions
         })
         
     except Exception as e:

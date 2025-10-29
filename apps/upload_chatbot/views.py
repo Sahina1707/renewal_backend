@@ -190,11 +190,97 @@ class UploadChatbotView(View):
                 conversation.update_message_count()
                 conversation.save()
             
-            related_suggestions = generate_related_suggestions(user_message, ai_response['response'])
+            cleaned_response = ai_response['response'].replace('\n\n', ' ').replace('\n', ' ').strip()
+            import re
+            cleaned_response = re.sub(r'\s+', ' ', cleaned_response)
+            
+            # Limit response to maximum 7 sentences, ensuring completeness
+            sentences = re.split(r'(?<=[.!?])\s+', cleaned_response)
+            if len(sentences) > 7:
+                # Take first 7 sentences
+                truncated_sentences = sentences[:7]
+                cleaned_response = ' '.join(truncated_sentences).strip()
+                
+                # Check if last sentence is incomplete
+                last_sentence = truncated_sentences[-1].strip()
+                # Check for incomplete patterns: just a number with period, very short, or ends with incomplete list item
+                is_incomplete = (
+                    re.match(r'^\d+\.?\s*$', last_sentence) or  # Just "3." or "3"
+                    len(last_sentence) < 15 or  # Very short (likely incomplete)
+                    re.match(r'^\d+\.?\s*\*\*?\w*\*\*?:\s*$', last_sentence) or  # "3. **Title**:" without content
+                    (not re.search(r'[a-zA-Z]{3,}', last_sentence))  # No significant words
+                )
+                
+                if is_incomplete:
+                    # Remove the incomplete last sentence and use previous complete ones
+                    if len(truncated_sentences) > 1:
+                        cleaned_response = ' '.join(truncated_sentences[:-1]).strip()
+                    else:
+                        # If only one incomplete sentence, limit to first 6 instead
+                        cleaned_response = ' '.join(sentences[:6]).strip()
+                
+                # Ensure it ends properly with punctuation
+                if not cleaned_response.endswith(('.', '!', '?')):
+                    cleaned_response += '.'
+            
+            # Rephrase boilerplate openings
+            phrase_replacements = [
+                ('Based on the current system data provided', 'Based on my analysis'),
+                ('Based on current system data provided', 'Based on my analysis'),
+                ('Based on the system data provided', 'Based on my analysis'),
+                ('Based on system data provided', 'Based on my analysis'),
+                ('Based on the data provided', 'Based on my analysis'),
+                ('Based on data provided', 'Based on my analysis'),
+                ('From the data provided', 'Based on my analysis'),
+                ('From the information provided', 'Based on my analysis'),
+                ('Based on the information provided', 'Based on my analysis'),
+                ('Based on the available data', 'Based on my analysis'),
+                ('Based on available data', 'Based on my analysis'),
+                ('From the available data', 'Based on my analysis'),
+                ('Based on the current data', 'Based on my analysis'),
+                ('Based on current data', 'Based on my analysis'),
+                ('From the current data', 'Based on my analysis'),
+                ('Based on the system data', 'Based on my analysis'),
+                ('Based on system data', 'Based on my analysis'),
+                ('From the system data', 'Based on my analysis'),
+                ('Based on the current system data', 'Based on my analysis'),
+                ('Based on current system data', 'Based on my analysis'),
+                ('From the current system data', 'Based on my analysis'),
+                ("As an AI, I'm analyzing the data provided", 'As for my analysis'),
+                ("As an AI, I am analyzing the data provided", 'As for my analysis'),
+                ("I'm analyzing the data provided", 'As for my analysis'),
+                ("I am analyzing the data provided", 'As for my analysis'),
+                ('analyzing the data provided', 'As for my analysis'),
+                ('analyzing the data', 'As for my analysis'),
+                ('As an AI, I\'m analyzing', 'As for my analysis'),
+                ('As an AI, I am analyzing', 'As for my analysis'),
+                ('As an AI', '')
+            ]
+            phrase_replacements_sorted = sorted(phrase_replacements, key=lambda x: len(x[0]), reverse=True)
+            
+            for old, new in phrase_replacements_sorted:
+                if ',' in old or '.' in old or "'" in old or 'AI' in old:
+                    pattern = re.compile(re.escape(old.lower()), re.IGNORECASE)
+                else:
+                    pattern = re.compile(r'\b' + re.escape(old.lower()) + r'\b', re.IGNORECASE)
+                replacement = new.lower() if new else ''
+                cleaned_response = pattern.sub(replacement, cleaned_response)
+            
+            cleaned_response = re.sub(r'^based on my analysis', 'Based on my analysis', cleaned_response, flags=re.IGNORECASE)
+            cleaned_response = re.sub(r'([.!?]\s+)based on my analysis', r'\1Based on my analysis', cleaned_response, flags=re.IGNORECASE)
+            cleaned_response = re.sub(r'(\s+but\s+)based on my analysis', r'\1Based on my analysis', cleaned_response, flags=re.IGNORECASE)
+            
+            cleaned_response = re.sub(r'^as for my analysis', 'As for my analysis', cleaned_response, flags=re.IGNORECASE)
+            cleaned_response = re.sub(r'([.!?]\s+)as for my analysis', r'\1As for my analysis', cleaned_response, flags=re.IGNORECASE)
+            
+            cleaned_response = re.sub(r'\s+', ' ', cleaned_response)
+            cleaned_response = re.sub(r',\s*,', ',', cleaned_response)
+            cleaned_response = re.sub(r'^,\s*', '', cleaned_response)
+            cleaned_response = re.sub(r'\s+,\s+', ' ', cleaned_response)
+            cleaned_response = cleaned_response.strip()
             
             return JsonResponse({
-                'response': ai_response['response'],
-                'suggestions': related_suggestions
+                'response': cleaned_response
             })
             
         except json.JSONDecodeError:
@@ -265,9 +351,16 @@ def upload_chatbot_quick_suggestions(request):
         
         suggestions = upload_chatbot_service.get_quick_suggestions()
         
+        title_suggestions = []
+        for suggestion in suggestions:
+            if isinstance(suggestion, dict) and 'title' in suggestion:
+                title_suggestions.append(suggestion['title'])
+            elif isinstance(suggestion, str):
+                title_suggestions.append(suggestion)
+        
         return JsonResponse({
             'success': True,
-            'suggestions': suggestions
+            'suggestions': title_suggestions
         })
         
     except Exception as e:
