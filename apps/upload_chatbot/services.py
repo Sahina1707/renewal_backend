@@ -311,7 +311,7 @@ class UploadChatbotService:
             if query_type == 'campaign_performance':
                 return self._get_campaign_performance_data()
             elif query_type == 'campaign_general':
-                return self._get_campaign_general_data()
+                return self._get_campaign_general_data(user_message)
             elif query_type == 'upload_analysis':
                 return self._get_upload_analysis_data()
             elif query_type == 'communication_effectiveness':
@@ -377,10 +377,86 @@ class UploadChatbotService:
             logger.error(f"Error in campaign performance data: {str(e)}")
             return {'campaign_performance': {}}
     
-    def _get_campaign_general_data(self) -> Dict[str, Any]:
+    def _get_campaign_general_data(self, user_message: str = None) -> Dict[str, Any]:
         """Get general campaign data for workflow and general questions"""
         try:
+            from datetime import datetime, timedelta
+            from django.utils import timezone
+            
             campaigns = Campaign.objects.filter(is_deleted=False)
+            
+            time_filtered_campaigns = campaigns
+            time_period_info = {}
+            
+            if user_message:
+                message_lower = user_message.lower()
+                now = timezone.now()
+                
+                import re
+                
+                hours_match = re.search(r'(?:last|past|previous)\s+(\d+)\s+hours?', message_lower)
+                if hours_match:
+                    hours = int(hours_match.group(1))
+                    time_filter = now - timedelta(hours=hours)
+                    time_filtered_campaigns = campaigns.filter(created_at__gte=time_filter)
+                    time_period_info = {
+                        'period': f'last {hours} hours',
+                        'start_time': time_filter.isoformat(),
+                        'end_time': now.isoformat()
+                    }
+                elif re.search(r'\b(\d+)\s+days?\b', message_lower):
+                    days_match = re.search(r'\b(\d+)\s+days?\b', message_lower)
+                    if days_match:
+                        days = int(days_match.group(1))
+                        time_filter = now - timedelta(days=days)
+                        time_filtered_campaigns = campaigns.filter(created_at__gte=time_filter)
+                        period_text = f'last {days} days' if 'last' in message_lower or 'past' in message_lower else f'{days} days'
+                        time_period_info = {
+                            'period': period_text,
+                            'start_time': time_filter.isoformat(),
+                            'end_time': now.isoformat()
+                        }
+                elif 'last 24 hours' in message_lower or 'last 24 hrs' in message_lower or 'past 24 hours' in message_lower or '24 hours' in message_lower:
+                    time_filter = now - timedelta(hours=24)
+                    time_filtered_campaigns = campaigns.filter(created_at__gte=time_filter)
+                    time_period_info = {
+                        'period': 'last 24 hours',
+                        'start_time': time_filter.isoformat(),
+                        'end_time': now.isoformat()
+                    }
+                elif 'last 7 days' in message_lower or 'past 7 days' in message_lower or 'last week' in message_lower or '7 days' in message_lower:
+                    time_filter = now - timedelta(days=7)
+                    time_filtered_campaigns = campaigns.filter(created_at__gte=time_filter)
+                    time_period_info = {
+                        'period': 'last 7 days',
+                        'start_time': time_filter.isoformat(),
+                        'end_time': now.isoformat()
+                    }
+                elif 'last 30 days' in message_lower or 'past 30 days' in message_lower or 'last month' in message_lower or '30 days' in message_lower:
+                    time_filter = now - timedelta(days=30)
+                    time_filtered_campaigns = campaigns.filter(created_at__gte=time_filter)
+                    time_period_info = {
+                        'period': 'last 30 days',
+                        'start_time': time_filter.isoformat(),
+                        'end_time': now.isoformat()
+                    }
+                elif 'today' in message_lower:
+                    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                    time_filtered_campaigns = campaigns.filter(created_at__gte=today_start)
+                    time_period_info = {
+                        'period': 'today',
+                        'start_time': today_start.isoformat(),
+                        'end_time': now.isoformat()
+                    }
+                elif 'yesterday' in message_lower:
+                    yesterday_start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+                    yesterday_end = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                    time_filtered_campaigns = campaigns.filter(created_at__gte=yesterday_start, created_at__lt=yesterday_end)
+                    time_period_info = {
+                        'period': 'yesterday',
+                        'start_time': yesterday_start.isoformat(),
+                        'end_time': yesterday_end.isoformat()
+                    }
             
             campaign_stats = {
                 'total_campaigns': campaigns.count(),
@@ -388,6 +464,19 @@ class UploadChatbotService:
                 'completed_campaigns': campaigns.filter(status='completed').count(),
                 'paused_campaigns': campaigns.filter(status='paused').count(),
             }
+            
+            if time_period_info:
+                campaign_stats.update({
+                    'time_period_campaigns_count': time_filtered_campaigns.count(),
+                    'time_period_active_campaigns': time_filtered_campaigns.filter(status='active').count(),
+                    'time_period_completed_campaigns': time_filtered_campaigns.filter(status='completed').count(),
+                    'time_period_info': time_period_info
+                })
+                
+                time_filtered_list = time_filtered_campaigns.order_by('-created_at').values(
+                    'id', 'name', 'status', 'campaign_type__name', 'target_count', 'created_at'
+                )[:20]
+                campaign_stats['time_filtered_campaigns'] = list(time_filtered_list)
             
             recent_campaigns = campaigns.order_by('-created_at')[:5].values(
                 'name', 'status', 'campaign_type__name', 'target_count', 'created_at'
@@ -749,16 +838,19 @@ CURRENT SYSTEM DATA:
 CRITICAL INSTRUCTIONS:
 1. ALWAYS provide specific, data-driven insights based on the actual data provided above
 2. Use exact numbers, percentages, and metrics from the database
-3. Identify specific patterns, trends, and anomalies in the data
-4. Provide actionable recommendations based on the actual data analysis
-5. When discussing campaign performance, use the specific metrics provided
-6. For upload analysis, focus on success rates, error patterns, and file type performance
-7. For communication effectiveness, analyze delivery rates, open rates, click rates, and engagement
-8. For channel analysis, compare performance across different channels
-9. Always explain the "why" behind the data - what factors contribute to the current situation
-10. Provide specific, measurable action items that can improve the metrics
-11. Use the specialized data sections to provide deep, contextual analysis
-12. Never give generic advice - always tie recommendations to the specific data patterns observed
+3. When asked about campaigns created in a specific time period (e.g., "last 24 hours", "last 7 days", "today", "yesterday"), you MUST use the time-filtered campaign data provided in the "CAMPAIGNS CREATED IN [PERIOD]" section
+4. If time-filtered data is provided, prioritize that data over general statistics when answering time-based questions
+5. Never say you don't have access to data - always check the provided data sections first
+6. Identify specific patterns, trends, and anomalies in the data
+7. Provide actionable recommendations based on the actual data analysis
+8. When discussing campaign performance, use the specific metrics provided
+9. For upload analysis, focus on success rates, error patterns, and file type performance
+10. For communication effectiveness, analyze delivery rates, open rates, click rates, and engagement
+11. For channel analysis, compare performance across different channels
+12. Always explain the "why" behind the data - what factors contribute to the current situation
+13. Provide specific, measurable action items that can improve the metrics
+14. Use the specialized data sections to provide deep, contextual analysis
+15. Never give generic advice - always tie recommendations to the specific data patterns observed
 
 RESPONSE FORMAT:
 - Start with key findings from the data
@@ -1007,10 +1099,37 @@ RESPONSE FORMAT:
             context += f"- Active Campaigns: {campaign_stats.get('active_campaigns', 0)}\n"
             context += f"- Completed Campaigns: {campaign_stats.get('completed_campaigns', 0)}\n"
             context += f"- Paused Campaigns: {campaign_stats.get('paused_campaigns', 0)}\n"
+            
+            # Include time-filtered data if available
+            if 'time_period_info' in campaign_stats:
+                time_info = campaign_stats.get('time_period_info', {})
+                period = time_info.get('period', 'specified time period')
+                context += f"\nCAMPAIGNS CREATED IN {period.upper()}:\n"
+                context += f"- Total Campaigns Created: {campaign_stats.get('time_period_campaigns_count', 0)}\n"
+                context += f"- Active Campaigns: {campaign_stats.get('time_period_active_campaigns', 0)}\n"
+                context += f"- Completed Campaigns: {campaign_stats.get('time_period_completed_campaigns', 0)}\n"
+                
+                # Include time-filtered campaign details
+                time_filtered_campaigns = campaign_stats.get('time_filtered_campaigns', [])
+                if time_filtered_campaigns:
+                    context += f"\nDETAILED LIST OF CAMPAIGNS CREATED IN {period.upper()}:\n"
+                    for campaign in time_filtered_campaigns:
+                        created_at = campaign.get('created_at', '')
+                        if created_at:
+                            # Format date if it's a datetime string
+                            try:
+                                from django.utils.dateparse import parse_datetime
+                                dt = parse_datetime(str(created_at))
+                                if dt:
+                                    created_at = dt.strftime('%Y-%m-%d %H:%M:%S')
+                            except:
+                                pass
+                        context += f"- {campaign.get('name', 'Unknown')} (Status: {campaign.get('status', 'Unknown')})\n"
+                        context += f"  Type: {campaign.get('campaign_type__name', 'Unknown')}, Targets: {campaign.get('target_count', 0)}, Created: {created_at}\n"
         
         recent_campaigns = campaign_data.get('recent_campaigns', [])
         if recent_campaigns:
-            context += "\nRECENT CAMPAIGNS:\n"
+            context += "\nRECENT CAMPAIGNS (All Time):\n"
             for campaign in recent_campaigns:
                 context += f"- {campaign.get('name', 'Unknown')} ({campaign.get('status', 'Unknown')})\n"
                 context += f"  Type: {campaign.get('campaign_type__name', 'Unknown')}, Targets: {campaign.get('target_count', 0)}\n"
