@@ -6,66 +6,12 @@ from django.db.models import Q, Count, F
 from django.utils import timezone
 from datetime import timedelta
 
-from .models import EmailTemplate, EmailTemplateCategory, EmailTemplateTag, EmailTemplateVersion
+from .models import EmailTemplate, EmailTemplateTag, EmailTemplateVersion
 from .serializers import (
     EmailTemplateSerializer, EmailTemplateCreateSerializer, EmailTemplateUpdateSerializer,
-    EmailTemplateCategorySerializer, EmailTemplateTagSerializer, EmailTemplateVersionSerializer,
+    EmailTemplateTagSerializer, EmailTemplateVersionSerializer,
     EmailTemplateRenderSerializer, EmailTemplateStatsSerializer
 )
-
-
-class EmailTemplateCategoryViewSet(viewsets.ModelViewSet):
-    """ViewSet for managing email template categories"""
-    
-    queryset = EmailTemplateCategory.objects.filter(is_deleted=False)
-    serializer_class = EmailTemplateCategorySerializer
-    permission_classes = [IsAuthenticated]
-    
-    def get_queryset(self):
-        """Filter categories based on query parameters"""
-        queryset = super().get_queryset()
-        
-        # Filter by active status
-        is_active = self.request.query_params.get('is_active')
-        if is_active is not None:
-            queryset = queryset.filter(is_active=is_active.lower() == 'true')
-        
-        return queryset.order_by('name')
-    
-    def perform_create(self, serializer):
-        """Set created_by when creating a new category"""
-        serializer.save(created_by=self.request.user)
-    
-    def perform_update(self, serializer):
-        """Set updated_by when updating a category"""
-        serializer.save(updated_by=self.request.user)
-    
-    def perform_destroy(self, instance):
-        """Soft delete the category"""
-        instance.is_deleted = True
-        instance.deleted_at = timezone.now()
-        instance.deleted_by = self.request.user
-        instance.save(update_fields=['is_deleted', 'deleted_at', 'deleted_by'])
-    
-    @action(detail=True, methods=['post'])
-    def activate(self, request, pk=None):
-        """Activate a category"""
-        category = self.get_object()
-        category.is_active = True
-        category.updated_by = request.user
-        category.save(update_fields=['is_active', 'updated_by'])
-        
-        return Response({'message': 'Category activated successfully'})
-    
-    @action(detail=True, methods=['post'])
-    def deactivate(self, request, pk=None):
-        """Deactivate a category"""
-        category = self.get_object()
-        category.is_active = False
-        category.updated_by = request.user
-        category.save(update_fields=['is_active', 'updated_by'])
-        
-        return Response({'message': 'Category deactivated successfully'})
 
 
 class EmailTemplateTagViewSet(viewsets.ModelViewSet):
@@ -143,11 +89,6 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
         status_filter = self.request.query_params.get('status')
         if status_filter:
             queryset = queryset.filter(status=status_filter)
-        
-        # Filter by category
-        category_id = self.request.query_params.get('category_id')
-        if category_id:
-            queryset = queryset.filter(category__id=category_id)
         
         # Filter by tags
         tag_names = self.request.query_params.getlist('tags')
@@ -250,7 +191,6 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
             text_content=original_template.text_content,
             template_type=original_template.template_type,
             variables=original_template.variables,
-            category=original_template.category,
             status='draft',
             is_public=original_template.is_public,
             created_by=request.user
@@ -305,11 +245,6 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
         # Recent templates
         recent_templates = queryset.order_by('-created_at')[:5]
         
-        # Category distribution
-        category_stats = queryset.values('category__name').annotate(
-            count=Count('id')
-        ).order_by('-count')
-        
         # Template type distribution
         type_stats = queryset.values('template_type').annotate(
             count=Count('id')
@@ -322,7 +257,7 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
             'archived_templates': archived_templates,
             'most_used_templates': EmailTemplateSerializer(most_used, many=True).data,
             'recent_templates': EmailTemplateSerializer(recent_templates, many=True).data,
-            'category_distribution': list(category_stats),
+            'category_distribution': [],
             'type_distribution': list(type_stats)
         })
     
@@ -333,7 +268,6 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
         
         # Search parameters
         query = request.query_params.get('q', '')
-        category_id = request.query_params.get('category_id')
         tag_names = request.query_params.getlist('tags')
         template_type = request.query_params.get('template_type')
         status_filter = request.query_params.get('status')
@@ -349,9 +283,6 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
                 Q(html_content__icontains=query) |
                 Q(text_content__icontains=query)
             )
-        
-        if category_id:
-            queryset = queryset.filter(category__id=category_id)
         
         if tag_names:
             queryset = queryset.filter(tags__name__in=tag_names).distinct()

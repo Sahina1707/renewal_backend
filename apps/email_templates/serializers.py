@@ -1,37 +1,6 @@
+from django.utils import timezone
 from rest_framework import serializers
-from .models import EmailTemplate, EmailTemplateCategory, EmailTemplateTag, EmailTemplateVersion
-
-
-class EmailTemplateCategorySerializer(serializers.ModelSerializer):
-    """Serializer for EmailTemplateCategory"""
-    
-    template_count = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = EmailTemplateCategory
-        fields = [
-            'id', 'name', 'description', 'color', 'is_active',
-            'template_count', 'created_at', 'updated_at', 'created_by',
-            'updated_by', 'is_deleted', 'deleted_at', 'deleted_by'
-        ]
-        read_only_fields = [
-            'id', 'created_at', 'updated_at', 'created_by', 'updated_by',
-            'is_deleted', 'deleted_at', 'deleted_by'
-        ]
-    
-    def get_template_count(self, obj):
-        """Get count of templates in this category"""
-        return obj.templates.filter(is_deleted=False).count()
-    
-    def create(self, validated_data):
-        """Set created_by when creating a new category"""
-        validated_data['created_by'] = self.context['request'].user
-        return super().create(validated_data)
-    
-    def update(self, instance, validated_data):
-        """Set updated_by when updating a category"""
-        validated_data['updated_by'] = self.context['request'].user
-        return super().update(instance, validated_data)
+from .models import EmailTemplate, EmailTemplateTag, EmailTemplateVersion
 
 
 class EmailTemplateTagSerializer(serializers.ModelSerializer):
@@ -69,8 +38,6 @@ class EmailTemplateTagSerializer(serializers.ModelSerializer):
 class EmailTemplateSerializer(serializers.ModelSerializer):
     """Serializer for EmailTemplate"""
     
-    category_name = serializers.CharField(source='category.name', read_only=True)
-    category_color = serializers.CharField(source='category.color', read_only=True)
     tags_data = EmailTemplateTagSerializer(source='tags', many=True, read_only=True)
     tag_names = serializers.ListField(
         child=serializers.CharField(),
@@ -87,8 +54,7 @@ class EmailTemplateSerializer(serializers.ModelSerializer):
         model = EmailTemplate
         fields = [
             'id', 'name', 'subject', 'description', 'html_content', 'text_content',
-            'template_type', 'template_type_display', 'variables', 'category',
-            'category_name', 'category_color', 'tags', 'tags_data', 'tag_names',
+            'template_type', 'template_type_display', 'variables', 'tags', 'tags_data', 'tag_names',
             'status', 'status_display', 'is_default', 'is_public', 'usage_count',
             'last_used', 'created_at', 'updated_at', 'created_by', 'created_by_name',
             'updated_by', 'updated_by_name', 'is_deleted', 'deleted_at', 'deleted_by'
@@ -161,46 +127,81 @@ class EmailTemplateSerializer(serializers.ModelSerializer):
 
 class EmailTemplateCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating EmailTemplate (simplified)"""
-    
-    tag_names = serializers.ListField(
-        child=serializers.CharField(),
-        required=False,
-        help_text="List of tag names to assign to this template"
-    )
-    
+
+    tags = serializers.CharField(required=False, allow_blank=True, help_text="Comma separated tags for this template")
+
     class Meta:
         model = EmailTemplate
         fields = [
             'name', 'subject', 'description', 'html_content', 'text_content',
-            'template_type', 'variables', 'category', 'tag_names', 'status',
-            'is_default', 'is_public'
+            'template_type', 'variables', 'status',
+            'is_default', 'is_public', 'tags'
         ]
-    
+
     def create(self, validated_data):
-        """Create a new email template"""
-        tag_names = validated_data.pop('tag_names', [])
-        validated_data['created_by'] = self.context['request'].user
-        
-        template = super().create(validated_data)
-        
-        # Assign tags
-        if tag_names:
-            tags = EmailTemplateTag.objects.filter(name__in=tag_names, is_deleted=False)
-            template.tags.set(tags)
-        
-        # Create initial version
-        EmailTemplateVersion.objects.create(
-            template=template,
-            name=template.name,
-            subject=template.subject,
-            html_content=template.html_content,
-            text_content=template.text_content,
-            template_type=template.template_type,
-            variables=template.variables,
-            is_current=True,
-            created_by=self.context['request'].user
-        )
-        
+        """Create a new email template respecting the legacy schema"""
+        from django.db import connection
+        import json
+
+        request_user = self.context['request'].user if self.context and 'request' in self.context else None
+        created_by_id = request_user.id if request_user and request_user.is_authenticated else None
+
+        tags_value = validated_data.pop('tags', '') or ''
+
+        insert_columns = [
+            'name', 'subject', 'description', 'html_content', 'text_content',
+            'template_type', 'variables', 'status', 'is_default',
+            'is_public', 'tags', 'requires_approval', 'usage_count', 'last_used',
+            'created_at', 'updated_at', 'created_by_id', 'updated_by_id',
+            'is_deleted', 'deleted_at', 'deleted_by_id'
+        ]
+
+        variables_json = json.dumps(validated_data.get('variables', {}))
+
+        params = [
+            validated_data.get('name'),
+            validated_data.get('subject'),
+            validated_data.get('description'),
+            validated_data.get('html_content'),
+            validated_data.get('text_content'),
+            validated_data.get('template_type'),
+            variables_json,
+            validated_data.get('status', 'draft'),
+            validated_data.get('is_default', False),
+            validated_data.get('is_public', True),
+            tags_value,
+            False,  # requires_approval
+            0,      # usage_count
+            None,   # last_used
+            timezone.now(),
+            timezone.now(),
+            created_by_id,
+            created_by_id,
+            False,  # is_deleted
+            None,   # deleted_at
+            None,   # deleted_by_id
+        ]
+
+        placeholders = [
+            '%s', '%s', '%s', '%s', '%s', '%s',
+            '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s',
+            '%s', '%s', '%s', '%s', '%s', '%s', '%s'
+        ]
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                    INSERT INTO email_templates
+                        ({', '.join(insert_columns)})
+                    VALUES ({', '.join(placeholders)})
+                    RETURNING id
+                """,
+                params
+            )
+            template_id = cursor.fetchone()[0]
+
+        template = EmailTemplate.objects.get(pk=template_id)
+
         return template
 
 
@@ -217,7 +218,7 @@ class EmailTemplateUpdateSerializer(serializers.ModelSerializer):
         model = EmailTemplate
         fields = [
             'name', 'subject', 'description', 'html_content', 'text_content',
-            'template_type', 'variables', 'category', 'tag_names', 'status',
+            'template_type', 'variables', 'tag_names', 'status',
             'is_default', 'is_public'
         ]
     
@@ -276,7 +277,7 @@ class EmailTemplateVersionSerializer(serializers.ModelSerializer):
 class EmailTemplateRenderSerializer(serializers.Serializer):
     """Serializer for rendering email templates with context"""
     
-    template_id = serializers.UUIDField()
+    template_id = serializers.IntegerField()
     context = serializers.DictField(
         child=serializers.CharField(),
         required=False,
@@ -298,9 +299,8 @@ class EmailTemplateRenderSerializer(serializers.Serializer):
 class EmailTemplateStatsSerializer(serializers.Serializer):
     """Serializer for email template statistics"""
     
-    template_id = serializers.UUIDField()
+    template_id = serializers.IntegerField()
     template_name = serializers.CharField()
-    category_name = serializers.CharField()
     status = serializers.CharField()
     usage_count = serializers.IntegerField()
     last_used = serializers.DateTimeField()
