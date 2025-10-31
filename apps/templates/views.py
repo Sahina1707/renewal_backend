@@ -62,11 +62,11 @@ class TemplateViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         headers = self.get_success_headers(serializer.data)
-        return Response({
-            'success': True,
-            'message': 'Template created successfully',
-            'data': serializer.data
-        }, status=status.HTTP_201_CREATED, headers=headers)
+        return Response(
+            {'message': 'Template created successfully'},
+            status=status.HTTP_201_CREATED,
+            headers=headers
+        )
     
     def update(self, request, *args, **kwargs):
         """Update a template"""
@@ -156,11 +156,15 @@ class TemplateViewSet(viewsets.ModelViewSet):
             
             new_template = Template.objects.create(
                 name=new_name,
+                template_type=original_template.template_type,
                 channel=original_template.channel,
                 category=original_template.category,
                 subject=original_template.subject,
                 content=original_template.content,
                 variables=original_template.variables,
+                dlt_template_id=original_template.dlt_template_id,
+                tags=list(original_template.tags) if isinstance(original_template.tags, list) else [],
+                is_dlt_approved=original_template.is_dlt_approved,
                 is_active=False,  # Start as inactive
                 created_by=request.user
             )

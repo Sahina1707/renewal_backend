@@ -11,14 +11,22 @@ class Template(models.Model):
     ]
 
     CATEGORY_CHOICES = [
-        ('general', 'General'),
-        ('marketing', 'Marketing'),
-        ('notification', 'Notification'),
-        ('reminder', 'Reminder'),
-        ('confirmation', 'Confirmation'),
-        ('welcome', 'Welcome'),
+        ('promotional', 'Promotional'),
+        ('transactional', 'Transactional'),
         ('renewal', 'Renewal'),
+        ('welcome', 'Welcome'),
         ('payment', 'Payment'),
+        ('claims', 'Claims'),
+        ('remainder', 'Remainder'),
+    ]
+
+    TAG_OPTIONS = [
+        'renewal',
+        'promotional',
+        'urgent',
+        'welcome',
+        'payment',
+        'claims',
     ]
 
     TEMPLATE_TYPE_CHOICES = [
@@ -30,10 +38,13 @@ class Template(models.Model):
     name = models.CharField(max_length=100, unique=True)
     template_type = models.CharField(max_length=20, choices=TEMPLATE_TYPE_CHOICES, default='email')
     channel = models.CharField(max_length=20, choices=TEMPLATE_TYPES)
-    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='general')
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='promotional')
     subject = models.CharField(max_length=200, blank=True, help_text="Used for email subject")
     content = models.TextField(help_text="Template body content (HTML or plain text)")
     variables = models.JSONField(default=list, blank=True, help_text="List of dynamic variables used in the template")
+    dlt_template_id = models.CharField(max_length=100, blank=True, help_text="Required for SMS and WhatsApp templates")
+    tags = models.JSONField(default=list, blank=True, help_text="List of assigned tags for quick filtering")
+    is_dlt_approved = models.BooleanField(default=False, help_text="Whether the template is approved on the DLT platform")
     is_active = models.BooleanField(default=True)
 
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_templates')
