@@ -61,7 +61,7 @@ xlsxwriter==3.1.9
 python-decouple==3.8
 python-dotenv==1.0.0
 requests==2.31.0
-urllib3==2.1.0
+urllib3==1.26.18
 
 # Monitoring & Logging
 sentry-sdk==1.38.0
