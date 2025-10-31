@@ -1,32 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from django.utils.safestring import mark_safe
-from .models import EmailTemplate, EmailTemplateCategory, EmailTemplateTag, EmailTemplateVersion
-
-
-@admin.register(EmailTemplateCategory)
-class EmailTemplateCategoryAdmin(admin.ModelAdmin):
-    list_display = ['name', 'color_display', 'is_active', 'template_count', 'created_at']
-    list_filter = ['is_active', 'created_at']
-    search_fields = ['name', 'description']
-    readonly_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
-    
-    def color_display(self, obj):
-        """Display color as a colored square"""
-        return format_html(
-            '<span style="display: inline-block; width: 20px; height: 20px; background-color: {}; border: 1px solid #ccc;"></span> {}',
-            obj.color, obj.color
-        )
-    color_display.short_description = 'Color'
-    
-    def template_count(self, obj):
-        """Count of templates in this category"""
-        return obj.templates.filter(is_deleted=False).count()
-    template_count.short_description = 'Templates'
-    
-    def get_queryset(self, request):
-        """Filter out soft-deleted categories"""
-        return super().get_queryset(request).filter(is_deleted=False)
+from .models import EmailTemplate, EmailTemplateTag, EmailTemplateVersion
 
 
 @admin.register(EmailTemplateTag)
@@ -64,10 +38,10 @@ class EmailTemplateVersionInline(admin.TabularInline):
 @admin.register(EmailTemplate)
 class EmailTemplateAdmin(admin.ModelAdmin):
     list_display = [
-        'name', 'subject', 'category', 'status', 'template_type',
+        'name', 'subject', 'status', 'template_type',
         'usage_count', 'is_public', 'created_by', 'created_at'
     ]
-    list_filter = ['status', 'template_type', 'category', 'is_public', 'created_at']
+    list_filter = ['status', 'template_type', 'is_public', 'created_at']
     search_fields = ['name', 'subject', 'description']
     readonly_fields = [
         'id', 'usage_count', 'last_used', 'created_at', 'updated_at',
@@ -78,7 +52,7 @@ class EmailTemplateAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('Basic Information', {
-            'fields': ('name', 'subject', 'description', 'category', 'tags')
+            'fields': ('name', 'subject', 'description', 'tags')
         }),
         ('Content', {
             'fields': ('html_content', 'text_content', 'template_type', 'variables')

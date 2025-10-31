@@ -1,43 +1,14 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.utils import timezone
-import uuid
 
 User = get_user_model()
-
-
-class EmailTemplateCategory(models.Model):
-    """Categories for organizing email templates"""
-    
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    name = models.CharField(max_length=100, unique=True)
-    description = models.TextField(blank=True, null=True)
-    color = models.CharField(max_length=7, default='#007bff', help_text="Hex color code")
-    is_active = models.BooleanField(default=True)
-    
-    # Metadata
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_email_template_categories')
-    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_email_template_categories')
-    is_deleted = models.BooleanField(default=False)
-    deleted_at = models.DateTimeField(blank=True, null=True)
-    deleted_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='deleted_email_template_categories')
-    
-    class Meta:
-        db_table = 'email_template_categories'
-        ordering = ['name']
-        verbose_name = 'Email Template Category'
-        verbose_name_plural = 'Email Template Categories'
-    
-    def __str__(self):
-        return self.name
 
 
 class EmailTemplateTag(models.Model):
     """Tags for categorizing email templates"""
     
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id = models.BigAutoField(primary_key=True)
     name = models.CharField(max_length=50, unique=True)
     description = models.TextField(blank=True, null=True)
     color = models.CharField(max_length=7, default='#6c757d', help_text="Hex color code")
@@ -78,7 +49,7 @@ class EmailTemplate(models.Model):
         ('archived', 'Archived'),
     ]
     
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id = models.BigAutoField(primary_key=True)
     name = models.CharField(max_length=200)
     subject = models.CharField(max_length=500)
     description = models.TextField(blank=True, null=True)
@@ -91,8 +62,6 @@ class EmailTemplate(models.Model):
     # Template variables (JSON field for dynamic content)
     variables = models.JSONField(default=dict, blank=True, help_text="Available variables for this template")
     
-    # Organization
-    category = models.ForeignKey(EmailTemplateCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name='templates')
     tags = models.ManyToManyField(EmailTemplateTag, blank=True, related_name='templates')
     
     # Status and settings
@@ -120,7 +89,6 @@ class EmailTemplate(models.Model):
         verbose_name_plural = 'Email Templates'
         indexes = [
             models.Index(fields=['status', 'is_public']),
-            models.Index(fields=['category', 'status']),
             models.Index(fields=['created_by', 'status']),
         ]
     
@@ -166,7 +134,7 @@ class EmailTemplate(models.Model):
 class EmailTemplateVersion(models.Model):
     """Version history for email templates"""
     
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id = models.BigAutoField(primary_key=True)
     template = models.ForeignKey(EmailTemplate, on_delete=models.CASCADE, related_name='versions')
     version_number = models.PositiveIntegerField()
     
