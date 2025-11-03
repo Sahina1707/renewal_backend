@@ -29,15 +29,6 @@ class Channel(BaseModel):
     ]
     
     # Basic Information
-    customer = models.ForeignKey(
-        'customers.Customer',
-        related_name="channels",
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        help_text="Customer associated with this channel"
-    )
-
     name = models.CharField(max_length=255, help_text="Channel name")
     channel_type = models.CharField(
         max_length=20, 
@@ -112,7 +103,6 @@ class Channel(BaseModel):
             models.Index(fields=['priority']),
             models.Index(fields=['manager_name']),
             models.Index(fields=['target_audience']),
-            models.Index(fields=['customer']),
         ]
         constraints = [
             models.CheckConstraint(

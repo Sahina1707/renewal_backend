@@ -120,6 +120,15 @@ class Customer(BaseModel):
         blank=True,
         related_name='assigned_customers'
     )
+    channel_id = models.ForeignKey(
+        'business_channels.Channel',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='customers',
+        db_column='channel_id',
+        help_text="Channel associated with this customer"
+    )
     segment = models.ForeignKey(
         CustomerSegment,
         on_delete=models.SET_NULL,
@@ -201,6 +210,7 @@ class Customer(BaseModel):
             models.Index(fields=['status', 'priority']),
             models.Index(fields=['city', 'state']),
             models.Index(fields=['assigned_agent']),
+            models.Index(fields=['channel_id']),
             models.Index(fields=['segment']),
             models.Index(fields=['first_policy_date']),
             models.Index(fields=['kyc_status']),

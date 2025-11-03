@@ -2,6 +2,7 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
+from django.http import Http404
 from apps.customers.models import Customer
 from apps.renewals.models import RenewalCase
 from .serializers import CustomerSerializer
@@ -31,29 +32,39 @@ class CombinedPolicyDataAPIView(APIView):
                         'data': None
                     }, status=status.HTTP_400_BAD_REQUEST)
 
-            # Get the renewal case by id or case_number
             if case_id:
-                renewal_case = get_object_or_404(RenewalCase, id=case_id)  # type: ignore[attr-defined]
+                renewal_case = get_object_or_404(
+                    RenewalCase.objects.select_related('customer', 'policy', 'policy__customer'),  
+                    id=case_id
+                )
             else:
-                renewal_case = get_object_or_404(RenewalCase, case_number=case_number)  # type: ignore[attr-defined]
+                renewal_case = RenewalCase.objects.select_related('customer', 'policy', 'policy__customer').filter(case_number__iexact=case_number).first()  # type: ignore[attr-defined]
+                if not renewal_case:
+                    raise Http404(f"Renewal case with case_number '{case_number}' not found")
 
-            # Get the customer with all related data using optimized queries
+            customer_id = None
+            if renewal_case.customer:
+                customer_id = renewal_case.customer.id
+            elif renewal_case.policy and renewal_case.policy.customer:
+                customer_id = renewal_case.policy.customer.id
+            else:
+                raise ValueError("Customer not found for this renewal case")
+
             customer = get_object_or_404(
                 Customer.objects.select_related(  # type: ignore[attr-defined]
-                    'financial_profile'
+                    'financial_profile',
+                    'channel_id'
                 ).prefetch_related(
                     'documents_new',
-                    'channels',
                     'policies__policy_type',
                     'policies__policy_type__policy_features',
                     'policies__policy_type__policy_coverages',
                     'policies__policy_type__policy_coverages__additional_benefits',
                     'policies__exclusions'
                 ),
-                id=renewal_case.policy.customer.id
+                id=customer_id
             )
 
-            # Serialize the customer data with all nested relationships
             serializer = CustomerSerializer(customer)
 
             return Response({
@@ -62,13 +73,30 @@ class CombinedPolicyDataAPIView(APIView):
                 'data': serializer.data
             }, status=status.HTTP_200_OK)
 
-        except Exception:
+        except Http404:
             return Response({
                 'success': False,
-                'message': 'Required data not found',
+                'message': 'Renewal case not found',
                 'data': None
             }, status=status.HTTP_404_NOT_FOUND)
-
+        except RenewalCase.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Renewal case not found',
+                'data': None
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Customer.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Customer not found for this renewal case',
+                'data': None
+            }, status=status.HTTP_404_NOT_FOUND)
+        except ValueError as ve:
+            return Response({
+                'success': False,
+                'message': str(ve),
+                'data': None
+            }, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({
                 'success': False,
@@ -97,7 +125,6 @@ class CustomerPreferencesSummaryAPIView(APIView):
 
     def get(self, request, case_id=None, case_ref=None):
         try:
-            # Allow lookup by id or case_number
             if case_id is None and case_ref is None:
                 case_id = request.query_params.get('case_id')
                 case_ref = request.query_params.get('case_number')
@@ -124,7 +151,6 @@ class CustomerPreferencesSummaryAPIView(APIView):
                 'preferred_language': getattr(customer, 'preferred_language', None),
             }
 
-            # Communication preferences (latest record for policy_renewal context if available)
             pref_qs = CustomerCommunicationPreference.objects.filter(customer=customer).order_by('-updated_at', '-created_at')  # type: ignore[attr-defined]
             comm_pref = pref_qs.first()
             communication = None
@@ -140,16 +166,12 @@ class CustomerPreferencesSummaryAPIView(APIView):
                     'preferred_language': getattr(comm_pref, 'preferred_language', None),
                 }
 
-            # Renewal timeline - now using common settings instead of customer-specific
             renewal_timeline = None
-            # Fetch common renewal timeline settings
             common_timeline_settings = CommonRenewalTimelineSettings.objects.filter(is_active=True).first()
             if common_timeline_settings:
-                # Use the formatted reminder schedule if available, otherwise format from reminder_days
                 if common_timeline_settings.reminder_schedule:
                     formatted_reminder_schedule = common_timeline_settings.reminder_schedule
                 else:
-                    # Fallback: format from reminder_days for backward compatibility
                     formatted_reminder_schedule = []
                     for days in common_timeline_settings.reminder_days:
                         if days == 30:
@@ -169,7 +191,6 @@ class CustomerPreferencesSummaryAPIView(APIView):
                     'description': common_timeline_settings.description,
                 }
 
-            # Payments (for this case; fallback to latest customer payment)
             payments_qs = CustomerPayment.objects.filter(renewal_case=renewal_case).order_by('-payment_date')  # type: ignore[attr-defined]
             if not payments_qs.exists():
                 payments_qs = CustomerPayment.objects.filter(customer=customer).order_by('-payment_date')  # type: ignore[attr-defined]

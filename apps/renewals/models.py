@@ -3,7 +3,6 @@ from django.contrib.auth import get_user_model
 from apps.customers.models import Customer
 from apps.policies.models import Policy
 from apps.core.models import BaseModel
-from apps.channels.models import Channel
 from apps.customer_payments.models import CustomerPayment
 
 User = get_user_model()
@@ -47,17 +46,6 @@ class RenewalCase(BaseModel):
         ('success', 'Success'),
         ('failed', 'Failed'),
     ], default='pending', help_text="Payment status - auto-generated from customer_payments table")
-    
-    # Channel tracking
-    channel_id = models.ForeignKey(
-        Channel,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='renewal_cases',
-        help_text="Channel through which this renewal case was initiated",
-        db_column='channel_id'
-    )
 
     customer_payment = models.ForeignKey(
         CustomerPayment,
@@ -78,7 +66,6 @@ class RenewalCase(BaseModel):
         indexes = [
             models.Index(fields=['status']),
             models.Index(fields=['assigned_to']),
-            models.Index(fields=['channel_id']),
             models.Index(fields=['batch_code']),
         ]
         

@@ -38,6 +38,7 @@ api_patterns = [
     path('policy_data/', include('apps.policy_data.urls')),
     path('files_upload/', include('apps.files_upload.urls')),
     path('channels/', include('apps.channels.urls')),
+    path('distribution-channels/', include('apps.distribution_channel.urls')),
     path('hierarchy/', include('apps.hierarchy.urls')),
     path('case-tracking/', include('apps.case_tracking.urls')),
     path('case-logs/', include('apps.case_logs.urls')),
