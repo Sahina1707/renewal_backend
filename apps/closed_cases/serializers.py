@@ -42,6 +42,7 @@ class ClosedCasesListSerializer(serializers.ModelSerializer):
     renewal_date = serializers.SerializerMethodField()
     closed_date = serializers.SerializerMethodField()
     last_action = serializers.SerializerMethodField()
+    payment_date = serializers.SerializerMethodField()
     
     class Meta:
         model = RenewalCase
@@ -132,7 +133,6 @@ class ClosedCasesListSerializer(serializers.ModelSerializer):
             return None
     
     def get_upload_filename(self, obj):
-        # Try to get filename from file_uploads table using batch_code
         try:
             file_upload = FileUpload.objects.filter(
                 processing_result__batch_code=obj.batch_code
@@ -147,10 +147,14 @@ class ClosedCasesListSerializer(serializers.ModelSerializer):
     def get_renewal_date(self, obj):
         return obj.policy.renewal_date if obj.policy else None
     
+    def get_payment_date(self, obj):
+        """Get payment date from related customer_payment"""
+        return obj.customer_payment.payment_date if obj.customer_payment else None
+    
     def get_closed_date(self, obj):
-        # For renewed/completed cases, use the payment_date or updated_at
-        if obj.status in ['completed', 'renewed'] and obj.payment_date:
-            return obj.payment_date
+        payment_date = obj.customer_payment.payment_date if obj.customer_payment else None
+        if obj.status in ['completed', 'renewed'] and payment_date:
+            return payment_date
         return obj.updated_at
     
     def get_last_action(self, obj):
@@ -160,12 +164,13 @@ class ClosedCasesListSerializer(serializers.ModelSerializer):
 class ClosedCasesDetailSerializer(serializers.ModelSerializer):
     """Detailed serializer for individual closed case view"""
     
-    # Include all fields from list serializer plus additional details
     customer_details = serializers.SerializerMethodField()
     policy_details = serializers.SerializerMethodField()
     channel_details = serializers.SerializerMethodField()
     agent_details = serializers.SerializerMethodField()
     upload_details = serializers.SerializerMethodField()
+    
+    payment_date = serializers.SerializerMethodField()
     
     class Meta:
         model = RenewalCase
@@ -283,3 +288,7 @@ class ClosedCasesDetailSerializer(serializers.ModelSerializer):
             return None
         except:
             return None
+    
+    def get_payment_date(self, obj):
+        """Get payment date from related customer_payment"""
+        return obj.customer_payment.payment_date if obj.customer_payment else None

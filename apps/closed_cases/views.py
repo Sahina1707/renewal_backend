@@ -51,12 +51,6 @@ class ClosedCasesViewSet(viewsets.ReadOnlyModelViewSet):
                 Q(customer__customer_code__icontains=search)
             )
         
-        # priority filtering removed - all cases now have 'medium' priority
-        # priority = request.query_params.get('priority', None)
-        # if priority:
-        #     queryset = queryset.filter(priority=priority)
-        
-        # Channel filter
         channel = request.query_params.get('channel', None)
         if channel:
             queryset = queryset.filter(channel_id__channel_name__icontains=channel)
@@ -93,28 +87,23 @@ class ClosedCasesViewSet(viewsets.ReadOnlyModelViewSet):
         if batch_id:
             queryset = queryset.filter(batch_code__icontains=batch_id)
         
-        # Policy category filter
         category = request.query_params.get('category', None)
         if category:
             queryset = queryset.filter(policy__policy_type__category__icontains=category)
         
-        # Customer profile filter
         profile = request.query_params.get('profile', None)
         if profile:
             queryset = queryset.filter(customer__profile__icontains=profile)
         
-        # Language filter
         language = request.query_params.get('language', None)
         if language:
             queryset = queryset.filter(customer__language__icontains=language)
         
-        # Sorting
         sort_by = request.query_params.get('sort_by', '-updated_at')
         valid_sort_fields = [
             'case_number', '-case_number',
             'customer__first_name', '-customer__first_name',
             'policy__policy_number', '-policy__policy_number',
-            # 'priority', '-priority',  # priority removed - all cases have 'medium' priority
             'updated_at', '-updated_at',
             'created_at', '-created_at',
             'renewal_amount', '-renewal_amount',
@@ -124,7 +113,6 @@ class ClosedCasesViewSet(viewsets.ReadOnlyModelViewSet):
         if sort_by in valid_sort_fields:
             queryset = queryset.order_by(sort_by)
         
-        # Pagination
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
@@ -152,7 +140,6 @@ class ClosedCasesViewSet(viewsets.ReadOnlyModelViewSet):
         
         total_closed_cases = queryset.count()
         
-        # Priority breakdown - all cases now have 'medium' priority
         priority_stats = {
             'medium': {
                 'label': 'Medium',
@@ -160,14 +147,12 @@ class ClosedCasesViewSet(viewsets.ReadOnlyModelViewSet):
             }
         }
         
-        # Channel breakdown
         channel_stats = queryset.values(
             'channel_id__name'
         ).annotate(
             count=Count('id')
         ).order_by('-count')[:10] 
         
-        # Agent breakdown
         agent_stats = queryset.values(
             'assigned_to__first_name',
             'assigned_to__last_name'
@@ -175,22 +160,18 @@ class ClosedCasesViewSet(viewsets.ReadOnlyModelViewSet):
             count=Count('id')
         ).order_by('-count')[:10]  
         
-        # Category breakdown
         category_stats = queryset.values(
             'policy__policy_type__category'
         ).annotate(
             count=Count('id')
         ).order_by('-count')
         
-        # Recent closures (last 7 days)
         seven_days_ago = timezone.now() - timedelta(days=7)
         recent_closures = queryset.filter(updated_at__gte=seven_days_ago).count()
         
-        # Monthly closures (last 30 days)
         thirty_days_ago = timezone.now() - timedelta(days=30)
         monthly_closures = queryset.filter(updated_at__gte=thirty_days_ago).count()
         
-        # Total renewal amount
         total_renewal_amount = sum(
             case.renewal_amount for case in queryset if case.renewal_amount
         )
@@ -211,7 +192,6 @@ class ClosedCasesViewSet(viewsets.ReadOnlyModelViewSet):
     def export_data(self, request):
         queryset = self.get_queryset()
         
-        # Apply same filters as list view
         search = request.query_params.get('search', None)
         if search:
             queryset = queryset.filter(
