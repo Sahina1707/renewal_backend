@@ -483,7 +483,7 @@ class ChannelViewSet(viewsets.ModelViewSet):
             return Response(
                 {
                     'success': True,
-                    'message': 'Channel deleted permanently from database',
+                    'message': 'Channel deleted sccessfully',
                     'data': {
                         'id': channel_id,
                         'name': channel_name,
@@ -554,7 +554,7 @@ class ChannelViewSet(viewsets.ModelViewSet):
             return Response(
                 {
                     'success': True,
-                    'message': 'Channel deleted permanently from database',
+                    'message': 'Channel deleted sccessfully',
                     'data': {
                         'id': channel_id,
                         'name': channel_name,
