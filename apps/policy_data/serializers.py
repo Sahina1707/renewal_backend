@@ -209,7 +209,7 @@ class RenewalCaseImportSerializer(serializers.ModelSerializer):
 
     def get_channel_name(self, obj):
         """Get channel name"""
-        return obj.channel_id.name if obj.channel_id else None
+        return obj.customer.channel_id.name if obj.customer and obj.customer.channel_id else None
 
 
 class FileProcessingStatusSerializer(serializers.Serializer):

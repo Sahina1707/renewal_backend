@@ -52,6 +52,7 @@ LOCAL_APPS = [
     'apps.files_upload',
     'apps.renewals',
     'apps.channels',
+    'apps.distribution_channel',
     'apps.hierarchy',
     'apps.case_tracking',
     'apps.case_logs',

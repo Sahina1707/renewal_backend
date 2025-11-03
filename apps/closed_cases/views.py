@@ -214,11 +214,11 @@ class ClosedCasesViewSet(viewsets.ReadOnlyModelViewSet):
                 'premium_amount': str(case.policy.premium_amount) if case.policy else '',
                 'renewal_amount': str(case.renewal_amount) if case.renewal_amount else '',
                 'priority': case.get_priority_display(),
-                'channel': case.channel_id.name if case.channel_id else '',
+                'channel': case.customer.channel_id.name if case.customer and case.customer.channel_id else '',
                 'agent': f"{case.assigned_to.first_name} {case.assigned_to.last_name}".strip() if case.assigned_to else '',
                 'batch_id': case.batch_code,
                 'closed_date': case.updated_at.strftime('%Y-%m-%d %H:%M:%S') if case.updated_at else '',
-                'payment_date': case.payment_date.strftime('%Y-%m-%d %H:%M:%S') if case.payment_date else '',
+                'payment_date': case.customer_payment.payment_date.strftime('%Y-%m-%d %H:%M:%S') if case.customer_payment and case.customer_payment.payment_date else '',
                 'communication_attempts': case.communication_attempts_count,
             })
         

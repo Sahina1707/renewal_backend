@@ -113,10 +113,10 @@ class ClosedCasesListSerializer(serializers.ModelSerializer):
         return obj.policy.status if obj.policy else None
     
     def get_channel_name(self, obj):
-        return obj.channel_id.name if obj.channel_id else None
+        return obj.customer.channel_id.name if obj.customer and obj.customer.channel_id else None
     
     def get_channel_type(self, obj):
-        return obj.channel_id.channel_type if obj.channel_id else None
+        return obj.customer.channel_id.channel_type if obj.customer and obj.customer.channel_id else None
     
     def get_agent_name(self, obj):
         if obj.assigned_to:
@@ -241,10 +241,10 @@ class ClosedCasesDetailSerializer(serializers.ModelSerializer):
         }
     
     def get_channel_details(self, obj):
-        if not obj.channel_id:
+        if not obj.customer or not obj.customer.channel_id:
             return None
         
-        channel = obj.channel_id
+        channel = obj.customer.channel_id
         return {
             'id': channel.id,
             'channel_name': channel.name,

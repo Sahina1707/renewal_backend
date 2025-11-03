@@ -831,15 +831,16 @@ class FileUploadViewSet(viewsets.ModelViewSet):
 
     def _process_customer_data(self, row, user):
         """Process customer data from Excel row"""
-        # Clean and validate email
-        email = str(row['email']).strip().lower() if row.get('email') and pd.notna(row.get('email')) else ''
+        email = str(row.get('email', '')).strip().lower() if row.get('email') and pd.notna(row.get('email')) else ''
         if not email:
             raise ValueError("Email is required for customer creation")
         
-        # Clean phone number
+        first_name = str(row.get('first_name', '')).strip() if row.get('first_name') and pd.notna(row.get('first_name')) else ''
+        if not first_name:
+            raise ValueError("First name is required for customer creation")
+        
         phone = str(row.get('phone', '')).strip() if row.get('phone') and pd.notna(row.get('phone')) else ''
 
-        # Look for existing customer by email (case-insensitive)
         customer = Customer.objects.filter(email__iexact=email).first()
 
         if not customer and phone:
@@ -854,10 +855,15 @@ class FileUploadViewSet(viewsets.ModelViewSet):
                     customer_code = generate_customer_code()
 
                     assigned_agent = get_next_available_agent()
+                    
+                    try:
+                        channel_obj = self._get_or_create_channel(row, user)
+                    except Exception as channel_error:
+                        print(f"Error getting/creating channel: {channel_error}")
+                        channel_obj = None  
 
                     with transaction.atomic():
-                        # Fix sequence before creating customer to prevent ID conflicts
-                        if attempt == 0:  # Only fix sequence on first attempt
+                        if attempt == 0: 
                             from django.db import connection
                             with connection.cursor() as cursor:
                                 cursor.execute("""
@@ -870,8 +876,8 @@ class FileUploadViewSet(viewsets.ModelViewSet):
                         
                         customer = Customer.objects.create(
                             customer_code=customer_code,
-                            first_name=row['first_name'],
-                            last_name=row['last_name'],
+                            first_name=first_name,
+                            last_name=str(row.get('last_name', '')).strip() if row.get('last_name') and pd.notna(row.get('last_name')) else '',
                             email=email,
                             phone=phone,
                             date_of_birth=self._parse_date(row.get('date_of_birth')),
@@ -885,10 +891,13 @@ class FileUploadViewSet(viewsets.ModelViewSet):
                             kyc_status=str(row.get('kyc_status', 'pending')).lower() if row.get('kyc_status') and pd.notna(row.get('kyc_status')) else 'pending',
                             kyc_documents=str(row.get('kyc_documents', '')),
                             assigned_agent=assigned_agent,
+                            channel_id=channel_obj,
                             created_by=user,
                             updated_by=None
                         )
-                    customer_created = True
+                    # Verify customer was actually created before setting flag
+                    if customer and customer.id:
+                        customer_created = True
 
                     if assigned_agent:
                         print(f" Auto-assigned agent {assigned_agent.get_full_name()} to customer {customer.customer_code}")
@@ -901,7 +910,6 @@ class FileUploadViewSet(viewsets.ModelViewSet):
                     if 'customer_code' in error_message and attempt < max_retries - 1:
                         continue
                     elif 'customer_pkey' in error_message or 'duplicate key' in error_message:
-                        # ID sequence issue - try to fix it and retry
                         if attempt < max_retries - 1:
                             from django.db import connection
                             try:
@@ -920,6 +928,12 @@ class FileUploadViewSet(viewsets.ModelViewSet):
                                 raise e
                     else:
                         raise
+        else:
+            channel_obj = self._get_or_create_channel(row, user)
+            if channel_obj and not customer.channel_id:
+                customer.channel_id = channel_obj
+                customer.updated_by = user
+                customer.save(update_fields=['channel_id', 'updated_by', 'updated_at'])
 
         try:
             comm_pref_raw = str(row.get('communication_preferences', '') or '').strip()
@@ -973,9 +987,13 @@ class FileUploadViewSet(viewsets.ModelViewSet):
                             'preferred_channel','email_enabled','sms_enabled','phone_enabled',
                             'whatsapp_enabled','postal_mail_enabled','push_notification_enabled','updated_by'
                         ])
-        except Exception:
+        except Exception as comm_error:
+            print(f"Error processing communication preferences: {comm_error}")
             pass
 
+        if not customer:
+            raise ValueError(f"Failed to create or find customer for email: {email}")
+        
         return customer, customer_created
 
     def _process_policy_data(self, row, customer, user):
@@ -1032,7 +1050,6 @@ class FileUploadViewSet(viewsets.ModelViewSet):
             agent_code = str(row.get('agent_code', '')).strip() if row.get('agent_code') else None
             policy_agent = get_or_create_policy_agent(agent_name, agent_code)
 
-            # Fix policy ID sequence before creation to prevent conflicts
             try:
                 from django.db import connection
                 with connection.cursor() as cursor:
@@ -1081,11 +1098,17 @@ class FileUploadViewSet(viewsets.ModelViewSet):
             if attempt == max_retries - 1:
                 raise ValueError(f"Could not generate unique case number after {max_retries} attempts")
 
-        _, renewal_status = calculate_policy_and_renewal_status(
+        policy_status, calculated_renewal_status = calculate_policy_and_renewal_status(
             policy.end_date,
             start_date=policy.start_date,
             customer=customer
         )
+        
+        
+        if calculated_renewal_status == 'not_required':
+            renewal_status = 'pending'
+        else:
+            renewal_status = calculated_renewal_status
 
         renewal_amount = row.get('renewal_amount')
         if renewal_amount is None or pd.isna(renewal_amount):
@@ -1130,8 +1153,6 @@ class FileUploadViewSet(viewsets.ModelViewSet):
         else:
             assigned_user = user
 
-        channel_id = self._get_or_create_channel(row, user)
-
         customer_payment_obj = None
         try:
             from uuid import uuid4
@@ -1167,7 +1188,6 @@ class FileUploadViewSet(viewsets.ModelViewSet):
             status=renewal_status,
            
             renewal_amount=renewal_amount,
-            channel_id=channel_id,
             notes=str(row.get('notes', '')),
             assigned_to=assigned_user,
             created_by=user,
@@ -1175,8 +1195,8 @@ class FileUploadViewSet(viewsets.ModelViewSet):
             customer_payment=customer_payment_obj
         )
         
-        if channel_id:
-            channel_name = str(channel_id.name).lower() if channel_id.name and pd.notna(channel_id.name) else 'email'
+        if customer.channel_id:
+            channel_name = str(customer.channel_id.name).lower() if customer.channel_id.name and pd.notna(customer.channel_id.name) else 'email'
             channel_mapping = {
                 'email': 'email',
                 'sms': 'sms',

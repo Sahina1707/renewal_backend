@@ -55,12 +55,21 @@ class PolicyExclusionSerializer(serializers.ModelSerializer):
 
 
 class PolicyTypeSerializer(serializers.ModelSerializer):
-    policy_features = PolicyFeatureSerializer(many=True, read_only=True)
+    policy_features = serializers.SerializerMethodField()
     policy_coverages = PolicyCoverageSerializer(many=True, read_only=True)
 
     class Meta:
         model = PolicyType
         fields = '__all__'
+    
+    def get_policy_features(self, obj):
+        """Get only active and non-deleted policy features for this policy type"""
+        features = PolicyFeature.objects.filter(
+            policy_type=obj,
+            is_active=True,
+            is_deleted=False
+        ).order_by('display_order', 'feature_name')
+        return PolicyFeatureSerializer(features, many=True).data
 
 
 class ChannelSerializer(serializers.ModelSerializer):
@@ -81,7 +90,7 @@ class PolicySerializer(serializers.ModelSerializer):
 class CustomerSerializer(serializers.ModelSerializer):
     documents = CustomerDocumentSerializer(many=True, read_only=True, source='documents_new')
     financial_profile = CustomerFinancialProfileSerializer(read_only=True)
-    channels = ChannelSerializer(many=True, read_only=True)
+    channel = ChannelSerializer(read_only=True, source='channel_id')
     policies = PolicySerializer(many=True, read_only=True)
 
     class Meta:
