@@ -24,6 +24,11 @@ urlpatterns = [
          CustomerInsightsViewSet.as_view({'post': 'recalculate_insights'}), 
          name='customer-insights-recalculate'),
     
+    # Payment schedule endpoint (accepts customer_id)
+    path('customer/<int:customer_id>/payment-schedule/', 
+         CustomerInsightsViewSet.as_view({'get': 'get_payment_schedule'}), 
+         name='customer-payment-schedule'),
+    
     # Dashboard and summary endpoints
     path('dashboard/', 
          CustomerInsightsViewSet.as_view({'get': 'get_insights_dashboard'}), 

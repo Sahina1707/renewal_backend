@@ -365,5 +365,50 @@ class CustomerInsightsViewSet(viewsets.ModelViewSet):
                 {'error': f'Failed to get insights summary: {str(e)}'}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    
+    @action(detail=False, methods=['get'], url_path='customer/(?P<customer_id>[0-9]+)/payment-schedule')
+    def get_payment_schedule(self, request, customer_id=None):
+        """Get payment schedule for a specific customer"""
+        try:
+            # Convert customer_id to integer
+            try:
+                customer_id = int(customer_id)
+            except (ValueError, TypeError):
+                return Response({
+                    'success': False,
+                    'message': 'Invalid customer ID',
+                    'error': 'Customer ID must be a valid integer'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Get customer by ID
+            try:
+                customer = Customer.objects.get(id=customer_id, is_deleted=False)
+            except Customer.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'message': f'Customer with ID {customer_id} not found',
+                    'data': None
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Get payment schedule using the service
+            from .services import CustomerInsightsService
+            service = CustomerInsightsService()
+            payment_schedule_data = service.get_payment_schedule(customer)
+            
+            return Response({
+                'success': True,
+                'message': 'Payment schedule retrieved successfully',
+                'data': payment_schedule_data
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response(
+                {
+                    'success': False,
+                    'message': 'Failed to get payment schedule',
+                    'error': str(e)
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
