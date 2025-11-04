@@ -17,7 +17,8 @@ from .serializers import (
     CustomerInsightsResponseSerializer, CustomerInsightSerializer,
     CustomerInsightsSummarySerializer, InsightsDashboardSerializer,
     CustomerInsightsFilterSerializer, CustomerInsightsBulkUpdateSerializer,
-    CustomerInsightsRecalculateSerializer
+    CustomerInsightsRecalculateSerializer,
+    CommunicationHistoryResponseSerializer, ClaimsHistoryResponseSerializer # --- ADDED ---
 )
 from .services import CustomerInsightsService
 
@@ -410,5 +411,45 @@ class CustomerInsightsViewSet(viewsets.ModelViewSet):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    
+    # Detailed Communication History Endpoint
+    @action(detail=False, methods=['get'], url_path='customer/(?P<case_number>[^/.]+)/communication-history')
+    def get_communication_history_detail(self, request, case_number=None):
+        """Get detailed communication history for a specific customer using Case Number"""
+        try:
+            from apps.renewals.models import RenewalCase
+            # Retrieve customer via RenewalCase
+            renewal_case = RenewalCase.objects.select_related('customer').get(case_number=case_number)
+            customer = renewal_case.customer
+            
+            service = CustomerInsightsService()
+            history_data = service.get_communication_history(customer)
+            
+            serializer = CommunicationHistoryResponseSerializer(history_data)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+            
+        except RenewalCase.DoesNotExist:
+            return Response({'error': f'Case with number {case_number} not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': f'Failed to get communication history: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    # --- ADDED: Detailed Claims History Endpoint ---
+    @action(detail=False, methods=['get'], url_path='customer/(?P<case_number>[^/.]+)/claims-history')
+    def get_claims_history_detail(self, request, case_number=None):
+        """Get detailed claims history for a specific customer using Case Number"""
+        try:
+            from apps.renewals.models import RenewalCase
+            # Retrieve customer via RenewalCase
+            renewal_case = RenewalCase.objects.select_related('customer').get(case_number=case_number)
+            customer = renewal_case.customer
 
+            service = CustomerInsightsService()
+            history_data = service.get_claims_history(customer)
+            
+            serializer = ClaimsHistoryResponseSerializer(history_data)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+            
+        except RenewalCase.DoesNotExist:
+            return Response({'error': f'Case with number {case_number} not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': f'Failed to get claims history: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
