@@ -4,6 +4,7 @@ from apps.core.models import BaseModel, TimestampedModel
 from apps.customers.models import Customer
 import uuid
 from decimal import Decimal
+from django.utils import timezone # <-- 1. ADDED THIS IMPORT
 
 User = get_user_model()
 
@@ -593,4 +594,23 @@ class PolicyMember(BaseModel):
             return f"{names[0][0]}{names[-1][0]}".upper()
         elif len(names) == 1:
             return names[0][:2].upper()
-        return "??" 
+        return "??"
+# claims Timeline    
+class ClaimTimelineEvent(BaseModel):
+    """
+    Stores a single event in the timeline of a policy claim.
+    """
+    claim = models.ForeignKey(
+        PolicyClaim, 
+        related_name="timeline_events", 
+        on_delete=models.CASCADE
+    )
+    event_date = models.DateTimeField(default=timezone.now)
+    event_name = models.CharField(max_length=255)
+    status = models.CharField(max_length=50, default='completed')
+
+    class Meta:
+        ordering = ['event_date'] 
+
+    def __str__(self):
+        return f"{self.event_name} for Claim {self.claim.claim_number}"

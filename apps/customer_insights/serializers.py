@@ -70,6 +70,23 @@ class CommunicationHistorySerializer(serializers.Serializer):
     outcome = serializers.CharField()
     message_content = serializers.CharField()
     response_received = serializers.CharField(required=False)
+    attachment_count = serializers.IntegerField(required=False)
+    # --- Timeline fields ---
+    agent_name = serializers.CharField(required=False)
+    timeline_event = serializers.CharField(required=False)
+    
+    # --- Fields from video ---
+    contact_name = serializers.CharField(required=False)
+    contact_details = serializers.CharField(required=False)
+    communication_summary = serializers.CharField(required=False)
+    inbound = serializers.BooleanField(required=False)
+    resolved = serializers.BooleanField(required=False)
+    priority = serializers.CharField(required=False)
+    time = serializers.CharField(required=False)
+    agent = serializers.CharField(required=False)
+    
+    # --- NEWLY ADDED FIELD ---
+    duration = serializers.IntegerField(required=False, allow_null=True)
 
 
 class CommunicationHistoryResponseSerializer(serializers.Serializer):
@@ -77,7 +94,7 @@ class CommunicationHistoryResponseSerializer(serializers.Serializer):
     
     total_communications = serializers.IntegerField()
     by_channel = serializers.DictField()
-    recent_communications = CommunicationHistorySerializer(many=True)
+    all_communications = CommunicationHistorySerializer(many=True) 
 
 
 class ClaimHistorySerializer(serializers.Serializer):
@@ -93,6 +110,12 @@ class ClaimHistorySerializer(serializers.Serializer):
     claim_number = serializers.CharField()
     adjuster = serializers.CharField()
     rejection_reason = serializers.CharField(required=False)
+    
+    # This field is now a list of dictionaries, which ListField handles perfectly
+    timeline_events = serializers.ListField(required=False) 
+    
+    document_attachments = serializers.IntegerField(required=False) 
+    priority = serializers.CharField(required=False)
 
 
 class ClaimsHistoryResponseSerializer(serializers.Serializer):
