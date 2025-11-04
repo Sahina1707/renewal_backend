@@ -4,6 +4,9 @@ from rest_framework.response import Response
 from rest_framework.filters import SearchFilter, OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q
+from django.shortcuts import get_object_or_404
+from django.http import Http404
+from decimal import Decimal
 from .models import Offer
 from .serializers import OfferSerializer, OfferCreateSerializer, OfferUpdateSerializer
 
@@ -177,3 +180,108 @@ class OfferViewSet(viewsets.ModelViewSet):
             'data': serializer.data,
             'count': queryset.count()
         }, status=status.HTTP_200_OK)
+    
+    @action(detail=False, methods=['get'], url_path='for-case/(?P<case_id>[^/.]+)')
+    def for_case(self, request, case_id=None):
+        """Get offers filtered by customer eligibility based on case_id"""
+        try:
+            from apps.renewals.models import RenewalCase
+            
+            # Get renewal case by case_number
+            try:
+                renewal_case = RenewalCase.objects.select_related(
+                    'customer', 
+                    'customer__financial_profile'
+                ).get(case_number=case_id)
+            except RenewalCase.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'message': f'Case with ID {case_id} not found',
+                    'data': None
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            customer = renewal_case.customer
+            
+            # Get customer financial profile
+            financial_profile = None
+            annual_income = None
+            try:
+                financial_profile = customer.financial_profile
+                if financial_profile and financial_profile.annual_income:
+                    annual_income = float(financial_profile.annual_income)
+            except Exception:
+                pass
+            
+            # Get customer assets
+            from apps.customer_assets.models import CustomerAssets
+            has_assets = CustomerAssets.objects.filter(
+                customer=customer,
+                is_deleted=False
+            ).exists()
+            
+            # Get all active offers
+            all_offers = Offer.objects.filter(is_active=True).order_by('display_order')
+            
+            # Filter offers based on eligibility
+            eligible_offers = []
+            
+            for offer in all_offers:
+                is_eligible = False
+                offer_title_lower = offer.title.lower()
+                offer_type = offer.offer_type
+                
+                # EMI Payment Plan - Everyone eligible
+                if offer_title_lower == 'emi payment plan':
+                    is_eligible = True
+                
+                # Quarterly Payment - Income > ₹5,00,000
+                elif offer_title_lower == 'quarterly payment':
+                    if annual_income and annual_income > 500000:
+                        is_eligible = True
+                
+                # Annual Payment - Income > ₹8,00,000
+                elif offer_title_lower == 'annual payment':
+                    if annual_income and annual_income > 800000:
+                        is_eligible = True
+                
+                # Premium Funding - Customer has assets (or existing loan if available)
+                elif offer_title_lower == 'premium funding':
+                    if has_assets:
+                        is_eligible = True
+                    # Note: If you have a loan field in financial_profile, add it here
+                    # elif financial_profile and financial_profile.has_existing_loan:
+                    #     is_eligible = True
+                
+                # Product and Bundle offers - Only show if customer has reasonable income
+                # Income threshold: ₹3,00,000 (assets alone are not enough)
+                elif offer_type in ['product', 'bundle']:
+                    if annual_income and annual_income > 300000:
+                        is_eligible = True
+                
+                # Discount and Special Offer - Only show if customer has reasonable income
+                # Income threshold: ₹3,00,000 (assets alone are not enough)
+                elif offer_type in ['discount', 'special_offer']:
+                    if annual_income and annual_income > 300000:
+                        is_eligible = True
+                
+                # For any other offer types, don't show by default (strict filtering)
+                # If you want to show other types, add specific conditions above
+                
+                if is_eligible:
+                    eligible_offers.append(offer)
+            
+            serializer = self.get_serializer(eligible_offers, many=True)
+            
+            return Response({
+                'success': True,
+                'message': f'Offers retrieved successfully for case {case_id}',
+                'data': serializer.data,
+                'count': len(eligible_offers)
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Error retrieving offers: {str(e)}',
+                'data': None
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

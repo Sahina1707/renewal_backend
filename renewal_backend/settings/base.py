@@ -68,7 +68,6 @@ LOCAL_APPS = [
     'apps.customer_payment_schedule',
     'apps.customer_communication_preferences',
     'apps.customers_files',
-    'apps.customers_documents',
     'apps.ai_insights',
     'apps.customer_insights',
     'apps.ai_policy_recommendations',

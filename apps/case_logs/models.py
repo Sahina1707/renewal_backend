@@ -30,7 +30,6 @@ class CaseLog(BaseModel):
         ('delivery', 'Delivery'),
     ]
     
-    # Core fields
     renewal_case = models.ForeignKey(
         RenewalCase, 
         on_delete=models.CASCADE, 
@@ -38,7 +37,6 @@ class CaseLog(BaseModel):
         help_text="Related renewal case"
     )
     
-    # Status tracking
     sub_status = models.CharField(
         max_length=50, 
         choices=SUB_STATUS_CHOICES,
@@ -51,7 +49,6 @@ class CaseLog(BaseModel):
         help_text="Current work step in the renewal process"
     )
     
-    # Follow-up and planning
     next_follow_up_date = models.DateTimeField(
         null=True, 
         blank=True,
@@ -63,7 +60,6 @@ class CaseLog(BaseModel):
         help_text="Description of the next planned action"
     )
     
-    # Comments and notes
     comment = models.TextField(
         blank=True,
         help_text="Additional comments or notes for this log entry"

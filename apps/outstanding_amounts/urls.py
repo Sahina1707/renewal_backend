@@ -12,23 +12,20 @@ from .views import (
 app_name = 'outstanding_amounts'
 
 urlpatterns = [
-    # Outstanding amounts summary
     path(
-        'cases/<str:case_id>/outstanding-amounts/summary/',
+        'cases/outstanding-amounts/summary/<str:case_id>/',
         get_outstanding_summary_api,
         name='get-outstanding-summary'
     ),
     
-    # Initiate payment for outstanding amounts
     path(
-        'cases/<str:case_id>/outstanding-amounts/pay/',
+        'cases/outstanding-amounts/pay/<str:case_id>/',
         initiate_payment_api,
         name='initiate-payment'
     ),
     
-    # Setup payment plan for outstanding amounts
     path(
-        'cases/<str:case_id>/outstanding-amounts/setup-payment-plan/',
+        'cases/outstanding-amounts/setup-payment-plan/<str:case_id>/',
         setup_payment_plan_api,
         name='setup-payment-plan'
     ),

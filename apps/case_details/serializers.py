@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from apps.customers.models import Customer
-from apps.customers_documents.models import CustomerDocument
-from apps.policies.models import Policy, PolicyType
+from apps.customers_files.models import CustomerFile
+from apps.policies.models import Policy, PolicyType, PolicyAgent
 from apps.customer_financial_profile.models import CustomerFinancialProfile
 from apps.channels.models import Channel
 from apps.policy_features.models import PolicyFeature
@@ -13,15 +13,24 @@ from apps.customer_communication_preferences.models import CustomerCommunication
 # OverView & Policy
 
 class CustomerDocumentSerializer(serializers.ModelSerializer):
+    customer_name = serializers.SerializerMethodField()
+    
     class Meta:
-        model = CustomerDocument
-        fields = '__all__'
+        model = CustomerFile
+        exclude = ['customer']
+    
+    def get_customer_name(self, obj):
+        """Get customer name instead of customer ID"""
+        if obj.customer:
+            name = f"{obj.customer.first_name} {obj.customer.last_name}".strip()
+            return name if name else obj.customer.customer_code
+        return None
 
 
 class CustomerFinancialProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomerFinancialProfile
-        fields = '__all__'
+        exclude = ['customer']
 
 
 class PolicyCoverageSerializer(serializers.ModelSerializer):
@@ -63,32 +72,62 @@ class PolicyTypeSerializer(serializers.ModelSerializer):
         fields = '__all__'
     
     def get_policy_features(self, obj):
-        """Get only active and non-deleted policy features for this policy type"""
+        """Get only mandatory active policy features for this specific policy"""
+        policy = self.context.get('policy', None)
+        
         features = PolicyFeature.objects.filter(
             policy_type=obj,
             is_active=True,
             is_deleted=False
-        ).order_by('display_order', 'feature_name')
+        )
+        
+      
+        if policy:
+            features = features.filter(is_mandatory=True)
+        
+        features = features.order_by('display_order', 'feature_name')
         return PolicyFeatureSerializer(features, many=True).data
 
 
 class ChannelSerializer(serializers.ModelSerializer):
+    channel_name = serializers.CharField(source='name', read_only=True)
+    channel_type = serializers.CharField(read_only=True)
+    manager_name = serializers.CharField(read_only=True)
+    
     class Meta:
         model = Channel
-        fields = '__all__'
+        fields = ['channel_name', 'channel_type', 'manager_name']
+
+
+class PolicyAgentSerializer(serializers.ModelSerializer):
+    """Serializer for PolicyAgent details"""
+    agent_code = serializers.CharField(read_only=True)
+    agent_name = serializers.CharField(read_only=True)
+    contact_number = serializers.CharField(read_only=True)
+    email = serializers.EmailField(read_only=True)
+    
+    class Meta:
+        model = PolicyAgent
+        fields = ['id', 'agent_code', 'agent_name', 'contact_number', 'email']
 
 
 class PolicySerializer(serializers.ModelSerializer):
-    policy_type = PolicyTypeSerializer(read_only=True)
+    policy_type = serializers.SerializerMethodField()
     exclusions = PolicyExclusionSerializer(many=True, read_only=True)
+    agent_details = PolicyAgentSerializer(source='agent', read_only=True)
 
     class Meta:
         model = Policy
-        fields = '__all__'
+        exclude = ['customer', 'agent']
+    
+    def get_policy_type(self, obj):
+        """Get policy type with policy context for filtering features"""
+        serializer = PolicyTypeSerializer(obj.policy_type, context={'policy': obj})
+        return serializer.data
 
 
 class CustomerSerializer(serializers.ModelSerializer):
-    documents = CustomerDocumentSerializer(many=True, read_only=True, source='documents_new')
+    documents = CustomerDocumentSerializer(many=True, read_only=True, source='customer_files')
     financial_profile = CustomerFinancialProfileSerializer(read_only=True)
     channel = ChannelSerializer(read_only=True, source='channel_id')
     policies = PolicySerializer(many=True, read_only=True)
@@ -98,7 +137,6 @@ class CustomerSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-# Preferences
 
 class CustomerCommunicationPreferenceSerializer(serializers.ModelSerializer):
     class Meta:

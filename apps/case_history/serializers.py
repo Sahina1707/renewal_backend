@@ -415,3 +415,108 @@ class CaseAssignmentSerializer(serializers.ModelSerializer):
         
         return instance
 
+
+class CaseTimelineSummarySerializer(serializers.ModelSerializer):
+    """Simplified serializer for timeline view - Journey Summary section"""
+    
+    case_started = serializers.SerializerMethodField()
+    current_status = serializers.SerializerMethodField()
+    handling_agent = serializers.SerializerMethodField()
+    processing_time = serializers.SerializerMethodField()
+    journey_progress = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = RenewalCase
+        fields = [
+            'case_started',
+            'current_status',
+            'handling_agent',
+            'processing_time',
+            'journey_progress',
+        ]
+    
+    def get_case_started(self, obj):
+        """Format case started date as DD/MM/YYYY"""
+        if obj.created_at:
+            return obj.created_at.strftime('%d/%m/%Y')
+        return None
+    
+    def get_current_status(self, obj):
+        """Get current status display"""
+        return obj.get_status_display() if obj.status else None
+    
+    def get_handling_agent(self, obj):
+        """Get handling agent name"""
+        if obj.assigned_to:
+            return obj.assigned_to.get_full_name() or obj.assigned_to.username
+        return None
+    
+    def get_processing_time(self, obj):
+        """Calculate processing time in days"""
+        if obj.created_at:
+            from django.utils import timezone
+            now = timezone.now()
+            if obj.created_at.tzinfo is None:
+                case_created = timezone.make_aware(obj.created_at)
+            else:
+                case_created = obj.created_at
+            delta = now - case_created
+            return delta.days
+        return None
+    
+    def get_journey_progress(self, obj):
+        """Get journey progress steps based on status"""
+        # Define status progression
+        status_order = ['uploaded', 'assigned', 'in_progress', 'pending', 'renewed', 'completed']
+        current_index = status_order.index(obj.status) if obj.status in status_order else -1
+        
+        progress = []
+        for i, status_val in enumerate(status_order):
+            if i <= current_index:
+                progress.append({
+                    'step': i + 1,
+                    'status': status_val,
+                    'status_display': obj.get_status_display() if obj.status == status_val else dict(RenewalCase.STATUS_CHOICES).get(status_val, status_val.title()),
+                    'is_completed': i < current_index,
+                    'is_current': i == current_index
+                })
+        
+        return progress
+
+
+class CaseTimelineHistorySerializer(serializers.ModelSerializer):
+    """Simplified serializer for timeline history events"""
+    
+    event_type = serializers.CharField(source='get_action_display', read_only=True)
+    event_description = serializers.CharField(source='description', read_only=True)
+    event_date = serializers.SerializerMethodField()
+    event_time = serializers.SerializerMethodField()
+    performed_by = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = CaseHistory
+        fields = [
+            'event_type',
+            'event_description',
+            'event_date',
+            'event_time',
+            'performed_by',
+        ]
+    
+    def get_event_date(self, obj):
+        """Format date as DD/MM/YYYY"""
+        if obj.created_at:
+            return obj.created_at.strftime('%d/%m/%Y')
+        return None
+    
+    def get_event_time(self, obj):
+        """Format time as HH:MM:SS"""
+        if obj.created_at:
+            return obj.created_at.strftime('%H:%M:%S')
+        return None
+    
+    def get_performed_by(self, obj):
+        """Get user who performed the action"""
+        if obj.created_by:
+            return obj.created_by.get_full_name() or obj.created_by.username
+        return "System"

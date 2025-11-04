@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from apps.customers.models import Customer
 
 User = get_user_model()
@@ -7,6 +8,31 @@ User = get_user_model()
 
 class CustomerFile(models.Model):
     """Model to store customer file information based on the schema provided"""
+
+    DOCUMENT_TYPE_CHOICES = [
+        ('id_proof', 'ID Proof'),
+        ('address_proof', 'Address Proof'),
+        ('income_proof', 'Income Proof'),
+        ('business_registration', 'Business Registration'),
+        ('tax_document', 'Tax Document'),
+        ('bank_statement', 'Bank Statement'),
+        ('medical_report', 'Medical Report'),
+        ('photo', 'Photograph'),
+        ('signature', 'Signature'),
+        ('authorization', 'Authorization Letter'),
+        ('passport', 'Passport'),
+        ('driving_license', 'Driving License'),
+        ('voter_id', 'Voter ID'),
+        ('pan_card', 'PAN Card'),
+        ('aadhar_card', 'Aadhar Card'),
+        ('utility_bill', 'Utility Bill'),
+        ('rental_agreement', 'Rental Agreement'),
+        ('property_document', 'Property Document'),
+        ('salary_slip', 'Salary Slip'),
+        ('form_16', 'Form 16'),
+        ('itr', 'Income Tax Return'),
+        ('other', 'Other'),
+    ]
 
     customer = models.ForeignKey(
         Customer,
@@ -37,6 +63,36 @@ class CustomerFile(models.Model):
     
     file_size = models.BigIntegerField(
         help_text="Size of the file in bytes"
+    )
+    
+    document_type = models.CharField(
+        max_length=30,
+        choices=DOCUMENT_TYPE_CHOICES,
+        blank=True,
+        null=True,
+        db_index=True,
+        help_text="Type of document"
+    )
+    
+    is_verified = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Whether the document has been verified"
+    )
+    
+    verified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp when document was verified"
+    )
+    
+    verified_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='verified_customer_files',
+        help_text="User who verified this document"
     )
     
     uploaded_by = models.ForeignKey(
@@ -86,6 +142,9 @@ class CustomerFile(models.Model):
             models.Index(fields=['customer', 'is_active']),
             models.Index(fields=['uploaded_by', 'uploaded_at']),
             models.Index(fields=['file_type', 'is_active']),
+            models.Index(fields=['document_type', 'is_verified']),
+            models.Index(fields=['is_verified']),
+            models.Index(fields=['customer', 'is_verified']),
         ]
     
     def __str__(self):
@@ -97,12 +156,14 @@ class CustomerFile(models.Model):
         if self.customer:
             return f"{self.customer.first_name} {self.customer.last_name}".strip()
         return None
-
-    @property
-    def document_type(self):
-        """Return the document type for easy access"""
-        # This would need to be implemented with a database query if needed
-        return None
+    
+    def verify(self, user=None):
+        """Mark the document as verified"""
+        self.is_verified = True
+        self.verified_at = timezone.now()
+        if user:
+            self.verified_by = user
+        self.save()
     
     def get_file_size_display(self):
         """Return human readable file size"""

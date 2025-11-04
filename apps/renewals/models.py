@@ -11,18 +11,20 @@ class RenewalCase(BaseModel):
     """Model for tracking policy renewal cases"""
 
     STATUS_CHOICES = [
-        ('pending', 'Pending'),
-        ('in_progress', 'In Progress'),
-        ('completed', 'Completed'),
-        ('renewed', 'Renewed'),
-        ('cancelled', 'Cancelled'),
-        ('expired', 'Expired'),
-        ('due', 'Due'),
-        ('overdue', 'Overdue'),
-        ('not_required', 'Not Required'),
-        ('assigned', 'Assigned'),
-        ('failed', 'Failed'),
         ('uploaded', 'Uploaded'),
+        ('assigned', 'Assigned'),
+        ('in_progress', 'In Progress'),
+        ('pending', 'Pending'),
+        ('failed', 'Failed'),
+        ('renewed', 'Renewed'),
+        ('not_interested', 'Not Interested'),
+        ('dnc_email', 'DNC email'),
+        ('dnc_whatsapp', 'DNC WhatsApp'),
+        ('dnc_sms', 'DNC SMS'),
+        ('dnc_call', 'DNC Call'),
+        ('dnc_bot_calling', 'DNC Bot Calling'),
+        ('payment_failed', 'Payment Failed'),
+        ('customer_postponed', 'Customer Postponed'),
     ]
 
     PRIORITY_CHOICES = [
@@ -37,7 +39,7 @@ class RenewalCase(BaseModel):
     policy = models.ForeignKey(Policy, on_delete=models.CASCADE, related_name='renewal_cases')
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='renewal_cases')
     
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='pending')
     assigned_to = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_renewal_cases', db_column='assigned_to')
     
     renewal_amount = models.DecimalField(max_digits=12, decimal_places=2)

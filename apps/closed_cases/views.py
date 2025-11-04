@@ -23,9 +23,9 @@ class ClosedCasesViewSet(viewsets.ReadOnlyModelViewSet):
             policy__status='active'              
         ).select_related(
             'customer',                  
+            'customer__channel_id',      
             'policy',                     
             'policy__policy_type',        
-            'channel_id',                 
             'assigned_to',                
         ).prefetch_related(
             'customer__policies',         
@@ -53,7 +53,7 @@ class ClosedCasesViewSet(viewsets.ReadOnlyModelViewSet):
         
         channel = request.query_params.get('channel', None)
         if channel:
-            queryset = queryset.filter(channel_id__channel_name__icontains=channel)
+            queryset = queryset.filter(customer__channel_id__name__icontains=channel)
         
         # Agent filter
         agent = request.query_params.get('agent', None)
@@ -148,7 +148,7 @@ class ClosedCasesViewSet(viewsets.ReadOnlyModelViewSet):
         }
         
         channel_stats = queryset.values(
-            'channel_id__name'
+            'customer__channel_id__name'
         ).annotate(
             count=Count('id')
         ).order_by('-count')[:10] 

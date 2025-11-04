@@ -5,7 +5,6 @@ from .models import CaseLog
 
 User = get_user_model()
 
-# Search-specific serializers for case_logs module
 class CaseLogSerializer(serializers.ModelSerializer):
     """Serializer for case logs - used in search functionality"""
 
