@@ -19,6 +19,8 @@ from .serializers import (
     CaseCommentCreateSerializer,
     CaseStatusUpdateSerializer,
     CaseAssignmentSerializer,
+    CaseTimelineSummarySerializer,
+    CaseTimelineHistorySerializer,
 )
 from apps.case_logs.serializers import CaseLogSerializer
 
@@ -231,29 +233,24 @@ def case_timeline_view(request, case_number):
     )
     
     if not (request.user.is_staff or 
-            case.handling_agent == request.user or 
+            case.assigned_to == request.user or 
             case.created_by == request.user):
         raise PermissionDenied("You don't have permission to view this case.")
     
-    # Get history entries
-    history = CaseHistory.objects.filter(case=case, is_deleted=False).select_related('created_by').order_by('-created_at')
-    history_serializer = CaseHistorySerializer(history, many=True, context={'request': request})
+    # Get history entries for timeline
+    history = CaseHistory.objects.filter(case=case, is_deleted=False).select_related('created_by').order_by('created_at')
+    history_serializer = CaseTimelineHistorySerializer(history, many=True, context={'request': request})
     
-    # Get comments
-    comments = CaseComment.objects.filter(case=case, is_deleted=False).select_related('created_by').order_by('-created_at')
-    comments_serializer = CaseCommentSerializer(comments, many=True, context={'request': request})
+    # Get simplified journey summary
+    summary_serializer = CaseTimelineSummarySerializer(case, context={'request': request})
     
-    # Get case logs
+    # Get case logs for timeline
     case_logs = CaseLog.objects.filter(renewal_case=case, is_deleted=False).select_related('created_by', 'updated_by').order_by('-created_at')
     case_logs_serializer = CaseLogSerializer(case_logs, many=True, context={'request': request})
     
-    # Get case details
-    case_serializer = CaseSerializer(case, context={'request': request})
-    
     return Response({
-        'case': case_serializer.data,
-        'history': history_serializer.data,
-        'comments': comments_serializer.data,
+        'journey_summary': summary_serializer.data,
+        'case_history': history_serializer.data,
         'case_logs': case_logs_serializer.data,
     })
 

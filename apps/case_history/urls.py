@@ -15,10 +15,10 @@ urlpatterns = [
     
     path('<str:case_number>/history/', views.CaseHistoryListView.as_view(), name='case-history-list'),
     
-    path('<str:case_number>/comments/', views.CaseCommentListView.as_view(), name='case-comment-list'),
-    path('<str:case_number>/comments/<int:pk>/', views.CaseCommentDetailView.as_view(), name='case-comment-detail'),
+    path('comments/<str:case_number>/', views.CaseCommentListView.as_view(), name='case-comment-list'),
+    path('comments/<str:case_number>/<int:pk>/', views.CaseCommentDetailView.as_view(), name='case-comment-detail'),
     
-    path('<str:case_number>/timeline/', views.case_timeline_view, name='case-timeline'),
+    path('timeline/<str:case_number>/', views.case_timeline_view, name='case-timeline'),
     path('<str:case_number>/stats/', views.case_stats_view, name='case-stats'),
     
     path('', include(router.urls)),

@@ -7,15 +7,14 @@ from .models import CaseLog
 from .serializers import CaseLogSerializer
 
 
-# Search APIs for case_logs module
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def search_case_logs_by_case_number_api(request: HttpRequest) -> Response:
     try:
         if hasattr(request, 'query_params'):
-            case_number = request.query_params.get('case_number', '').strip()  # type: ignore
+            case_number = request.query_params.get('case_number', '').strip()  
         else:
-            case_number = request.GET.get('case_number', '').strip()  # type: ignore
+            case_number = request.GET.get('case_number', '').strip()  
 
         if not case_number:
             return Response({
@@ -23,7 +22,6 @@ def search_case_logs_by_case_number_api(request: HttpRequest) -> Response:
                 'message': 'Please provide a case_number parameter'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Search for renewal case by case number (case-insensitive)
         try:
             renewal_case = RenewalCase.objects.select_related(
                 'customer',
@@ -37,7 +35,6 @@ def search_case_logs_by_case_number_api(request: HttpRequest) -> Response:
                 'message': f'No case found with case number: {case_number}'
             }, status=status.HTTP_404_NOT_FOUND)
 
-        # Get all case logs for this renewal case
         case_logs = CaseLog.objects.filter(
             renewal_case=renewal_case
         ).select_related(
@@ -49,10 +46,8 @@ def search_case_logs_by_case_number_api(request: HttpRequest) -> Response:
             'updated_by'
         ).order_by('-created_at')
 
-        # Check if any logs found
         logs_count = case_logs.count()
 
-        # If no logs found, return simple message
         if logs_count == 0:
             response_data = {
                 'success': True,
@@ -60,10 +55,8 @@ def search_case_logs_by_case_number_api(request: HttpRequest) -> Response:
             }
             return Response(response_data, status=status.HTTP_200_OK)
 
-        # Serialize the case logs
         serializer = CaseLogSerializer(case_logs, many=True)
 
-        # Prepare response data with case details when logs are found
         response_data = {
             'success': True,
             'search_criteria': {
@@ -72,7 +65,7 @@ def search_case_logs_by_case_number_api(request: HttpRequest) -> Response:
                 'case_found': True
             },
             'case_info': {
-                'case_id': renewal_case.id,  # type: ignore
+                'case_id': renewal_case.id,  
                 'case_number': renewal_case.case_number,
                 'customer_name': renewal_case.customer.full_name,
                 'customer_email': renewal_case.customer.email,
@@ -80,7 +73,7 @@ def search_case_logs_by_case_number_api(request: HttpRequest) -> Response:
                 'policy_number': renewal_case.policy.policy_number,
                 'policy_type': renewal_case.policy.policy_type.name,
                 'status': renewal_case.status,
-                'status_display': renewal_case.get_status_display(),  # type: ignore
+                'status_display': renewal_case.get_status_display(),  
                 'assigned_to': renewal_case.assigned_to.get_full_name() if renewal_case.assigned_to else None,
                 'created_at': renewal_case.created_at.strftime('%m/%d/%Y, %I:%M:%S %p'),
                 'updated_at': renewal_case.updated_at.strftime('%m/%d/%Y, %I:%M:%S %p') if renewal_case.updated_at else None
@@ -107,11 +100,10 @@ def search_case_logs_by_policy_number_api(request: HttpRequest) -> Response:
     Accepts both POL-12345 and pol-12345 formats
     """
     try:
-        # Handle both Request and HttpRequest types
         if hasattr(request, 'query_params'):
-            policy_number = request.query_params.get('policy_number', '').strip()  # type: ignore
+            policy_number = request.query_params.get('policy_number', '').strip() 
         else:
-            policy_number = request.GET.get('policy_number', '').strip()  # type: ignore
+            policy_number = request.GET.get('policy_number', '').strip()  
 
         if not policy_number:
             return Response({
@@ -119,7 +111,6 @@ def search_case_logs_by_policy_number_api(request: HttpRequest) -> Response:
                 'message': 'Please provide a policy_number parameter'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Search for renewal cases by policy number (case-insensitive)
         renewal_cases = RenewalCase.objects.select_related(
             'customer',
             'policy',
@@ -133,7 +124,6 @@ def search_case_logs_by_policy_number_api(request: HttpRequest) -> Response:
                 'message': f'No renewal case found for policy number: {policy_number}'
             }, status=status.HTTP_404_NOT_FOUND)
 
-        # Get all case logs for all renewal cases with this policy number
         case_logs = CaseLog.objects.filter(
             renewal_case__in=renewal_cases
         ).select_related(
@@ -145,10 +135,8 @@ def search_case_logs_by_policy_number_api(request: HttpRequest) -> Response:
             'updated_by'
         ).order_by('-created_at')
 
-        # Check if any logs found
         logs_count = case_logs.count()
 
-        # If no logs found, return simple message
         if logs_count == 0:
             response_data = {
                 'success': True,
@@ -156,12 +144,10 @@ def search_case_logs_by_policy_number_api(request: HttpRequest) -> Response:
             }
             return Response(response_data, status=status.HTTP_200_OK)
 
-        # Serialize the case logs
         serializer = CaseLogSerializer(case_logs, many=True)
 
         first_case = renewal_cases.first()
 
-        # Prepare response data with case details when logs are found
         response_data = {
             'success': True,
             'search_criteria': {

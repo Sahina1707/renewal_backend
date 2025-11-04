@@ -9,11 +9,9 @@ from .serializers import CustomerSerializer
 from apps.customers.models import Customer
 from apps.customer_communication_preferences.models import CustomerCommunicationPreference
 from .serializers import CustomerCommunicationPreferenceSerializer
-# RenewalTimeline import removed - using CommonRenewalTimelineSettings instead
 from apps.renewal_timeline.models import CommonRenewalTimelineSettings
 from apps.customer_payments.models import CustomerPayment
 
-# OverView & Policy
 
 class CombinedPolicyDataAPIView(APIView):
     """
@@ -51,11 +49,12 @@ class CombinedPolicyDataAPIView(APIView):
                 raise ValueError("Customer not found for this renewal case")
 
             customer = get_object_or_404(
-                Customer.objects.select_related(  # type: ignore[attr-defined]
+                Customer.objects.select_related(  
                     'financial_profile',
                     'channel_id'
                 ).prefetch_related(
-                    'documents_new',
+                    'customer_files',
+                    'policies__agent',
                     'policies__policy_type',
                     'policies__policy_type__policy_features',
                     'policies__policy_type__policy_coverages',

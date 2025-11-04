@@ -14,7 +14,6 @@ app_name = 'case_tracking'
 urlpatterns = [
     path('', include(router.urls)),
 
-    # Case Management APIs (moved from case_logs)
     path('update-case-log/<int:case_id>/', update_case_log_api, name='update-case-log'),
     path('comment-history/<int:case_id>/', comment_history_api, name='comment-history-api'),
 
@@ -25,7 +24,6 @@ urlpatterns = [
     path('case-details/policy-types/', get_policy_types_dropdown_api, name='get-policy-types-dropdown'),
     path('case-details/agents/', get_agents_dropdown_api, name='get-agents-dropdown'),
 
-    # Outstanding Amounts APIs
     path('', include('apps.outstanding_amounts.urls')),
 
 ]
