@@ -361,6 +361,12 @@ class CommunicationLog(BaseModel):
         help_text="User who initiated this communication"
     )
     
+    # Duration
+    duration_in_minutes = models.IntegerField(
+        null=True, 
+        blank=True, 
+        help_text="Duration of the call/interaction in minutes"
+    )
     class Meta:
         db_table = 'communication_logs'
         ordering = ['-communication_date']

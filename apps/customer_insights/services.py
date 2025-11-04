@@ -10,15 +10,37 @@ from decimal import Decimal
 from collections import defaultdict, Counter
 from typing import Dict, List, Any, Optional
 import json
+from django.utils.timesince import timesince
+from django.contrib.auth import get_user_model
 
 from apps.customers.models import Customer
 from apps.customer_payments.models import CustomerPayment
 from apps.customer_payment_schedule.models import PaymentSchedule
 from apps.customer_communication_preferences.models import CommunicationLog
-from apps.policies.models import Policy
+from apps.policies.models import Policy, PolicyClaim
 from apps.renewals.models import RenewalCase
 from apps.case_logs.models import CaseLog
 from .models import CustomerInsight
+
+# --- IMPORT THE NEW TIMELINE MODEL ---
+# This assumes it's in apps.policies.models
+try:
+    from apps.policies.models import ClaimTimelineEvent
+except ImportError:
+    print("WARNING: ClaimTimelineEvent model not found. Claims timeline will be empty.")
+    ClaimTimelineEvent = None
+
+
+User = get_user_model()
+
+
+# New Global Constants/Definitions
+COMMUNICATION_TOPICS = {
+    'policy_inquiries': ['policy inquiry', 'coverage question', 'policy details'],
+    'billing_questions': ['billing', 'payment error', 'premium calculation'],
+    'complaints': ['complaint', 'delay', 'service issue'],
+    'coverage_updates': ['coverage update', 'change of address', 'nominee update'],
+}
 
 
 class CustomerInsightsService:
@@ -39,6 +61,7 @@ class CustomerInsightsService:
         else:
             return obj
     
+
     def get_customer_insights(self, customer_id: int, force_recalculate: bool = False) -> Dict[str, Any]:
         """Get comprehensive customer insights with caching"""
         try:
@@ -68,7 +91,8 @@ class CustomerInsightsService:
             insight_record.claims_insights = insights_data['claims_insights']
             insight_record.profile_insights = insights_data['profile_insights']
             insight_record.is_cached = True
-            insight_record.cache_expires_at = timezone.now() + timedelta(hours=24)  # Cache for 24 hours
+            insight_record.cache_expires_at = timezone.now() + timedelta(hours=24)
+            insight_record.calculated_at = timezone.now() # Update calculated_at when recalculating
             insight_record.save()
         else:
             # Use cached data
@@ -103,10 +127,13 @@ class CustomerInsightsService:
     
     def _get_customer_basic_info(self, customer: Customer) -> Dict[str, Any]:
         """Get basic customer information"""
+        # Manually combine first/last name
+        full_name = f"{customer.first_name} {customer.last_name}".strip()
+
         return {
             "id": customer.id,
             "customer_code": customer.customer_code,
-            "full_name": customer.full_name,
+            "full_name": full_name,
             "email": customer.email,
             "phone": customer.phone,
             "status": customer.status,
@@ -195,7 +222,9 @@ class CustomerInsightsService:
         timing_diffs = []
         for payment in payments:
             if payment.payment_date and hasattr(payment, 'due_date') and payment.due_date:
-                diff = (payment.due_date - payment.payment_date.date()).days
+                # Ensure we're comparing dates, not datetimes
+                payment_date_only = payment.payment_date.date()
+                diff = (payment.due_date - payment_date_only).days
                 timing_diffs.append(diff)
         
         if timing_diffs:
@@ -286,12 +315,26 @@ class CustomerInsightsService:
         # Escalation count
         escalations = communications.filter(outcome='escalated').count()
         
+        # Detailed Communication Breakdown by Topic
+        topic_breakdown = defaultdict(int)
+        for comm in communications:
+            content = comm.message_content.lower()
+            found = False
+            for topic, keywords in COMMUNICATION_TOPICS.items():
+                if any(keyword in content for keyword in keywords):
+                    topic_breakdown[topic] += 1
+                    found = True
+                    break
+            if not found:
+                 topic_breakdown['other'] += 1
+
         insights = {
             "total_communications": total_communications,
             "avg_response_time": round(response_time, 1),
             "satisfaction_rating": round(satisfaction, 1),
             "last_contact_date": last_contact.isoformat() if last_contact else None,
             "channel_breakdown": channel_breakdown,
+            "topic_breakdown": dict(topic_breakdown),
             "preferred_channel": preferred_channel,
             "communication_frequency": frequency,
             "response_rate": round(response_rate, 1),
@@ -308,6 +351,7 @@ class CustomerInsightsService:
             "satisfaction_rating": 0.0,
             "last_contact_date": None,
             "channel_breakdown": {},
+            "topic_breakdown": {},
             "preferred_channel": "Unknown",
             "communication_frequency": "Unknown",
             "response_rate": 0.0,
@@ -324,8 +368,6 @@ class CustomerInsightsService:
     
     def _calculate_avg_response_time(self, communications) -> float:
         """Calculate average response time in hours"""
-        # This is a simplified calculation
-        # In a real system, you'd track actual response times
         successful_comms = communications.filter(outcome__in=['successful', 'replied'])
         if successful_comms.exists():
             # Mock calculation - assume 2.1 hours average
@@ -347,7 +389,6 @@ class CustomerInsightsService:
     
     def calculate_claims_insights(self, customer: Customer) -> Dict[str, Any]:
         """Calculate real claims insights from PolicyClaim data"""
-        from apps.policies.models import PolicyClaim
         
         claims = PolicyClaim.objects.filter(policy__customer=customer)
         
@@ -358,7 +399,7 @@ class CustomerInsightsService:
         total_claims = claims.count()
         approved_claims = claims.filter(status='approved')
         rejected_claims = claims.filter(status='rejected')
-        pending_claims = claims.filter(status='submitted')
+        pending_claims = claims.filter(status__in=['submitted', 'pending'])
         
         total_claimed_amount = sum(claim.claim_amount for claim in claims)
         approved_amount = sum(claim.approved_amount for claim in approved_claims)
@@ -404,6 +445,17 @@ class CustomerInsightsService:
             claim_frequency = "Medium"
         else:
             claim_frequency = "Low"
+
+        # Summary Breakdown for Claims (Amount/Year)
+        summary_claims_breakdown = []
+        # Get top 2 approved claims by amount for the summary view
+        top_claims = approved_claims.order_by('-approved_amount')[:2]
+        for claim in top_claims:
+            summary_claims_breakdown.append({
+                "type": claim.claim_type,
+                "year": claim.incident_date.year,
+                "amount": float(claim.approved_amount)
+            })
         
         return {
             "total_claims": total_claims,
@@ -412,6 +464,7 @@ class CustomerInsightsService:
             "approval_rate": round(approval_rate, 1),
             "claims_by_type": claims_by_type,
             "claims_by_status": claims_by_status,
+            "claims_summary_breakdown": summary_claims_breakdown,
             "last_claim_date": claims.first().incident_date.isoformat() if claims.exists() else None,
             "avg_processing_time": round(avg_processing_time, 1),
             "claim_frequency": claim_frequency,
@@ -460,10 +513,11 @@ class CustomerInsightsService:
         # Policy portfolio breakdown
         portfolio = {}
         for policy in policies:
-            policy_type = policy.policy_type.name if policy.policy_type else 'Unknown'
-            if policy_type not in portfolio:
-                portfolio[policy_type] = 0
-            portfolio[policy_type] += 1
+            # Check if policy_type exists before accessing .name
+            policy_type_name = policy.policy_type.name if policy.policy_type else 'Unknown'
+            if policy_type_name not in portfolio:
+                portfolio[policy_type_name] = 0
+            portfolio[policy_type_name] += 1
         
         # Risk score calculation (simplified)
         risk_score = self._calculate_risk_score(customer, policies)
@@ -593,72 +647,132 @@ class CustomerInsightsService:
         communications = CommunicationLog.objects.filter(
             customer=customer,
             is_deleted=False
-        ).order_by('-communication_date')
+        ).select_related('created_by').order_by('-communication_date')
         
-        # Group by channel
         channel_data = defaultdict(list)
+        comm_list = []
+        
+        # Manually combine first and last name
+        customer_name = f"{customer.first_name} {customer.last_name}".strip()
+        customer_contact = customer.phone or customer.email
+        
         for comm in communications:
-            channel_data[comm.channel].append({
+            agent_name = "System"
+            if comm.created_by:
+                try:
+                    # Manually combine first and last name for agent
+                    name = f"{comm.created_by.first_name} {comm.created_by.last_name}".strip()
+                    if name:
+                        agent_name = name
+                    else:
+                        agent_name = comm.created_by.email
+                except AttributeError:
+                    agent_name = "System User"
+            
+            resolved = comm.outcome in ['successful', 'replied', 'resolved']
+            summary = (comm.message_content[:75] + '...') if len(comm.message_content) > 75 else comm.message_content
+            
+            # Use getattr for safety, default to None
+            duration = getattr(comm, 'duration_in_minutes', None)
+
+            comm_data = {
                 "id": comm.id,
                 "date": comm.communication_date.isoformat() if comm.communication_date else None,
+                "channel": comm.channel,
                 "outcome": comm.outcome,
-                "message_content": comm.message_content[:100] + "..." if len(comm.message_content) > 100 else comm.message_content,
+                "message_content": comm.message_content,
                 "response_received": comm.response_received,
-            })
+                "attachment_count": getattr(comm, 'attachment_count', 0), 
+                "agent_name": agent_name, 
+                "timeline_event": f"{comm.channel.capitalize()} - {comm.outcome.capitalize()}",
+                
+                # FIELDS YOU REQUESTED 
+                "contact_name": customer_name,
+                "contact_details": customer_contact,
+                "communication_summary": summary,
+                "inbound": True,  
+                "resolved": resolved,
+                "priority": "Medium",
+                "time": comm.communication_date.strftime('%I:%M %p') if comm.communication_date else None,
+                "agent": agent_name,
+                "duration": duration
+            }
+            channel_data[comm.channel].append(comm_data)
+            comm_list.append(comm_data)
         
         return {
             "total_communications": communications.count(),
+            "all_communications": comm_list,
             "by_channel": dict(channel_data),
-            "recent_communications": [
-                {
-                    "id": comm.id,
-                    "date": comm.communication_date.isoformat() if comm.communication_date else None,
-                    "channel": comm.channel,
-                    "outcome": comm.outcome,
-                    "message_content": comm.message_content[:100] + "..." if len(comm.message_content) > 100 else comm.message_content,
-                }
-                for comm in communications[:10]
-            ]
         }
     
     def get_claims_history(self, customer: Customer) -> Dict[str, Any]:
-        """Get detailed claims history"""
-        # Mock implementation - would need actual claims model
-        mock_claims = [
-            {
-                "id": 1,
-                "title": "Vehicle Collision Damage",
-                "type": "vehicle",
-                "status": "approved",
-                "claim_amount": 45000.0,
-                "approved_amount": 42000.0,
-                "incident_date": self.today - timedelta(days=30),
-                "claim_number": "CLM-2024-001234",
-                "adjuster": "Priya Sharma",
-                "rejection_reason": "Betterment charges not covered",
-            },
-            {
-                "id": 2,
-                "title": "Plumbing Leak Water Damage",
-                "type": "home",
-                "status": "approved",
-                "claim_amount": 35000.0,
-                "approved_amount": 32000.0,
-                "incident_date": self.today - timedelta(days=90),
-                "claim_number": "CLM-2023-009876",
-                "adjuster": "Amit Singh",
-                "rejection_reason": "Preventive maintenance not done",
-            }
-        ]
+        """Get detailed claims history (Dynamic implementation)"""
+        
+        # Use prefetch_related for the new timeline_events 
+        claims = PolicyClaim.objects.filter(
+            policy__customer=customer
+        ).select_related(
+            'assigned_to' 
+        ).prefetch_related(
+            'timeline_events' 
+        ).order_by('-incident_date')
+        
+        claims_data = []
+        for claim in claims:
+            
+            adjuster_name = "Not Assigned" 
+            try:
+                if claim.assigned_to:
+                    user = claim.assigned_to 
+                    # Manually combine first and last name for adjuster
+                    name = f"{user.first_name} {user.last_name}".strip()
+                    if name:
+                        adjuster_name = name
+                    else:
+                        adjuster_name = user.email
+            except Exception:
+                pass 
+
+            # Build the REAL timeline_events list )
+            timeline_events = []
+            if ClaimTimelineEvent:
+                timeline_events = [
+                    {
+                        "date": event.event_date.isoformat(), 
+                        "event": event.event_name, 
+                        "status": event.status
+                    } 
+                    for event in claim.timeline_events.all() 
+                ]
+            
+
+            claims_data.append({
+                "id": claim.id,
+                "title": claim.claim_type,
+                "type": claim.claim_type,
+                "status": claim.status,
+                "claim_amount": float(claim.claim_amount),
+                "approved_amount": float(claim.approved_amount),
+                "incident_date": claim.incident_date.isoformat() if claim.incident_date else None,
+                "claim_number": claim.claim_number,
+                "adjuster": adjuster_name, 
+                "rejection_reason": claim.rejection_reason,
+                "timeline_events": timeline_events, 
+                "document_attachments": getattr(claim, 'document_count', 0),
+                "priority": "Medium" # MOCKED
+            })
+        
+        summary = {
+            "total_claims": claims.count(),
+            "approved_claims": claims.filter(status='approved').count(),
+            "rejected_claims": claims.filter(status='rejected').count(),
+            "pending_claims": claims.filter(status__in=['submitted', 'pending']).count(),
+        }
         
         return {
-            "claims": mock_claims,
-            "summary": {
-                "total_claims": len(mock_claims),
-                "approved_claims": len([c for c in mock_claims if c["status"] == "approved"]),
-                "rejected_claims": len([c for c in mock_claims if c["status"] == "rejected"]),
-                "pending_claims": len([c for c in mock_claims if c["status"] == "pending"]),
-            }
+            "claims": claims_data,
+            "summary": summary
         }
     
     def _get_empty_claims_insights(self) -> Dict[str, Any]:
@@ -674,6 +788,7 @@ class CustomerInsightsService:
                 "rejected": 0,
                 "pending": 0
             },
+            "claims_summary_breakdown": [],
             "last_claim_date": None,
             "avg_processing_time": 0,
             "claim_frequency": "None",
