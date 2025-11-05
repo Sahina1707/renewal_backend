@@ -39,7 +39,16 @@ class HierarchyManagementViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            return Response(
+                {
+                    'success': False,
+                    'message': 'Validation failed',
+                    'errors': serializer.errors
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         self.perform_create(serializer)
         headers = self.get_success_headers(serializer.data)
 
@@ -130,15 +139,31 @@ class HierarchyManagementViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def choices(self, request):
+        # Get actual parent units from database
+        parent_units_list = []
+        
+        # Add "None (Root Level)" option
+        parent_units_list.append({
+            'value': 'none',
+            'display': 'None (Root Level)'
+        })
+        
+        # Get all active hierarchy units as potential parent units
+        available_parents = self.get_queryset().filter(status='active').order_by('unit_type', 'unit_name')
+        for unit in available_parents:
+            # Create a slug-like value from unit_name to match the model's choice format
+            parent_value = unit.unit_name.lower().replace(' ', '_').replace('-', '_')
+            parent_units_list.append({
+                'value': parent_value,
+                'display': f"{unit.unit_name} ({unit.get_unit_type_display()})"
+            })
+        
         choices_data = {
             'unit_types': [
                 {'value': choice[0], 'display': choice[1]}
                 for choice in HierarchyManagement.UNIT_TYPE_CHOICES
             ],
-            'parent_units': [
-                {'value': choice[0], 'display': choice[1]}
-                for choice in HierarchyManagement.PARENT_UNIT_CHOICES
-            ],
+            'parent_units': parent_units_list,
             'statuses': [
                 {'value': choice[0], 'display': choice[1]}
                 for choice in HierarchyManagement.STATUS_CHOICES

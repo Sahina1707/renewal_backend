@@ -17,6 +17,7 @@ class HierarchyManagement(BaseModel):
     UNIT_TYPE_CHOICES = [
         ('department', 'Department'),
         ('region', 'Region'),
+        ('north_region', 'North Region'),
         ('state', 'State'),
         ('branch', 'Branch'),
         ('team', 'Team'),
@@ -31,7 +32,7 @@ class HierarchyManagement(BaseModel):
     # Basic Information
     unit_name = models.CharField(max_length=200, db_index=True)
     unit_type = models.CharField(
-        max_length=20, 
+        max_length=30, 
         choices=UNIT_TYPE_CHOICES, 
         default='department',
         db_index=True
