@@ -17,13 +17,12 @@ from apps.customers.models import Customer
 from apps.customer_payments.models import CustomerPayment
 from apps.customer_payment_schedule.models import PaymentSchedule
 from apps.customer_communication_preferences.models import CommunicationLog
-from apps.policies.models import Policy, PolicyClaim
+from apps.policies.models import Policy
+from apps.claims.models import Claim
 from apps.renewals.models import RenewalCase
 from apps.case_logs.models import CaseLog
 from .models import CustomerInsight
 
-# --- IMPORT THE NEW TIMELINE MODEL ---
-# This assumes it's in apps.policies.models
 try:
     from apps.policies.models import ClaimTimelineEvent
 except ImportError:
@@ -69,33 +68,43 @@ class CustomerInsightsService:
         except Customer.DoesNotExist:
             return {"error": "Customer not found"}
         
-        # Check if we have cached insights
+       
         insight_record, created = CustomerInsight.objects.get_or_create(
             customer=customer,
             defaults={'is_cached': False}
         )
         
-        # Recalculate if forced, expired, or not cached
-        if force_recalculate or not insight_record.is_cached or insight_record.is_expired:
+       
+        needs_recalculation_for_reliability = False
+        if insight_record.is_cached and insight_record.payment_insights:
+            payment_insights = insight_record.payment_insights
+            payment_reliability = payment_insights.get('payment_reliability', '')
+            total_payments = payment_insights.get('total_payments_made', 0)
+            
+            if payment_reliability == "Unknown" and total_payments > 0:
+                needs_recalculation_for_reliability = True
+        
+        
+        if force_recalculate or not insight_record.is_cached or insight_record.is_expired or needs_recalculation_for_reliability:
             insights_data = self._calculate_all_insights(customer)
             
-            # Serialize datetime objects before storing in JSONFields
+            
             insights_data['payment_insights'] = self._serialize_datetime(insights_data['payment_insights'])
             insights_data['communication_insights'] = self._serialize_datetime(insights_data['communication_insights'])
             insights_data['claims_insights'] = self._serialize_datetime(insights_data['claims_insights'])
             insights_data['profile_insights'] = self._serialize_datetime(insights_data['profile_insights'])
             
-            # Update the insight record
+           
             insight_record.payment_insights = insights_data['payment_insights']
             insight_record.communication_insights = insights_data['communication_insights']
             insight_record.claims_insights = insights_data['claims_insights']
             insight_record.profile_insights = insights_data['profile_insights']
             insight_record.is_cached = True
             insight_record.cache_expires_at = timezone.now() + timedelta(hours=24)
-            insight_record.calculated_at = timezone.now() # Update calculated_at when recalculating
+            insight_record.calculated_at = timezone.now() 
             insight_record.save()
         else:
-            # Use cached data
+          
             insights_data = {
                 'payment_insights': insight_record.payment_insights,
                 'communication_insights': insight_record.communication_insights,
@@ -103,7 +112,7 @@ class CustomerInsightsService:
                 'profile_insights': insight_record.profile_insights,
             }
         
-        # Always get fresh payment schedule and history (these change frequently)
+        
         return {
             "customer_info": self._get_customer_basic_info(customer),
             "payment_insights": insights_data['payment_insights'],
@@ -127,7 +136,7 @@ class CustomerInsightsService:
     
     def _get_customer_basic_info(self, customer: Customer) -> Dict[str, Any]:
         """Get basic customer information"""
-        # Manually combine first/last name
+        
         full_name = f"{customer.first_name} {customer.last_name}".strip()
 
         return {
@@ -154,31 +163,41 @@ class CustomerInsightsService:
         if not payments.exists():
             return self._get_empty_payment_insights()
         
-        # Calculate basic metrics
+      
         total_payments = payments.count()
         total_amount = sum(p.payment_amount for p in payments)
         avg_amount = total_amount / total_payments if total_payments > 0 else 0
         
-        # Calculate on-time payment rate
+       
         on_time_payments = payments.filter(
             payment_status='completed',
             payment_date__lte=models.F('due_date')
         ).count()
         on_time_rate = (on_time_payments / total_payments * 100) if total_payments > 0 else 0
         
-        # Payment methods analysis
+    
         payment_methods = payments.values_list('payment_mode', flat=True)
         method_counts = Counter(payment_methods)
         most_used_mode = method_counts.most_common(1)[0][0] if method_counts else 'unknown'
         
-        # Payment timing analysis
+        
         timing_analysis = self._analyze_payment_timing(payments)
         
-        # Customer since calculation
-        first_payment = payments.last()
-        customer_since = self._calculate_customer_since(first_payment.payment_date if first_payment else None)
         
-        # Payment reliability rating
+        customer_since_date = None
+        if hasattr(customer, 'first_policy_date') and customer.first_policy_date:
+            customer_since_date = customer.first_policy_date
+        elif payments.exists():
+            first_payment = payments.last()
+            if first_payment and first_payment.payment_date:
+                customer_since_date = first_payment.payment_date
+        elif hasattr(customer, 'created_at') and customer.created_at:
+    
+            customer_since_date = customer.created_at.date() if isinstance(customer.created_at, datetime) else customer.created_at
+        
+        customer_since = self._calculate_customer_since(customer_since_date)
+        
+      
         reliability = self._calculate_payment_reliability(on_time_rate, total_payments)
         
         insights = {
@@ -208,7 +227,7 @@ class CustomerInsightsService:
             "payment_reliability": "Unknown",
             "preferred_payment_method": "Unknown",
             "average_payment_amount": 0.0,
-            "customer_since_years": 0,
+            "customer_since_years": "0 months",
             "last_payment_date": None,
             "payment_frequency": "Unknown",
         }
@@ -251,10 +270,10 @@ class CustomerInsightsService:
             "frequency": frequency
         }
     
-    def _calculate_customer_since(self, first_payment_date) -> int:
-        """Calculate years since first payment"""
+    def _calculate_customer_since(self, first_payment_date) -> str:
+        """Calculate years or months since first payment/customer since date"""
         if not first_payment_date:
-            return 0
+            return "0 months"
         
         if isinstance(first_payment_date, datetime):
             first_date = first_payment_date.date()
@@ -262,12 +281,49 @@ class CustomerInsightsService:
             first_date = first_payment_date
         
         delta = self.today - first_date
-        return delta.days // 365
+        total_days = delta.days
+        
+        if total_days < 0:
+            return "0 months"
+        
+      
+        years = total_days // 365
+        remaining_days_after_years = total_days % 365
+        
+       
+        approximate_months = remaining_days_after_years // 30
+        
+        if years >= 1:
+        
+            return f"{years} year{'s' if years > 1 else ''}"
+        else:
+           
+            if approximate_months < 1:
+               
+                if total_days == 0:
+                    return "0 months"
+                else:
+                    return f"{total_days} day{'s' if total_days > 1 else ''}"
+            else:
+                return f"{approximate_months} month{'s' if approximate_months > 1 else ''}"
     
     def _calculate_payment_reliability(self, on_time_rate: float, total_payments: int) -> str:
         """Calculate payment reliability rating"""
-        if total_payments < 3:
+      
+        if total_payments == 0:
             return "Unknown"
+        
+      
+        if total_payments < 3:
+            
+            if on_time_rate >= 100:
+                return "Excellent"
+            elif on_time_rate >= 90:
+                return "Good"
+            elif on_time_rate >= 70:
+                return "Average"
+            else:
+                return "Poor"
         elif on_time_rate >= 95:
             return "Excellent"
         elif on_time_rate >= 85:
@@ -370,7 +426,6 @@ class CustomerInsightsService:
         """Calculate average response time in hours"""
         successful_comms = communications.filter(outcome__in=['successful', 'replied'])
         if successful_comms.exists():
-            # Mock calculation - assume 2.1 hours average
             return 2.1
         return 0.0
     
@@ -388,9 +443,9 @@ class CustomerInsightsService:
     
     
     def calculate_claims_insights(self, customer: Customer) -> Dict[str, Any]:
-        """Calculate real claims insights from PolicyClaim data"""
+        """Calculate real claims insights from Claim data"""
         
-        claims = PolicyClaim.objects.filter(policy__customer=customer)
+        claims = Claim.objects.filter(customer=customer, is_deleted=False)
         
         if not claims.exists():
             return self._get_empty_claims_insights()
@@ -399,10 +454,10 @@ class CustomerInsightsService:
         total_claims = claims.count()
         approved_claims = claims.filter(status='approved')
         rejected_claims = claims.filter(status='rejected')
-        pending_claims = claims.filter(status__in=['submitted', 'pending'])
+        pending_claims = claims.filter(status__in=['pending', 'in_progress', 'document_pending'])
         
         total_claimed_amount = sum(claim.claim_amount for claim in claims)
-        approved_amount = sum(claim.approved_amount for claim in approved_claims)
+        approved_amount = sum(claim.claim_amount for claim in approved_claims) 
         
         # Calculate approval rate
         approval_rate = (approved_claims.count() / total_claims * 100) if total_claims > 0 else 0
@@ -420,11 +475,11 @@ class CustomerInsightsService:
             'pending': pending_claims.count()
         }
         
-        # Calculate average processing time (simplified - using claim_date to incident_date difference)
+       
         processing_times = []
         for claim in approved_claims:
-            if claim.claim_date and claim.incident_date:
-                processing_days = (claim.claim_date - claim.incident_date).days
+            if claim.reported_date and claim.incident_date:
+                processing_days = (claim.reported_date - claim.incident_date).days
                 if processing_days > 0:
                     processing_times.append(processing_days)
         
@@ -449,13 +504,14 @@ class CustomerInsightsService:
         # Summary Breakdown for Claims (Amount/Year)
         summary_claims_breakdown = []
         # Get top 2 approved claims by amount for the summary view
-        top_claims = approved_claims.order_by('-approved_amount')[:2]
+        top_claims = approved_claims.order_by('-claim_amount')[:2]
         for claim in top_claims:
-            summary_claims_breakdown.append({
-                "type": claim.claim_type,
-                "year": claim.incident_date.year,
-                "amount": float(claim.approved_amount)
-            })
+            if claim.incident_date:
+                summary_claims_breakdown.append({
+                    "type": claim.claim_type,
+                    "year": claim.incident_date.year,
+                    "amount": float(claim.claim_amount) 
+                })
         
         return {
             "total_claims": total_claims,
@@ -594,6 +650,10 @@ class CustomerInsightsService:
             customer=customer,
             payment_date__gte=start_date,
             is_deleted=False
+        ).select_related(
+            'renewal_case',
+            'renewal_case__policy',
+            'renewal_case__policy__policy_type'
         ).order_by('-payment_date')
         
         # Group by year
@@ -602,12 +662,23 @@ class CustomerInsightsService:
         
         for payment in payments:
             year = payment.payment_date.year
+            
+            # Get policy name from renewal_case -> policy -> policy_type
+            policy_name = "Unknown"
+            if payment.renewal_case and payment.renewal_case.policy:
+                if payment.renewal_case.policy.policy_type:
+                    policy_name = payment.renewal_case.policy.policy_type.name
+                else:
+                    policy_name = "Unknown Policy Type"
+            elif payment.renewal_case:
+                policy_name = "No Policy"
+            
             yearly_data[year].append({
                 "amount": float(payment.payment_amount),
                 "date": payment.payment_date.isoformat() if payment.payment_date else None,
                 "status": payment.payment_status,
                 "mode": payment.payment_mode,
-                "policy": "Unknown",  
+                "policy": policy_name,
             })
             yearly_totals[year] += float(payment.payment_amount)
         
@@ -709,43 +780,20 @@ class CustomerInsightsService:
     def get_claims_history(self, customer: Customer) -> Dict[str, Any]:
         """Get detailed claims history (Dynamic implementation)"""
         
-        # Use prefetch_related for the new timeline_events 
-        claims = PolicyClaim.objects.filter(
-            policy__customer=customer
+        # Use the correct claims table (apps.claims.models.Claim)
+        claims = Claim.objects.filter(
+            customer=customer,
+            is_deleted=False
         ).select_related(
-            'assigned_to' 
-        ).prefetch_related(
-            'timeline_events' 
+            'policy'
         ).order_by('-incident_date')
         
         claims_data = []
         for claim in claims:
             
             adjuster_name = "Not Assigned" 
-            try:
-                if claim.assigned_to:
-                    user = claim.assigned_to 
-                    # Manually combine first and last name for adjuster
-                    name = f"{user.first_name} {user.last_name}".strip()
-                    if name:
-                        adjuster_name = name
-                    else:
-                        adjuster_name = user.email
-            except Exception:
-                pass 
-
-            # Build the REAL timeline_events list )
+          
             timeline_events = []
-            if ClaimTimelineEvent:
-                timeline_events = [
-                    {
-                        "date": event.event_date.isoformat(), 
-                        "event": event.event_name, 
-                        "status": event.status
-                    } 
-                    for event in claim.timeline_events.all() 
-                ]
-            
 
             claims_data.append({
                 "id": claim.id,
@@ -753,21 +801,21 @@ class CustomerInsightsService:
                 "type": claim.claim_type,
                 "status": claim.status,
                 "claim_amount": float(claim.claim_amount),
-                "approved_amount": float(claim.approved_amount),
+                "approved_amount": float(claim.claim_amount) if claim.status == 'approved' else 0.0,  
                 "incident_date": claim.incident_date.isoformat() if claim.incident_date else None,
                 "claim_number": claim.claim_number,
                 "adjuster": adjuster_name, 
-                "rejection_reason": claim.rejection_reason,
+                "rejection_reason": claim.remarks if claim.status == 'rejected' else "",  
                 "timeline_events": timeline_events, 
-                "document_attachments": getattr(claim, 'document_count', 0),
-                "priority": "Medium" # MOCKED
+                "document_attachments": 0, 
+                "priority": "Medium" 
             })
         
         summary = {
             "total_claims": claims.count(),
             "approved_claims": claims.filter(status='approved').count(),
             "rejected_claims": claims.filter(status='rejected').count(),
-            "pending_claims": claims.filter(status__in=['submitted', 'pending']).count(),
+            "pending_claims": claims.filter(status__in=['pending', 'in_progress', 'document_pending']).count(),
         }
         
         return {

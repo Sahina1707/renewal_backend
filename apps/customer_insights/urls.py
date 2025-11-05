@@ -22,7 +22,7 @@ urlpatterns = [
          CustomerInsightsViewSet.as_view({'post': 'recalculate_insights'}), 
          name='customer-insights-recalculate'),
     
-    path('customer/payment-schedule/<int:customer_id>/', 
+    path('customer/payment-schedule/<str:case_number>/', 
          CustomerInsightsViewSet.as_view({'get': 'get_payment_schedule'}), 
          name='customer-payment-schedule'),
     

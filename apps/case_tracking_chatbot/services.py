@@ -595,7 +595,7 @@ class CaseTrackingChatbotService:
     def _get_document_analysis_data(self, user_message: str) -> Dict[str, Any]:
         """Get customer document analysis data"""
         try:
-            from apps.customers_documents.models import CustomerDocument
+            from apps.customers_files.models import CustomerFile
             
             message_lower = user_message.lower()
             
@@ -622,15 +622,14 @@ class CaseTrackingChatbotService:
             }
             
             if customer:
-                # Get documents from customers_documents model
+                # Get documents from customers_files model
                 try:
-                    documents = CustomerDocument.objects.filter(
+                    documents = CustomerFile.objects.filter(
                         customer=customer,
-                        is_deleted=False
+                        is_active=True
                     ).values(
                         'document_type', 'is_verified', 'verified_at',
-                        'issue_date', 'expiry_date', 'issuing_authority',
-                        'verification_notes', 'created_at'
+                        'verified_by', 'file_name', 'uploaded_at'
                     )
                     
                     all_documents = list(documents)
@@ -638,15 +637,7 @@ class CaseTrackingChatbotService:
                     document_analysis['total_documents'] = len(all_documents)
                     document_analysis['verified_documents'] = len([d for d in all_documents if d.get('is_verified', False)])
                     document_analysis['pending_documents'] = len([d for d in all_documents if not d.get('is_verified', False)])
-                    
-                    # Check for expired documents
-                    from datetime import date
-                    today = date.today()
-                    expired_count = 0
-                    for doc in all_documents:
-                        if doc.get('expiry_date') and doc['expiry_date'] < today:
-                            expired_count += 1
-                    document_analysis['expired_documents'] = expired_count
+                    document_analysis['expired_documents'] = 0
                     
                     # Get document types
                     document_types = {}

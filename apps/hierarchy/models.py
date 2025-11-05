@@ -17,6 +17,7 @@ class HierarchyManagement(BaseModel):
     UNIT_TYPE_CHOICES = [
         ('department', 'Department'),
         ('region', 'Region'),
+        ('north_region', 'North Region'),
         ('state', 'State'),
         ('branch', 'Branch'),
         ('team', 'Team'),
@@ -31,7 +32,7 @@ class HierarchyManagement(BaseModel):
     # Basic Information
     unit_name = models.CharField(max_length=200, db_index=True)
     unit_type = models.CharField(
-        max_length=20, 
+        max_length=30, 
         choices=UNIT_TYPE_CHOICES, 
         default='department',
         db_index=True
@@ -58,8 +59,8 @@ class HierarchyManagement(BaseModel):
     manager_id = models.CharField(
         max_length=20,
         validators=[RegexValidator(r'^mgr-\d{3}$', 'Manager ID must be in format mgr-XXX')],
-        unique=True,
-        help_text="Manager ID in format mgr-XXX (e.g., mgr-002)"
+        db_index=True,
+        help_text="Manager ID in format mgr-XXX (e.g., mgr-002). One manager can be assigned to multiple hierarchy units."
     )
     
     # Financial Information

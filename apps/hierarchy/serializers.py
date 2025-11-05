@@ -84,6 +84,8 @@ class HierarchyManagementSerializer(serializers.ModelSerializer):
 
 
 class HierarchyManagementCreateSerializer(serializers.ModelSerializer):
+    parent_unit = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    
     class Meta:
         model = HierarchyManagement
         fields = [
@@ -98,10 +100,54 @@ class HierarchyManagementCreateSerializer(serializers.ModelSerializer):
         ]
     
     def validate_parent_unit(self, value):
+        if value in ['none', '', None]:
+            return 'none'
+        
+        value = str(value).strip()
+        
         valid_choices = [choice[0] for choice in HierarchyManagement.PARENT_UNIT_CHOICES]
-        if value not in valid_choices:
-            raise serializers.ValidationError(f"Invalid parent unit choice. Must be one of: {valid_choices}")
-        return value
+        choice_dict = dict(HierarchyManagement.PARENT_UNIT_CHOICES)
+        
+        if value in valid_choices:
+            return value
+        
+        if value in choice_dict.values():
+            for choice_value, choice_display in HierarchyManagement.PARENT_UNIT_CHOICES:
+                if choice_display == value:
+                    return choice_value
+        
+        if '(' in value and ')' in value:
+            unit_name_part = value.split('(')[0].strip()
+            unit_slug = unit_name_part.lower().replace(' ', '_').replace('-', '_')
+            if unit_slug in valid_choices:
+                return unit_slug
+        
+        value_slug = value.lower().strip().replace(' ', '_').replace('-', '_')
+        if value_slug in valid_choices:
+            return value_slug
+        
+        value_lower = value.lower().strip()
+        for choice_value, choice_display in HierarchyManagement.PARENT_UNIT_CHOICES:
+            if value_lower == choice_display.lower():
+                return choice_value
+            display_unit_name = choice_display.split('(')[0].strip().lower()
+            if value_lower == display_unit_name:
+                return choice_value
+            display_unit_slug = display_unit_name.replace(' ', '_').replace('-', '_')
+            if value_lower == display_unit_slug or value_lower.replace(' ', '_') == display_unit_slug:
+                return choice_value
+        
+        matching_unit = HierarchyManagement.objects.filter(
+            is_deleted=False,
+            unit_name__iexact=value
+        ).first()
+        
+        if matching_unit:
+            unit_slug = matching_unit.unit_name.lower().replace(' ', '_').replace('-', '_')
+            if unit_slug in valid_choices:
+                return unit_slug
+        
+        return 'none'
     
     def validate_manager_id(self, value):
         if not re.match(r'^mgr-\d{3}$', value):
@@ -150,9 +196,7 @@ class HierarchyManagementListSerializer(serializers.ModelSerializer):
     def get_cases(self, obj):
         """Get total cases assigned to this hierarchy unit's manager"""
         try:
-            # Extract number from manager_id (e.g., "mgr-001" -> "001")
             manager_number = obj.manager_id.split('-')[1] if '-' in obj.manager_id else obj.manager_id
-            # Find user with employee_id matching this pattern (e.g., "EMP001" contains "001")
             user = User.objects.filter(employee_id__icontains=manager_number).first()
             if user:
                 return RenewalCase.objects.filter(assigned_to=user).count()
@@ -163,9 +207,7 @@ class HierarchyManagementListSerializer(serializers.ModelSerializer):
     def get_revenue(self, obj):
         """Get total revenue from renewed cases assigned to this hierarchy unit's manager"""
         try:
-            # Extract number from manager_id (e.g., "mgr-001" -> "001")
             manager_number = obj.manager_id.split('-')[1] if '-' in obj.manager_id else obj.manager_id
-            # Find user with employee_id matching this pattern (e.g., "EMP001" contains "001")
             user = User.objects.filter(employee_id__icontains=manager_number).first()
             if user:
                 result = RenewalCase.objects.filter(
@@ -180,9 +222,7 @@ class HierarchyManagementListSerializer(serializers.ModelSerializer):
     def get_efficiency(self, obj):
         """Calculate efficiency as percentage of renewed cases"""
         try:
-            # Extract number from manager_id (e.g., "mgr-001" -> "001")
             manager_number = obj.manager_id.split('-')[1] if '-' in obj.manager_id else obj.manager_id
-            # Find user with employee_id matching this pattern (e.g., "EMP001" contains "001")
             user = User.objects.filter(employee_id__icontains=manager_number).first()
             if user:
                 total_cases = RenewalCase.objects.filter(assigned_to=user).count()

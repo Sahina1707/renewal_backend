@@ -68,8 +68,8 @@ LOCAL_APPS = [
     'apps.customer_payment_schedule',
     'apps.customer_communication_preferences',
     'apps.customers_files',
-    'apps.customers_documents',
     'apps.ai_insights',
+    'apps.claims',
     'apps.customer_insights',
     'apps.ai_policy_recommendations',
     'apps.policy_timeline',
@@ -387,7 +387,7 @@ WHATSAPP_ACCESS_TOKEN = config('WHATSAPP_ACCESS_TOKEN', default='')
 WHATSAPP_PHONE_NUMBER_ID = config('WHATSAPP_PHONE_NUMBER_ID', default='')
 WHATSAPP_BUSINESS_ACCOUNT_ID = config('WHATSAPP_BUSINESS_ACCOUNT_ID', default='')
 
-OPENAI_API_KEY = config('OPENAI_API_KEY', default='')
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_ORGANIZATION = config('OPENAI_ORGANIZATION', default='')
 OPENAI_MODEL = config('OPENAI_MODEL', default='gpt-4')
 

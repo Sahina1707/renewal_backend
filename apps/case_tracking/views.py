@@ -15,7 +15,7 @@ from apps.case_logs.models import CaseLog
 from apps.core.pagination import StandardResultsSetPagination
 from .serializers import (
     CaseTrackingSerializer, CaseDetailSerializer, QuickEditCaseSerializer,
-    CaseLogSerializer, CaseDetailsSerializer, EditCaseDetailsSerializer, UpdateCaseLogSerializer
+    CaseLogSerializer, CommentHistorySerializer, CaseDetailsSerializer, EditCaseDetailsSerializer, UpdateCaseLogSerializer
 )
 from datetime import datetime, timedelta
 from django.utils import timezone
@@ -33,10 +33,10 @@ class CaseTrackingViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         return RenewalCase.objects.select_related(
             'customer',                   
+            'customer__channel_id',      
             'policy',                      
             'policy__policy_type',       
             'policy__agent',
-            'channel_id',                  
             'assigned_to',                 
         ).prefetch_related(
             'customer__policies',    
@@ -169,7 +169,7 @@ class CaseTrackingViewSet(viewsets.ReadOnlyModelViewSet):
                 'total_batches': len(batch_summary)
             })
 
-    @action(detail=True, methods=['patch'], url_path='quick-edit')
+    @action(detail=False, methods=['patch', 'put'], url_path='quick-edit/(?P<case_id>[^/.]+)')
     def quick_edit(self, request, case_id=None):
         try:
             case = get_object_or_404(
@@ -186,26 +186,78 @@ class CaseTrackingViewSet(viewsets.ReadOnlyModelViewSet):
 
             validated_data = serializer.validated_data or {}
 
+            latest_case_log = CaseLog.objects.filter(
+                renewal_case=case
+            ).order_by('-created_at').first()
+
+            old_status = case.status
+            old_status_display = case.get_status_display() if hasattr(case, 'get_status_display') else old_status
+            
+            old_sub_status = latest_case_log.sub_status if latest_case_log else None
+            old_sub_status_display = latest_case_log.get_sub_status_display() if latest_case_log and hasattr(latest_case_log, 'get_sub_status_display') else (old_sub_status or 'N/A')
+            
+            old_work_step = latest_case_log.current_work_step if latest_case_log else None
+            old_work_step_display = latest_case_log.get_current_work_step_display() if latest_case_log and hasattr(latest_case_log, 'get_current_work_step_display') else (old_work_step or 'N/A')
+            
+            old_follow_up_date = latest_case_log.next_follow_up_date if latest_case_log else None
+
             with transaction.atomic():
-                old_status = case.status
-                case.status = validated_data.get('status', case.status)
+                new_status = validated_data.get('status', case.status)
+                case.status = new_status
                 case.updated_by = request.user
                 case.save(update_fields=['status', 'updated_at', 'updated_by'])
 
+                new_sub_status = validated_data.get('sub_status', None)
+                new_work_step = validated_data.get('current_work_step', None)
+                new_follow_up_date = validated_data.get('next_follow_up_date', None)
+
                 case_log = CaseLog.objects.create(
                     renewal_case=case,
-                    sub_status=validated_data.get('sub_status', None),
-                    current_work_step=validated_data.get('current_work_step', None),
-                    next_follow_up_date=validated_data.get('next_follow_up_date', None),
+                    sub_status=new_sub_status,
+                    current_work_step=new_work_step,
+                    next_follow_up_date=new_follow_up_date,
                     next_action_plan=validated_data.get('next_action_plan', ''),
                     comment=validated_data.get('comment', ''),
                     created_by=request.user,
                     updated_by=request.user
                 )
 
-            # Defensive: check for attribute existence before calling
-            sub_status_display = getattr(case_log, 'get_sub_status_display', lambda: None)()
-            work_step_display = getattr(case_log, 'get_current_work_step_display', lambda: None)()
+            new_status_display = case.get_status_display() if hasattr(case, 'get_status_display') else new_status
+            new_sub_status_display = case_log.get_sub_status_display() if hasattr(case_log, 'get_sub_status_display') else (new_sub_status or 'N/A')
+            new_work_step_display = case_log.get_current_work_step_display() if hasattr(case_log, 'get_current_work_step_display') else (new_work_step or 'N/A')
+
+            def format_date(date_val):
+                if date_val:
+                    if hasattr(date_val, 'strftime'):
+                        return date_val.strftime('%d/%m/%Y')
+                    return str(date_val)
+                return 'N/A'
+
+            old_follow_up_formatted = format_date(old_follow_up_date)
+            new_follow_up_formatted = format_date(new_follow_up_date)
+
+            summary_of_changes = []
+            
+            if old_status != new_status:
+                summary_of_changes.append(f"Status: {old_status_display} → {new_status_display}")
+            else:
+                summary_of_changes.append(f"Status: {old_status_display} → {new_status_display}")
+            
+            if old_work_step != new_work_step:
+                summary_of_changes.append(f"Work Step: {old_work_step_display} → {new_work_step_display}")
+            else:
+                summary_of_changes.append(f"Work Step: {old_work_step_display} → {new_work_step_display}")
+            
+            if old_sub_status != new_sub_status:
+                summary_of_changes.append(f"Sub-Status: {old_sub_status_display} → {new_sub_status_display}")
+            else:
+                summary_of_changes.append(f"Sub-Status: {old_sub_status_display} → {new_sub_status_display}")
+            
+            if old_follow_up_date != new_follow_up_date:
+                summary_of_changes.append(f"Follow-up: {old_follow_up_formatted} → {new_follow_up_formatted}")
+            else:
+                if new_follow_up_formatted != 'N/A':
+                    summary_of_changes.append(f"Follow-up: {new_follow_up_formatted}")
 
             return Response({
                 'success': True,
@@ -214,13 +266,14 @@ class CaseTrackingViewSet(viewsets.ReadOnlyModelViewSet):
                     'case_id': getattr(case, 'id', None),
                     'case_number': getattr(case, 'case_number', None),
                     'old_status': old_status,
-                    'new_status': case.status,
+                    'new_status': new_status,
                     'case_log_id': getattr(case_log, 'id', None),
-                    'sub_status': sub_status_display,
-                    'current_work_step': work_step_display,
+                    'sub_status': new_sub_status_display,
+                    'current_work_step': new_work_step_display,
                     'next_follow_up_date': getattr(case_log, 'next_follow_up_date', None),
                     'updated_at': getattr(case, 'updated_at', None),
-                    'updated_by': request.user.get_full_name() if hasattr(request.user, 'get_full_name') else getattr(request.user, 'username', None)
+                    'updated_by': request.user.get_full_name() if hasattr(request.user, 'get_full_name') else getattr(request.user, 'username', None),
+                    'summary_of_changes': summary_of_changes
                 }
             }, status=status.HTTP_200_OK)
 
@@ -416,8 +469,8 @@ def update_case_log_api(request: Union[Request, HttpRequest], case_log_id: int) 
     try:
         django_request = get_django_request(request)
 
-        case_log = get_object_or_404(CaseLog.objects.select_related('renewal_case'), id=case_log_id)
-        case = case_log.renewal_case
+        existing_case_log = get_object_or_404(CaseLog.objects.select_related('renewal_case'), id=case_log_id)
+        case = existing_case_log.renewal_case
 
         serializer = UpdateCaseLogSerializer(data=request.data)
         if not serializer.is_valid():
@@ -428,36 +481,107 @@ def update_case_log_api(request: Union[Request, HttpRequest], case_log_id: int) 
 
         validated_data = serializer.validated_data
 
-        with transaction.atomic():
-            # Update case log fields
-            for field, value in validated_data.items():
-                setattr(case_log, field, value)
-            case_log.updated_by = django_request.user   
-            case_log.save()
+        latest_case_log = CaseLog.objects.filter(
+            renewal_case=case
+        ).order_by('-created_at').first()
 
-            # Only update fields that exist on RenewalCase
+        old_status = case.status
+        old_status_display = case.get_status_display() if hasattr(case, 'get_status_display') else old_status
+        
+        old_sub_status = latest_case_log.sub_status if latest_case_log else None
+        old_sub_status_display = latest_case_log.get_sub_status_display() if latest_case_log and hasattr(latest_case_log, 'get_sub_status_display') else (old_sub_status or 'N/A')
+        
+        old_work_step = latest_case_log.current_work_step if latest_case_log else None
+        old_work_step_display = latest_case_log.get_current_work_step_display() if latest_case_log and hasattr(latest_case_log, 'get_current_work_step_display') else (old_work_step or 'N/A')
+        
+        old_follow_up_date = latest_case_log.next_follow_up_date if latest_case_log else None
+        old_action_plan = latest_case_log.next_action_plan if latest_case_log else ''
+
+        with transaction.atomic():
             if 'status' in validated_data:
                 case.status = validated_data['status']
                 case.updated_by = django_request.user       
                 case.save(update_fields=['status', 'updated_at', 'updated_by'])
 
+            default_sub_status = validated_data.get('sub_status') or (latest_case_log.sub_status if latest_case_log else None)
+            default_work_step = validated_data.get('current_work_step') or (latest_case_log.current_work_step if latest_case_log else None)
+            
+            new_case_log = CaseLog.objects.create(
+                renewal_case=case,
+                sub_status=default_sub_status,
+                current_work_step=default_work_step,
+                next_follow_up_date=validated_data.get('next_follow_up_date'),
+                next_action_plan=validated_data.get('next_action_plan', ''),
+                comment=validated_data.get('comment', ''),
+                created_by=django_request.user,
+                updated_by=django_request.user
+            )
+
+        new_status = case.status
+        new_status_display = case.get_status_display() if hasattr(case, 'get_status_display') else new_status
+        
+        new_sub_status = new_case_log.sub_status
+        new_sub_status_display = new_case_log.get_sub_status_display() if hasattr(new_case_log, 'get_sub_status_display') else (new_sub_status or 'N/A')
+        
+        new_work_step = new_case_log.current_work_step
+        new_work_step_display = new_case_log.get_current_work_step_display() if hasattr(new_case_log, 'get_current_work_step_display') else (new_work_step or 'N/A')
+        
+        new_follow_up_date = new_case_log.next_follow_up_date
+        new_action_plan = new_case_log.next_action_plan or ''
+
+        def format_date(date_val):
+            if date_val:
+                if hasattr(date_val, 'strftime'):
+                    return date_val.strftime('%d/%m/%Y')
+                return str(date_val)
+            return 'N/A'
+
+        old_follow_up_formatted = format_date(old_follow_up_date)
+        new_follow_up_formatted = format_date(new_follow_up_date)
+
+        summary_of_changes = []
+        
+        if 'status' in validated_data:
+            summary_of_changes.append(f"Status: {old_status_display} → {new_status_display}")
+        
+        if 'sub_status' in validated_data:
+            summary_of_changes.append(f"Sub-Status: {old_sub_status_display} → {new_sub_status_display}")
+        
+        if 'current_work_step' in validated_data:
+            summary_of_changes.append(f"Work Step: {old_work_step_display} → {new_work_step_display}")
+        
+        if 'next_follow_up_date' in validated_data:
+            summary_of_changes.append(f"Follow-up Date: {old_follow_up_formatted} → {new_follow_up_formatted}")
+        
+        if 'next_action_plan' in validated_data:
+            old_action_plan_display = old_action_plan[:50] + '...' if old_action_plan and len(old_action_plan) > 50 else (old_action_plan if old_action_plan else 'N/A')
+            new_action_plan_display = new_action_plan[:50] + '...' if new_action_plan and len(new_action_plan) > 50 else (new_action_plan if new_action_plan else 'N/A')
+            summary_of_changes.append(f"Next Action Plan: {old_action_plan_display} → {new_action_plan_display}")
+
         return Response({
             'success': True,
-            'message': 'Case log updated successfully',
+            'message': 'Case log created successfully',
             'data': {
-                'case_log_id': case_log.id,
+                'case_log_id': new_case_log.id,
                 'case_id': case.id,
                 'case_number': case.case_number,
-                'status': case.get_status_display(),
-                'sub_status': case_log.get_sub_status_display(),
-                'updated_at': case_log.updated_at,
-                'updated_by': django_request.user.get_full_name() or django_request.user.username
+                'status': new_status_display,
+                'sub_status': new_sub_status_display,
+                'current_work_step': new_work_step_display,
+                'next_follow_up_date': new_case_log.next_follow_up_date,
+                'next_action_plan': new_action_plan,
+                'comment': new_case_log.comment,
+                'created_at': new_case_log.created_at,
+                'updated_at': new_case_log.updated_at,
+                'created_by': django_request.user.get_full_name() or django_request.user.username,
+                'updated_by': django_request.user.get_full_name() or django_request.user.username,
+                'summary_of_changes': summary_of_changes
             }
-        }, status=status.HTTP_200_OK)
+        }, status=status.HTTP_201_CREATED)
 
     except Exception as e:
         return Response({
-            'error': 'Failed to update case log',
+            'error': 'Failed to create case log',
             'message': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -474,21 +598,13 @@ def comment_history_api(request: Union[Request, HttpRequest], case_id: int) -> R
         ).exclude(
             comment=''
         ).select_related(
-            'renewal_case',
-            'created_by',
-            'updated_by'
+            'renewal_case'
         ).order_by('-created_at')
 
-        serializer = CaseLogSerializer(case_logs, many=True)
+        serializer = CommentHistorySerializer(case_logs, many=True)
 
         return Response({
             'success': True,
-            'renewal_case': {
-                'id': renewal_case.id,
-                'case_number': renewal_case.case_number,
-                'status': renewal_case.status,
-                'status_display': renewal_case.get_status_display()
-            },
             'comment_history': serializer.data,
             'total_comments': case_logs.count()
         }, status=status.HTTP_200_OK)
