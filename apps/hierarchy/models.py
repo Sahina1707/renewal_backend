@@ -59,8 +59,8 @@ class HierarchyManagement(BaseModel):
     manager_id = models.CharField(
         max_length=20,
         validators=[RegexValidator(r'^mgr-\d{3}$', 'Manager ID must be in format mgr-XXX')],
-        unique=True,
-        help_text="Manager ID in format mgr-XXX (e.g., mgr-002)"
+        db_index=True,
+        help_text="Manager ID in format mgr-XXX (e.g., mgr-002). One manager can be assigned to multiple hierarchy units."
     )
     
     # Financial Information
