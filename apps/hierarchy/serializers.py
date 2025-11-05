@@ -84,6 +84,8 @@ class HierarchyManagementSerializer(serializers.ModelSerializer):
 
 
 class HierarchyManagementCreateSerializer(serializers.ModelSerializer):
+    parent_unit = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    
     class Meta:
         model = HierarchyManagement
         fields = [
@@ -101,37 +103,49 @@ class HierarchyManagementCreateSerializer(serializers.ModelSerializer):
         if value in ['none', '', None]:
             return 'none'
         
+        value = str(value).strip()
+        
         valid_choices = [choice[0] for choice in HierarchyManagement.PARENT_UNIT_CHOICES]
+        choice_dict = dict(HierarchyManagement.PARENT_UNIT_CHOICES)
         
         if value in valid_choices:
             return value
         
-        value_slug = str(value).lower().strip().replace(' ', '_').replace('-', '_')
+        if value in choice_dict.values():
+            for choice_value, choice_display in HierarchyManagement.PARENT_UNIT_CHOICES:
+                if choice_display == value:
+                    return choice_value
+        
+        if '(' in value and ')' in value:
+            unit_name_part = value.split('(')[0].strip()
+            unit_slug = unit_name_part.lower().replace(' ', '_').replace('-', '_')
+            if unit_slug in valid_choices:
+                return unit_slug
+        
+        value_slug = value.lower().strip().replace(' ', '_').replace('-', '_')
         if value_slug in valid_choices:
             return value_slug
         
+        value_lower = value.lower().strip()
+        for choice_value, choice_display in HierarchyManagement.PARENT_UNIT_CHOICES:
+            if value_lower == choice_display.lower():
+                return choice_value
+            display_unit_name = choice_display.split('(')[0].strip().lower()
+            if value_lower == display_unit_name:
+                return choice_value
+            display_unit_slug = display_unit_name.replace(' ', '_').replace('-', '_')
+            if value_lower == display_unit_slug or value_lower.replace(' ', '_') == display_unit_slug:
+                return choice_value
+        
         matching_unit = HierarchyManagement.objects.filter(
             is_deleted=False,
-            unit_name__iexact=str(value).strip()
+            unit_name__iexact=value
         ).first()
         
         if matching_unit:
             unit_slug = matching_unit.unit_name.lower().replace(' ', '_').replace('-', '_')
             if unit_slug in valid_choices:
                 return unit_slug
-        
-        
-        normalized = str(value).lower().strip().replace(' ', '_').replace('-', '_')
-        for choice_value, choice_display in HierarchyManagement.PARENT_UNIT_CHOICES:
-            choice_normalized = choice_value.lower().replace(' ', '_').replace('-', '_')
-            if normalized == choice_normalized:
-                return choice_value
-        
-        value_lower = str(value).lower().strip()
-        for choice_value, choice_display in HierarchyManagement.PARENT_UNIT_CHOICES:
-            display_name = choice_display.split('(')[0].strip().lower()
-            if value_lower == display_name or value_lower.replace(' ', '_') == display_name.replace(' ', '_'):
-                return choice_value
         
         return 'none'
     
