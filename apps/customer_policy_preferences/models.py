@@ -130,6 +130,13 @@ class CustomerPolicyPreference(BaseModel):
         help_text="Created by year for tracking purposes"
     )
     
+    # For the policyTimelne page
+    avoided_policy_types = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Policy types the customer prefers to avoid (e.g., 'ULIP, Endowment')"
+    )
+    
     class Meta:
         db_table = 'customer_policy_preferences'
         ordering = ['-created_at']

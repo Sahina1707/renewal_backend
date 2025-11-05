@@ -33,4 +33,6 @@ urlpatterns = [
     # Utility endpoints
     path('event-types/', views.timeline_event_types, name='event-types'),
     path('create-event/', views.create_timeline_event, name='create-event'),
+    
+    path('data-check/<str:policy_type_slug>/<int:customer_id>/', views.policy_data_check_generic, name='data-check-generic'),
 ]

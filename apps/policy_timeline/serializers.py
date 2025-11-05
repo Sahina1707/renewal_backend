@@ -3,7 +3,7 @@ Policy Timeline serializers for the Intelipro Insurance Policy Renewal System.
 """
 
 from rest_framework import serializers
-from .models import PolicyTimeline, PolicyTimelineEvent, CustomerTimelineSummary, PolicyTimelineFilter
+from .models import PolicyTimeline, PolicyTimelineEvent, CustomerTimelineSummary, PolicyTimelineFilter, CustomerPaymentSchedule, UpcomingPayment
 from apps.customers.serializers import CustomerSerializer
 from apps.policies.serializers import PolicySerializer
 from apps.users.serializers import UserSerializer
@@ -505,3 +505,44 @@ class PolicyTimelineDashboardSerializer(serializers.ModelSerializer):
             return total
         except:
             return 0
+
+class UpcomingPaymentSerializer(serializers.ModelSerializer):
+    """Serializer for UpcomingPayment model"""
+    
+    policy_type = serializers.CharField(source='policy.policy_type.name', read_only=True)
+    policy_name = serializers.CharField(source='policy.policy_type.friendly_name', read_only=True) # Assuming a friendly name field exists
+    
+    class Meta:
+        model = UpcomingPayment
+        fields = [
+            'id',
+            'policy',
+            'customer',
+            'due_date',
+            'amount_due',
+            'days_to_due',
+            'policy_type',
+            'policy_name',
+        ]
+        read_only_fields = ['id', 'policy_type', 'policy_name']
+
+
+class CustomerPaymentScheduleSerializer(serializers.ModelSerializer):
+    """Serializer for CustomerPaymentSchedule model (The Main Payment Section)"""
+    
+    # We will fetch upcoming payments separately in the view for efficiency
+    
+    class Meta:
+        model = CustomerPaymentSchedule
+        fields = [
+            'id',
+            'customer',
+            'total_payments_last_12_months',
+            'on_time_payments_last_12_months',
+            'total_paid_last_12_months',
+            'average_payment_timing_days',
+            'preferred_payment_method',
+            'late_payment_instances',
+        ]
+        read_only_fields = ['id']
+

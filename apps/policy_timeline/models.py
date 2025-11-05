@@ -302,3 +302,96 @@ class PolicyTimelineFilter(BaseModel):
     
     def __str__(self):
         return f"{self.name} ({self.get_filter_type_display()})"
+    
+class CustomerPaymentSchedule(BaseModel):
+    """
+    Model to track upcoming payments and payment history statistics for a customer.
+    """
+    
+    PAYMENT_METHOD_CHOICES = [
+        ('credit_card', 'Credit Card'),
+        ('bank_transfer', 'Bank Transfer'),
+        ('auto_debit', 'Auto-Debit'),
+        ('manual', 'Manual Payment'),
+    ]
+    
+    customer = models.OneToOneField(
+        Customer,
+        on_delete=models.CASCADE,
+        related_name='payment_schedule',
+        help_text="Customer this schedule belongs to"
+    )
+    
+    # Payment Statistics (from Payment Patterns & History)
+    total_payments_last_12_months = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Total expected payments in the last 12 months"
+    )
+    on_time_payments_last_12_months = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Number of on-time payments in the last 12 months"
+    )
+    total_paid_last_12_months = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        help_text="Total premium amount paid in the last 12 months"
+    )
+    average_payment_timing_days = models.SmallIntegerField(
+        default=0,
+        help_text="Average payment timing (e.g., 5 days early)"
+    )
+    preferred_payment_method = models.CharField(
+        max_length=20,
+        choices=PAYMENT_METHOD_CHOICES,
+        default='auto_debit',
+        help_text="Customer's preferred payment method for premium"
+    )
+    late_payment_instances = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Number of late payment instances"
+    )
+
+    class Meta:
+        db_table = 'customer_payment_schedule'
+    
+    def __str__(self):
+        return f"Payment Schedule for {self.customer.full_name}"
+
+
+class UpcomingPayment(BaseModel):
+    """
+    Model for individual upcoming premium payments.
+    """
+    
+    policy = models.ForeignKey(
+        Policy, 
+        on_delete=models.CASCADE, 
+        related_name='upcoming_payments',
+        help_text="Related policy"
+    )
+    customer = models.ForeignKey(
+        Customer,
+        on_delete=models.CASCADE,
+        related_name='upcoming_payments',
+        help_text="Related customer"
+    )
+    due_date = models.DateField(
+        help_text="Date the payment is due"
+    )
+    amount_due = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Amount of the premium payment due"
+    )
+    days_to_due = models.SmallIntegerField(
+        help_text="Calculated days remaining until due date"
+    )
+    
+    class Meta:
+        db_table = 'upcoming_payments'
+        ordering = ['due_date']
+    
+    def __str__(self):
+        return f"Payment of {self.amount_due} for {self.policy.policy_number} on {self.due_date}"
+
