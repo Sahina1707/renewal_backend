@@ -153,6 +153,18 @@ class UploadChatbotService:
             return {}
     
     def generate_ai_response(self, user_message: str, context_data: Dict[str, Any] = None, user=None, conversation_history: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+        current_api_key = getattr(settings, 'OPENAI_API_KEY', '')
+        if not current_api_key:
+            return {
+                'success': False,
+                'error': 'AI service not available',
+                'message': 'OpenAI API key not configured or service unavailable'
+            }
+        
+        if not self.openai_client or not self.is_available():
+            logger.info("Re-initializing OpenAI client with current API key")
+            self._initialize_openai()
+        
         if not self.is_available():
             return {
                 'success': False,
@@ -188,6 +200,10 @@ class UploadChatbotService:
                     })
             
             messages.append({"role": "user", "content": user_message})
+            
+            current_api_key = getattr(settings, 'OPENAI_API_KEY', '')
+            if current_api_key:
+                self.openai_client = openai.OpenAI(api_key=current_api_key)
             
             response = self.openai_client.chat.completions.create(
                 model=getattr(settings, 'OPENAI_MODEL', 'gpt-4'),

@@ -75,8 +75,19 @@ class CustomerInsightsService:
             defaults={'is_cached': False}
         )
         
-        # Recalculate if forced, expired, or not cached
-        if force_recalculate or not insight_record.is_cached or insight_record.is_expired:
+        # Check if cached payment_reliability is "Unknown" but there are payments
+        # This handles cases where old cached data needs to be updated with new calculation logic
+        needs_recalculation_for_reliability = False
+        if insight_record.is_cached and insight_record.payment_insights:
+            payment_insights = insight_record.payment_insights
+            payment_reliability = payment_insights.get('payment_reliability', '')
+            total_payments = payment_insights.get('total_payments_made', 0)
+            # If payment_reliability is "Unknown" but there are payments, recalculate
+            if payment_reliability == "Unknown" and total_payments > 0:
+                needs_recalculation_for_reliability = True
+        
+        # Recalculate if forced, expired, not cached, or needs recalculation for payment_reliability
+        if force_recalculate or not insight_record.is_cached or insight_record.is_expired or needs_recalculation_for_reliability:
             insights_data = self._calculate_all_insights(customer)
             
             # Serialize datetime objects before storing in JSONFields
@@ -174,9 +185,19 @@ class CustomerInsightsService:
         # Payment timing analysis
         timing_analysis = self._analyze_payment_timing(payments)
         
-        # Customer since calculation
-        first_payment = payments.last()
-        customer_since = self._calculate_customer_since(first_payment.payment_date if first_payment else None)
+        # Customer since calculation - use first_policy_date for accuracy, fallback to first payment date
+        customer_since_date = None
+        if hasattr(customer, 'first_policy_date') and customer.first_policy_date:
+            customer_since_date = customer.first_policy_date
+        elif payments.exists():
+            first_payment = payments.last()
+            if first_payment and first_payment.payment_date:
+                customer_since_date = first_payment.payment_date
+        elif hasattr(customer, 'created_at') and customer.created_at:
+            # Fallback to customer creation date if no policy or payment date available
+            customer_since_date = customer.created_at.date() if isinstance(customer.created_at, datetime) else customer.created_at
+        
+        customer_since = self._calculate_customer_since(customer_since_date)
         
         # Payment reliability rating
         reliability = self._calculate_payment_reliability(on_time_rate, total_payments)
@@ -208,7 +229,7 @@ class CustomerInsightsService:
             "payment_reliability": "Unknown",
             "preferred_payment_method": "Unknown",
             "average_payment_amount": 0.0,
-            "customer_since_years": 0,
+            "customer_since_years": "0 months",
             "last_payment_date": None,
             "payment_frequency": "Unknown",
         }
@@ -251,10 +272,10 @@ class CustomerInsightsService:
             "frequency": frequency
         }
     
-    def _calculate_customer_since(self, first_payment_date) -> int:
-        """Calculate years since first payment"""
+    def _calculate_customer_since(self, first_payment_date) -> str:
+        """Calculate years or months since first payment/customer since date"""
         if not first_payment_date:
-            return 0
+            return "0 months"
         
         if isinstance(first_payment_date, datetime):
             first_date = first_payment_date.date()
@@ -262,12 +283,51 @@ class CustomerInsightsService:
             first_date = first_payment_date
         
         delta = self.today - first_date
-        return delta.days // 365
+        total_days = delta.days
+        
+        if total_days < 0:
+            return "0 months"
+        
+        # Calculate years and months more accurately
+        years = total_days // 365
+        remaining_days_after_years = total_days % 365
+        
+        # Calculate months more accurately (average month = 30.44 days)
+        # For remaining days, convert to approximate months
+        approximate_months = remaining_days_after_years // 30
+        
+        if years >= 1:
+            # Show years when >= 1 year
+            return f"{years} year{'s' if years > 1 else ''}"
+        else:
+            # Show months if less than a year
+            if approximate_months < 1:
+                # Less than 30 days, show in days
+                if total_days == 0:
+                    return "0 months"
+                else:
+                    return f"{total_days} day{'s' if total_days > 1 else ''}"
+            else:
+                return f"{approximate_months} month{'s' if approximate_months > 1 else ''}"
     
     def _calculate_payment_reliability(self, on_time_rate: float, total_payments: int) -> str:
         """Calculate payment reliability rating"""
-        if total_payments < 3:
+        # If no payments, return Unknown
+        if total_payments == 0:
             return "Unknown"
+        
+        # For 1-2 payments, provide initial rating based on on_time_rate
+        # For 3+ payments, use standard rating
+        if total_payments < 3:
+            # With limited data, provide initial rating
+            if on_time_rate >= 100:
+                return "Excellent"
+            elif on_time_rate >= 90:
+                return "Good"
+            elif on_time_rate >= 70:
+                return "Average"
+            else:
+                return "Poor"
         elif on_time_rate >= 95:
             return "Excellent"
         elif on_time_rate >= 85:
@@ -594,6 +654,10 @@ class CustomerInsightsService:
             customer=customer,
             payment_date__gte=start_date,
             is_deleted=False
+        ).select_related(
+            'renewal_case',
+            'renewal_case__policy',
+            'renewal_case__policy__policy_type'
         ).order_by('-payment_date')
         
         # Group by year
@@ -602,12 +666,23 @@ class CustomerInsightsService:
         
         for payment in payments:
             year = payment.payment_date.year
+            
+            # Get policy name from renewal_case -> policy -> policy_type
+            policy_name = "Unknown"
+            if payment.renewal_case and payment.renewal_case.policy:
+                if payment.renewal_case.policy.policy_type:
+                    policy_name = payment.renewal_case.policy.policy_type.name
+                else:
+                    policy_name = "Unknown Policy Type"
+            elif payment.renewal_case:
+                policy_name = "No Policy"
+            
             yearly_data[year].append({
                 "amount": float(payment.payment_amount),
                 "date": payment.payment_date.isoformat() if payment.payment_date else None,
                 "status": payment.payment_status,
                 "mode": payment.payment_mode,
-                "policy": "Unknown",  
+                "policy": policy_name,
             })
             yearly_totals[year] += float(payment.payment_amount)
         

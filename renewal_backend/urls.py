@@ -56,6 +56,7 @@ api_patterns = [
     path('customer-installments/', include('apps.customer_installment.urls')),
     path('customers-files/', include('apps.customers_files.urls')),
     path('customer-insights/', include('apps.customer_insights.urls')),
+    path('claims/', include('apps.claims.urls')),
     path('target-audience/', include('apps.target_audience.urls')),
     path('policy-timeline/', include('apps.policy_timeline.urls')),
     path('renewal-timeline/', include('apps.renewal_timeline.urls')),

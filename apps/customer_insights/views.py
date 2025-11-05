@@ -367,27 +367,19 @@ class CustomerInsightsViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
-    @action(detail=False, methods=['get'], url_path='customer/(?P<customer_id>[0-9]+)/payment-schedule')
-    def get_payment_schedule(self, request, customer_id=None):
-        """Get payment schedule for a specific customer"""
+    @action(detail=False, methods=['get'], url_path='customer/(?P<case_number>[^/.]+)/payment-schedule')
+    def get_payment_schedule(self, request, case_number=None):
+        """Get payment schedule for a specific customer using case number"""
         try:
-            # Convert customer_id to integer
+            # Get customer via RenewalCase using case_number
             try:
-                customer_id = int(customer_id)
-            except (ValueError, TypeError):
+                from apps.renewals.models import RenewalCase
+                renewal_case = RenewalCase.objects.select_related('customer').get(case_number=case_number)
+                customer = renewal_case.customer
+            except RenewalCase.DoesNotExist:
                 return Response({
                     'success': False,
-                    'message': 'Invalid customer ID',
-                    'error': 'Customer ID must be a valid integer'
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Get customer by ID
-            try:
-                customer = Customer.objects.get(id=customer_id, is_deleted=False)
-            except Customer.DoesNotExist:
-                return Response({
-                    'success': False,
-                    'message': f'Customer with ID {customer_id} not found',
+                    'message': f'Case with number {case_number} not found',
                     'data': None
                 }, status=status.HTTP_404_NOT_FOUND)
             
