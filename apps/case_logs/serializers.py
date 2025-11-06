@@ -42,3 +42,76 @@ class CaseLogSerializer(serializers.ModelSerializer):
         if obj.updated_by:
             return obj.updated_by.get_full_name() or obj.updated_by.username
         return None
+
+
+class CaseCommentSerializer(serializers.ModelSerializer):
+    """Serializer for case comments using CaseLog model"""
+    
+    comment_type = serializers.SerializerMethodField()
+    is_internal = serializers.SerializerMethodField()
+    is_important = serializers.SerializerMethodField()
+    case = serializers.PrimaryKeyRelatedField(source='renewal_case', read_only=True)
+    
+    class Meta:
+        model = CaseLog
+        fields = [
+            'id',
+            'case',
+            'comment',
+            'comment_type',
+            'is_internal',
+            'is_important',
+            'created_at',
+            'updated_at',
+            'created_by',
+            'updated_by',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
+    
+    def get_comment_type(self, obj):
+        
+        return 'general'
+    
+    def get_is_internal(self, obj):
+        return False
+    
+    def get_is_important(self, obj):
+        return False
+
+
+class CaseCommentCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating case comments using CaseLog model"""
+    
+    comment = serializers.CharField(required=True)
+    comment_type = serializers.CharField(required=False, allow_blank=True)
+    is_internal = serializers.BooleanField(required=False, default=False)
+    is_important = serializers.BooleanField(required=False, default=False)
+    
+    class Meta:
+        model = CaseLog
+        fields = [
+            'comment',
+            'comment_type',
+            'is_internal',
+            'is_important',
+        ]
+    
+    def create(self, validated_data):
+        """Create a new comment using CaseLog"""
+        validated_data.pop('comment_type', None)
+        validated_data.pop('is_internal', None)
+        validated_data.pop('is_important', None)
+        
+        validated_data['created_by'] = self.context['request'].user
+        
+        comment = super().create(validated_data)
+        
+        from apps.case_history.models import CaseHistory
+        CaseHistory.objects.create(
+            case=comment.renewal_case,
+            action='comment_added',
+            description=f"Comment added: {comment.comment[:100]}{'...' if len(comment.comment) > 100 else ''}",
+            created_by=self.context['request'].user
+        )
+        
+        return comment

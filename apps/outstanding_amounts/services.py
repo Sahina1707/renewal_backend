@@ -18,22 +18,29 @@ class OutstandingAmountsService:
         try:
             renewal_case = RenewalCase.objects.get(id=case_id)
             
-            # Get outstanding installments (pending + overdue)
+            if renewal_case.status in ['renewed', 'completed']:
+                return {
+                    'total_outstanding': 0,
+                    'oldest_due_date': None,
+                    'latest_due_date': None,
+                    'average_amount': 0,
+                    'pending_count': 0,
+                    'overdue_count': 0,
+                    'installments': []
+                }
+            
             outstanding_installments = CustomerInstallment.objects.filter(
                 renewal_case=renewal_case,
                 status__in=['pending', 'overdue']
             ).order_by('due_date')
             
-            # Get outstanding payment schedules (pending + overdue + failed)
             outstanding_schedules = PaymentSchedule.objects.filter(
                 renewal_case=renewal_case,
                 status__in=['pending', 'overdue', 'failed']
             ).order_by('due_date')
             
-            # Combine all outstanding items
             all_outstanding = []
             
-            # Process installments
             for installment in outstanding_installments:
                 days_overdue = OutstandingAmountsService._calculate_days_overdue(installment.due_date)
                 status = 'overdue' if days_overdue > 0 else 'pending'
@@ -49,7 +56,6 @@ class OutstandingAmountsService:
                     'description': OutstandingAmountsService._generate_description(installment.period, 'installment')
                 })
             
-            # Process payment schedules
             for schedule in outstanding_schedules:
                 days_overdue = OutstandingAmountsService._calculate_days_overdue(schedule.due_date)
                 status = 'overdue' if days_overdue > 0 else 'pending'
@@ -65,7 +71,6 @@ class OutstandingAmountsService:
                     'description': OutstandingAmountsService._generate_description_from_schedule(schedule)
                 })
             
-            # Calculate summary statistics
             if all_outstanding:
                 total_outstanding = sum(item['amount'] for item in all_outstanding)
                 oldest_due_date = min(item['due_date'] for item in all_outstanding)
@@ -105,7 +110,6 @@ class OutstandingAmountsService:
         try:
             renewal_case = RenewalCase.objects.get(id=case_id)
             
-            # Get outstanding installments to pay
             if installment_ids:
                 installments_to_pay = CustomerInstallment.objects.filter(
                     id__in=installment_ids,
@@ -124,10 +128,8 @@ class OutstandingAmountsService:
                     'message': 'No outstanding installments found to pay'
                 }
             
-            # Calculate total payment amount
             total_amount = sum(inst.amount for inst in installments_to_pay)
             
-            # Create payment record
             payment = CustomerPayment.objects.create(
                 customer=renewal_case.customer,
                 renewal_case=renewal_case,
@@ -140,7 +142,6 @@ class OutstandingAmountsService:
                 payment_notes=f"Payment for {len(installments_to_pay)} outstanding installments"
             )
             
-            # Mark installments as paid
             for installment in installments_to_pay:
                 installment.mark_as_paid(payment)
             
@@ -168,7 +169,6 @@ class OutstandingAmountsService:
         try:
             renewal_case = RenewalCase.objects.get(id=case_id)
             
-            # Get current outstanding amount
             outstanding_summary = OutstandingAmountsService.get_outstanding_summary(case_id)
             total_outstanding = outstanding_summary['total_outstanding']
             
@@ -178,27 +178,23 @@ class OutstandingAmountsService:
                     'message': 'No outstanding amounts to create payment plan for'
                 }
             
-            # Extract plan details
             installment_count = plan_data.get('installment_count', 3)
             start_date = plan_data.get('start_date', timezone.now().date())
             payment_frequency = plan_data.get('payment_frequency', 'monthly')
             
-            # Calculate installment amount
             installment_amount = total_outstanding / installment_count
             
-            # Create payment schedules
             created_schedules = []
             current_date = start_date
             
             for i in range(installment_count):
-                # Calculate next due date based on frequency
                 if payment_frequency == 'monthly':
                     from dateutil.relativedelta import relativedelta
                     next_date = current_date + relativedelta(months=1)
                 elif payment_frequency == 'quarterly':
                     from dateutil.relativedelta import relativedelta
                     next_date = current_date + relativedelta(months=3)
-                else:  # weekly
+                else:  
                     from datetime import timedelta
                     next_date = current_date + timedelta(weeks=1)
                 

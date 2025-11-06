@@ -62,6 +62,10 @@ class RenewalCase(BaseModel):
 
     notes = models.TextField(blank=True)
     
+    follow_up_date = models.DateField(null=True, blank=True, help_text="Date for the next follow-up")
+    follow_up_time = models.TimeField(null=True, blank=True, help_text="Time for the next follow-up")
+    remarks = models.TextField(blank=True, help_text="Additional remarks or notes for the case")
+    
     class Meta:
         db_table = 'renewal_cases'
         ordering = ['-created_at']

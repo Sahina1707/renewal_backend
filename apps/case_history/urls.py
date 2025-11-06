@@ -10,6 +10,7 @@ urlpatterns = [
     path('', views.CaseListView.as_view(), name='case-list'),
     path('<str:case_number>/', views.CaseDetailView.as_view(), name='case-detail'),
     path('<str:case_number>/status/', views.CaseStatusUpdateView.as_view(), name='case-status-update'),
+    path('update-status/<str:case_number>/', views.UpdateCaseStatusView.as_view(), name='update-case-status'),
     path('<str:case_number>/assign/', views.CaseAssignmentView.as_view(), name='case-assign'),
     path('<str:case_number>/close/', views.CaseCloseView.as_view(), name='case-close'),
     

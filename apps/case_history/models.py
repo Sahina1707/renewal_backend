@@ -134,16 +134,6 @@ class CaseHistory(BaseModel):
         help_text="New value (for updates)"
     )
     
-    # Related objects
-    related_comment = models.ForeignKey(
-        'CaseComment',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='history_entries',
-        help_text="Related comment if this history entry is about a comment"
-    )
-    
     # Additional metadata
     metadata = models.JSONField(
         default=dict,
@@ -166,87 +156,3 @@ class CaseHistory(BaseModel):
         return f"{self.case.case_id} - {self.get_action_display()} ({self.created_at})"
 
 
-class CaseComment(BaseModel):
-    COMMENT_TYPE_CHOICES = [
-        ('general', 'General'),
-        ('internal', 'Internal Note'),
-        ('customer_communication', 'Customer Communication'),
-        ('follow_up', 'Follow-up'),
-        ('escalation', 'Escalation'),
-        ('resolution', 'Resolution'),
-        ('other', 'Other'),
-    ]
-    
-    case = models.ForeignKey(
-        RenewalCase,
-        on_delete=models.CASCADE,
-        related_name='case_comments',
-        help_text="Case this comment belongs to"
-    )
-    
-    comment = models.TextField(
-        help_text="Comment content"
-    )
-    
-    comment_type = models.CharField(
-        max_length=30,
-        choices=COMMENT_TYPE_CHOICES,
-        default='general',
-        db_index=True,
-        help_text="Type of comment"
-    )
-    
-    is_internal = models.BooleanField(
-        default=False,
-        help_text="Whether this is an internal comment (not visible to customer)"
-    )
-    
-    is_important = models.BooleanField(
-        default=False,
-        help_text="Whether this is an important comment"
-    )
-    
-    # Related information
-    related_comment = models.ForeignKey(
-        'self',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='replies',
-        help_text="Parent comment if this is a reply"
-    )
-    
-    # Additional metadata
-    tags = models.JSONField(
-        default=list,
-        blank=True,
-        help_text="Comment tags"
-    )
-    metadata = models.JSONField(
-        default=dict,
-        blank=True,
-        help_text="Additional comment metadata"
-    )
-    
-    class Meta:
-        ordering = ['-created_at']
-        indexes = [
-            models.Index(fields=['case', 'comment_type']),
-            models.Index(fields=['case', 'created_at']),
-            models.Index(fields=['is_internal', 'is_important']),
-            models.Index(fields=['related_comment']),
-        ]
-        verbose_name = 'Case Comment'
-        verbose_name_plural = 'Case Comments'
-    
-    def __str__(self):
-        return f"{self.case.case_id} - Comment by {self.created_by} ({self.created_at})"
-    
-    @property
-    def is_reply(self):
-        """Check if this comment is a reply to another comment"""
-        return self.related_comment is not None
-    
-    def get_replies(self):
-        """Get all replies to this comment"""
-        return self.replies.filter(is_deleted=False).order_by('created_at')
