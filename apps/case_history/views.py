@@ -8,21 +8,20 @@ from django.db.models import Q
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
-from .models import CaseHistory, CaseComment
+from .models import CaseHistory
 from apps.renewals.models import RenewalCase as Case
 from apps.case_logs.models import CaseLog
 from .serializers import (
     CaseSerializer,
     CaseListSerializer,
     CaseHistorySerializer,
-    CaseCommentSerializer,
-    CaseCommentCreateSerializer,
     CaseStatusUpdateSerializer,
     CaseAssignmentSerializer,
     CaseTimelineSummarySerializer,
     CaseTimelineHistorySerializer,
+    UpdateCaseStatusSerializer,
 )
-from apps.case_logs.serializers import CaseLogSerializer
+from apps.case_logs.serializers import CaseLogSerializer, CaseCommentSerializer, CaseCommentCreateSerializer
 
 
 class CaseListView(generics.ListCreateAPIView):
@@ -101,19 +100,20 @@ class CaseCommentListView(generics.ListCreateAPIView):
         return CaseCommentCreateSerializer
     
     def get_queryset(self):
-        """Get comments for the specified case."""
+        """Get comments for the specified case using CaseLog."""
         case_id = self.kwargs['case_number']
         case = get_object_or_404(Case, case_number=case_id, is_deleted=False)
         
         if not (self.request.user.is_staff or 
                 case.handling_agent == self.request.user or 
                 case.created_by == self.request.user):
-            return CaseComment.objects.none()
+            return CaseLog.objects.none()
         
-        return CaseComment.objects.filter(case=case, is_deleted=False)
+        # Filter CaseLog entries that have comments (used for comments API)
+        return CaseLog.objects.filter(renewal_case=case, is_deleted=False).exclude(comment='').exclude(comment__isnull=True)
     
     def perform_create(self, serializer):
-        """Create a new comment for the specified case."""
+        """Create a new comment for the specified case using CaseLog."""
         case_id = self.kwargs['case_number']
         case = get_object_or_404(Case, case_number=case_id, is_deleted=False)
         
@@ -122,7 +122,7 @@ class CaseCommentListView(generics.ListCreateAPIView):
                 case.created_by == self.request.user):
             raise PermissionDenied("You don't have permission to add comments to this case.")
         
-        serializer.save(case=case)
+        serializer.save(renewal_case=case)
 
 
 class CaseCommentDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -130,7 +130,7 @@ class CaseCommentDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
-        """Get comments for the specified case."""
+        """Get comments for the specified case using CaseLog."""
         case_id = self.kwargs['case_number']
         case = get_object_or_404(Case, case_number=case_id, is_deleted=False)
         
@@ -138,25 +138,25 @@ class CaseCommentDetailView(generics.RetrieveUpdateDestroyAPIView):
         if not (self.request.user.is_staff or 
                 case.handling_agent == self.request.user or 
                 case.created_by == self.request.user):
-            return CaseComment.objects.none()
+            return CaseLog.objects.none()
         
-        return CaseComment.objects.filter(case=case, is_deleted=False)
+        # Filter CaseLog entries that have comments (used for comments API)
+        return CaseLog.objects.filter(renewal_case=case, is_deleted=False).exclude(comment='').exclude(comment__isnull=True)
     
     def perform_update(self, serializer):
         """Update comment and create history entry."""
         comment = serializer.save()
         
         CaseHistory.objects.create(
-            case=comment.case,
+            case=comment.renewal_case,
             action='comment_updated',
             description=f"Comment updated: {comment.comment[:100]}{'...' if len(comment.comment) > 100 else ''}",
-            related_comment=comment,
             created_by=self.request.user
         )
     
     def perform_destroy(self, instance):
         CaseHistory.objects.create(
-            case=instance.case,
+            case=instance.renewal_case,
             action='comment_deleted',
             description=f"Comment deleted: {instance.comment[:100]}{'...' if len(instance.comment) > 100 else ''}",
             created_by=self.request.user
@@ -178,6 +178,48 @@ class CaseStatusUpdateView(generics.UpdateAPIView):
             queryset = queryset.filter(handling_agent=self.request.user)
         
         return queryset
+
+
+class UpdateCaseStatusView(generics.UpdateAPIView):
+    serializer_class = UpdateCaseStatusSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'case_number'
+    
+    def get_queryset(self):
+        """Filter cases based on user permissions."""
+        queryset = Case.objects.filter(is_deleted=False)
+        
+        if not self.request.user.is_staff:
+            queryset = queryset.filter(assigned_to=self.request.user)
+        
+        return queryset
+    
+    def update(self, request, *args, **kwargs):
+        """Handle PUT/PATCH request to update case status and related fields."""
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        
+        # Check permissions
+        if not (request.user.is_staff or 
+                instance.assigned_to == request.user or 
+                instance.created_by == request.user):
+            raise PermissionDenied("You don't have permission to update this case.")
+        
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        
+        return Response({
+            'success': True,
+            'message': 'Case status updated successfully',
+            'data': {
+                'case_number': instance.case_number,
+                'status': instance.status,
+                'follow_up_date': instance.follow_up_date.isoformat() if instance.follow_up_date else None,
+                'follow_up_time': instance.follow_up_time.isoformat() if instance.follow_up_time else None,
+                'remarks': instance.remarks,
+            }
+        }, status=status.HTTP_200_OK)
 
 
 class CaseAssignmentView(generics.UpdateAPIView):
@@ -237,20 +279,95 @@ def case_timeline_view(request, case_number):
             case.created_by == request.user):
         raise PermissionDenied("You don't have permission to view this case.")
     
-    # Get history entries for timeline
     history = CaseHistory.objects.filter(case=case, is_deleted=False).select_related('created_by').order_by('created_at')
     history_serializer = CaseTimelineHistorySerializer(history, many=True, context={'request': request})
     
-    # Get simplified journey summary
+    from datetime import timedelta
+    system_events = []
+    
+    # 1. Case Created event
+    if case.created_at:
+        case_created_exists = history.filter(action='case_created').exists()
+        if not case_created_exists:
+            case_created_date = case.created_at
+            
+            if hasattr(case, 'batch_code') and case.batch_code:
+                description = f"Case uploaded via bulk upload"
+            else:
+                description = "Case created"
+            
+            system_events.append({
+                'event_type': 'Case Created',
+                'event_description': description,
+                'event_date': case_created_date.strftime('%d/%m/%Y'),
+                'event_time': case_created_date.strftime('%H:%M:%S'),
+                'performed_by': 'System',
+                'created_at': case_created_date
+            })
+    
+    if case.created_at:
+        validation_exists = history.filter(action='validation').exists()
+        if not validation_exists:
+            validation_date = case.created_at + timedelta(seconds=5)
+            system_events.append({
+                'event_type': 'Validation',
+                'event_description': 'All required fields present and valid',
+                'event_date': validation_date.strftime('%d/%m/%Y'),
+                'event_time': validation_date.strftime('%H:%M:%S'),
+                'performed_by': 'System',
+                'created_at': validation_date
+            })
+    
+    if case.assigned_to:
+        assignment_exists = history.filter(action__in=['assignment', 'agent_assigned']).exists()
+        if not assignment_exists:
+            assignment_date = case.updated_at if hasattr(case, 'updated_at') and case.updated_at else case.created_at
+            agent_name = case.assigned_to.get_full_name() if hasattr(case.assigned_to, 'get_full_name') else (case.assigned_to.username if hasattr(case.assigned_to, 'username') else str(case.assigned_to))
+            system_events.append({
+                'event_type': 'Assignment',
+                'event_description': f"Case assigned to agent {agent_name}",
+                'event_date': assignment_date.strftime('%d/%m/%Y'),
+                'event_time': assignment_date.strftime('%H:%M:%S'),
+                'performed_by': 'System',
+                'created_at': assignment_date
+            })
+    
+    all_history = list(history_serializer.data)
+    
+    existing_event_types = {h.get('event_type') for h in all_history}
+    
+    for event in system_events:
+        if event['event_type'] not in existing_event_types:
+            all_history.append(event)
+    
+    from datetime import datetime
+    def sort_key(event):
+        try:
+            date_str = event.get('event_date', '')
+            time_str = event.get('event_time', '00:00:00')
+            if date_str and time_str:
+                dt_str = f"{date_str} {time_str}"
+                return datetime.strptime(dt_str, '%d/%m/%Y %H:%M:%S')
+        except:
+            pass
+        if 'created_at' in event:
+            return event['created_at']
+        return datetime.min
+    
+    all_history.sort(key=sort_key)
+    
+    for event in all_history:
+        if 'created_at' in event:
+            del event['created_at']
+    
     summary_serializer = CaseTimelineSummarySerializer(case, context={'request': request})
     
-    # Get case logs for timeline
     case_logs = CaseLog.objects.filter(renewal_case=case, is_deleted=False).select_related('created_by', 'updated_by').order_by('-created_at')
     case_logs_serializer = CaseLogSerializer(case_logs, many=True, context={'request': request})
     
     return Response({
         'journey_summary': summary_serializer.data,
-        'case_history': history_serializer.data,
+        'case_history': all_history,
         'case_logs': case_logs_serializer.data,
     })
 

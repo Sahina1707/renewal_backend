@@ -3,7 +3,7 @@ from django.utils.html import format_html
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 
-from .models import CaseHistory, CaseComment
+from .models import CaseHistory
 from apps.renewals.models import RenewalCase as Case
 
 @admin.register(Case)
@@ -84,14 +84,14 @@ class CaseHistoryAdmin(admin.ModelAdmin):
         'case__case_id', 'description', 'action', 'created_by__email'
     ]
     readonly_fields = ['created_at', 'updated_at']
-    raw_id_fields = ['case', 'created_by', 'related_comment']
+    raw_id_fields = ['case', 'created_by']
     
     fieldsets = (
         ('History Information', {
             'fields': ('case', 'action', 'description')
         }),
         ('Change Details', {
-            'fields': ('old_value', 'new_value', 'related_comment'),
+            'fields': ('old_value', 'new_value'),
             'classes': ('collapse',)
         }),
         ('Additional Information', {
@@ -114,54 +114,5 @@ class CaseHistoryAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         """Optimize queryset with select_related."""
         return super().get_queryset(request).select_related(
-            'case', 'created_by', 'updated_by', 'related_comment'
-        )
-
-
-@admin.register(CaseComment)
-class CaseCommentAdmin(admin.ModelAdmin):
-    """Admin interface for CaseComment model."""
-    
-    list_display = [
-        'case', 'comment_short', 'comment_type', 'is_internal', 
-        'is_important', 'created_by', 'created_at'
-    ]
-    list_filter = [
-        'comment_type', 'is_internal', 'is_important', 
-        'created_by', 'created_at', 'case__status'
-    ]
-    search_fields = [
-        'case__case_id', 'comment', 'created_by__email'
-    ]
-    readonly_fields = ['created_at', 'updated_at']
-    raw_id_fields = ['case', 'created_by', 'related_comment']
-    
-    fieldsets = (
-        ('Comment Information', {
-            'fields': ('case', 'comment', 'comment_type')
-        }),
-        ('Comment Settings', {
-            'fields': ('is_internal', 'is_important', 'related_comment')
-        }),
-        ('Additional Information', {
-            'fields': ('tags', 'metadata'),
-            'classes': ('collapse',)
-        }),
-        ('Audit Information', {
-            'fields': ('created_at', 'updated_at', 'created_by', 'updated_by'),
-            'classes': ('collapse',)
-        }),
-    )
-    
-    def comment_short(self, obj):
-        """Display truncated comment."""
-        if len(obj.comment) > 50:
-            return f"{obj.comment[:50]}..."
-        return obj.comment
-    comment_short.short_description = 'Comment'
-    
-    def get_queryset(self, request):
-        """Optimize queryset with select_related."""
-        return super().get_queryset(request).select_related(
-            'case', 'created_by', 'updated_by', 'related_comment'
+            'case', 'created_by', 'updated_by'
         )
