@@ -12,10 +12,7 @@ logger = logging.getLogger(__name__)
 
 @shared_task
 def process_pending_campaigns():
-    """
-    Process scheduled campaigns that are ready to be sent.
-    This task runs every 5 minutes via Celery Beat.
-    """
+    
     try:
         from apps.campaigns.models import Campaign
         from apps.campaigns.services import EmailCampaignService
@@ -23,7 +20,6 @@ def process_pending_campaigns():
         current_time = timezone.now()
         logger.info(f"Processing pending campaigns at {current_time}")
         
-        # Find campaigns that are scheduled and ready to be sent
         scheduled_campaigns = Campaign.objects.filter(
             status='scheduled',
             scheduled_at__lte=current_time,
@@ -37,12 +33,10 @@ def process_pending_campaigns():
             try:
                 logger.info(f"Processing scheduled campaign: {campaign.name} (ID: {campaign.id})")
                 
-                # Update campaign status to running
                 campaign.status = 'running'
                 campaign.started_at = current_time
                 campaign.save()
                 
-                # Send emails for this campaign
                 result = EmailCampaignService.send_campaign_emails(campaign.id)
                 
                 if result.get('success', False):
@@ -53,7 +47,6 @@ def process_pending_campaigns():
                     
             except Exception as e:
                 logger.error(f"Error processing campaign {campaign.id}: {str(e)}")
-                # Mark campaign as failed
                 campaign.status = 'cancelled'
                 campaign.save()
                 continue
@@ -68,16 +61,12 @@ def process_pending_campaigns():
 
 @shared_task
 def update_campaign_metrics():
-    """
-    Update campaign metrics and statistics.
-    This task runs every 15 minutes via Celery Beat.
-    """
+   
     try:
         from apps.campaigns.models import Campaign, CampaignRecipient
         
         logger.info("Updating campaign metrics")
         
-        # Update campaign statistics
         campaigns = Campaign.objects.filter(
             status__in=['running', 'completed'],
             is_deleted=False
@@ -102,10 +91,7 @@ def update_campaign_metrics():
 
 @shared_task
 def send_scheduled_campaign_email(campaign_id):
-    """
-    Send emails for a specific scheduled campaign.
-    This can be used for individual campaign scheduling.
-    """
+   
     try:
         from apps.campaigns.models import Campaign
         from apps.campaigns.services import EmailCampaignService
@@ -114,17 +100,14 @@ def send_scheduled_campaign_email(campaign_id):
         
         campaign = Campaign.objects.get(id=campaign_id)
         
-        # Check if campaign is still scheduled and ready
         if campaign.status != 'scheduled':
             logger.warning(f"Campaign {campaign_id} is not in scheduled status: {campaign.status}")
             return f"Campaign {campaign_id} is not scheduled"
         
-        # Update status to running
         campaign.status = 'running'
         campaign.started_at = timezone.now()
         campaign.save()
         
-        # Send emails
         result = EmailCampaignService.send_campaign_emails(campaign_id)
         
         if result.get('success', False):
@@ -144,15 +127,11 @@ def send_scheduled_campaign_email(campaign_id):
 
 @shared_task
 def cleanup_old_campaigns():
-    """
-    Clean up old completed campaigns and their data.
-    This task runs weekly via Celery Beat.
-    """
+   
     try:
         from apps.campaigns.models import Campaign, CampaignRecipient
         from datetime import timedelta
         
-        # Clean up campaigns older than 1 year
         cutoff_date = timezone.now() - timedelta(days=365)
         
         old_campaigns = Campaign.objects.filter(
@@ -164,12 +143,10 @@ def cleanup_old_campaigns():
         cleaned_count = 0
         for campaign in old_campaigns:
             try:
-                # Soft delete the campaign
                 campaign.is_deleted = True
                 campaign.deleted_at = timezone.now()
                 campaign.save()
                 
-                # Clean up old recipients
                 CampaignRecipient.objects.filter(
                     campaign=campaign,
                     created_at__lt=cutoff_date

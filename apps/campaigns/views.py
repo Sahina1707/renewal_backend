@@ -60,10 +60,8 @@ class CampaignViewSet(viewsets.ModelViewSet):
                 try:
                     campaign = serializer.save()
 
-                    # Check if emails were sent immediately
                     send_immediately = request.data.get('send_immediately', False)
 
-                    # Return campaign details with recipient count
                     response_data = {
                         "message": "Campaign created successfully",
                         "campaign": {
@@ -167,13 +165,10 @@ class CampaignViewSet(viewsets.ModelViewSet):
         try:
             campaign = self.get_object()
 
-            # Update statistics first
             campaign.update_campaign_statistics()
 
-            # Get comprehensive metrics
             metrics = campaign.get_campaign_metrics()
 
-            # Get recipient breakdown
             recipients = campaign.recipients.all()
             recipient_breakdown = {
                 'total_recipients': recipients.count(),
@@ -214,14 +209,12 @@ class CampaignViewSet(viewsets.ModelViewSet):
         try:
             campaign = self.get_object()
 
-            # Get recipient counts before update for debugging
             recipients = campaign.recipients.all()
             pending_count = recipients.filter(email_status='pending').count()
             sent_count = recipients.filter(email_status__in=['sent', 'delivered']).count()
             delivered_count = recipients.filter(email_status='delivered').count()
             failed_count = recipients.filter(email_status='failed').count()
 
-            # Update campaign statistics
             campaign.update_campaign_statistics()
 
             return Response({
@@ -257,7 +250,6 @@ class CampaignViewSet(viewsets.ModelViewSet):
             campaign = self.get_object()
             recipients = campaign.recipients.all()
 
-            # Get status breakdown
             status_breakdown = {}
             for status_choice in CampaignRecipient.DELIVERY_STATUS_CHOICES:
                 status_code = status_choice[0]
@@ -265,7 +257,6 @@ class CampaignViewSet(viewsets.ModelViewSet):
                 if count > 0:
                     status_breakdown[status_code] = count
 
-            # Get sample recipients for each status
             sample_recipients = {}
             for status_code in status_breakdown.keys():
                 sample = recipients.filter(email_status=status_code)[:3]
@@ -309,24 +300,20 @@ class CampaignViewSet(viewsets.ModelViewSet):
         try:
             campaign = self.get_object()
 
-            # Get all recipients for this campaign
             recipients = campaign.recipients.all()
 
-            # Count manually without using the model method
             total_recipients = recipients.count()
             sent_count = recipients.filter(email_status__in=['sent', 'delivered']).count()
             delivered_count = recipients.filter(email_status='delivered').count()
             opened_count = recipients.filter(email_engagement__in=['opened', 'clicked', 'replied', 'forwarded']).count()
             clicked_count = recipients.filter(email_engagement__in=['clicked', 'replied', 'forwarded']).count()
 
-            # Update campaign fields directly
             campaign.target_count = total_recipients
             campaign.sent_count = sent_count
             campaign.delivered_count = delivered_count
             campaign.opened_count = opened_count
             campaign.clicked_count = clicked_count
 
-            # Save the campaign
             campaign.save()
 
             return Response({
@@ -369,7 +356,6 @@ class CampaignViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Send emails using the service
             result = EmailCampaignService.send_campaign_emails(campaign.id)
 
             if "error" in result:
@@ -395,7 +381,6 @@ class CampaignViewSet(viewsets.ModelViewSet):
 
             campaign_stats = []
             for campaign in campaigns:
-                # Update statistics
                 campaign.update_campaign_statistics()
 
                 stats = {
@@ -411,7 +396,6 @@ class CampaignViewSet(viewsets.ModelViewSet):
                     'total_responses': campaign.total_responses,
                 }
 
-                # Calculate rates
                 if campaign.sent_count > 0:
                     stats['delivery_rate'] = round((campaign.delivered_count / campaign.sent_count) * 100, 2)
                 else:
@@ -444,10 +428,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='change-status')
     def change_status(self, request, pk=None):
-        """
-        Change campaign status (Active/Paused) - Simplified for frontend
-        Expected payload: {"status": "active"} or {"status": "paused"}
-        """
+       
         try:
             campaign = self.get_object()
             new_simplified_status = request.data.get('status')
@@ -458,7 +439,6 @@ class CampaignViewSet(viewsets.ModelViewSet):
                     "message": "Status is required"
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            # Validate simplified status
             valid_statuses = ['active', 'paused']
             if new_simplified_status not in valid_statuses:
                 return Response({
@@ -466,7 +446,6 @@ class CampaignViewSet(viewsets.ModelViewSet):
                     "message": f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            # Check if status change is valid
             current_simplified_status = campaign.get_simplified_status()
             if current_simplified_status == new_simplified_status:
                 return Response({
@@ -480,16 +459,12 @@ class CampaignViewSet(viewsets.ModelViewSet):
                     }
                 }, status=status.HTTP_200_OK)
             
-            # Update campaign status using simplified method
             campaign.set_simplified_status(new_simplified_status)
             
-            # Update timestamps based on status
             if new_simplified_status == 'active' and current_simplified_status == 'paused':
-                # Resume campaign
                 campaign.started_at = timezone.now()
                 campaign.save(update_fields=['started_at'])
             elif new_simplified_status == 'paused' and current_simplified_status == 'active':
-                # Pause campaign - keep existing started_at
                 pass
             
             return Response({
@@ -549,7 +524,6 @@ def simulate_email_delivery(request):
                 recipient.save()
                 bounced_count += 1
 
-        # Update campaign statistics
         campaign.update_campaign_statistics()
 
         return Response({
@@ -625,7 +599,6 @@ def get_all_campaigns(request):
 
         campaigns_data = []
         for campaign in campaigns:
-            # Get original file name from upload
             original_filename = "N/A"
             if campaign.upload:
                 original_filename = campaign.upload.original_filename
@@ -673,7 +646,6 @@ def update_campaign_status(request, campaign_id):
     try:
         campaign = Campaign.objects.get(id=campaign_id)
         
-        # Get the new status from request
         new_status = request.data.get('status')
         
         if not new_status:
@@ -682,7 +654,6 @@ def update_campaign_status(request, campaign_id):
                 "message": "status is required"
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Validate status value - only accept active and paused
         valid_statuses = ['active', 'paused']
         if new_status.lower() not in valid_statuses:
             return Response({
@@ -690,10 +661,8 @@ def update_campaign_status(request, campaign_id):
                 "message": f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Normalize status to lowercase
         new_status = new_status.lower()
         
-        # Update the campaign status
         campaign.status = new_status
         campaign.save(update_fields=['status'])
         
@@ -720,14 +689,12 @@ def update_campaign_status(request, campaign_id):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-# Email Tracking Views
 @method_decorator(csrf_exempt, name='dispatch')
 class EmailTrackingView(View):
     """Handle email tracking for opens and clicks"""
 
     def get(self, request):
         """Track email opens using tracking pixel"""
-        # Create 1x1 transparent pixel response first
         pixel_data = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==')
         response = HttpResponse(pixel_data, content_type='image/png')
         response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
@@ -735,18 +702,15 @@ class EmailTrackingView(View):
         response['Expires'] = '0'
 
         try:
-            # Get tracking ID from query parameters
             tracking_id = request.GET.get('t')
             if not tracking_id:
                 logger.warning("No tracking ID provided")
                 return response
 
-            # Find the campaign recipient by tracking ID
             recipient = CampaignRecipient.objects.select_related('campaign', 'customer').get(tracking_id=tracking_id)
 
             logger.info(f"Email open tracked: {recipient.customer.email}, Campaign: {recipient.campaign.name}")
 
-            # Only update if not already opened
             if recipient.email_engagement == 'not_opened':
                 recipient.email_engagement = 'opened'
                 recipient.email_opened_at = timezone.now()
@@ -755,7 +719,6 @@ class EmailTrackingView(View):
 
                 recipient.save()
 
-                # Update campaign statistics using the model method
                 campaign = recipient.campaign
                 campaign.update_campaign_statistics()
 
@@ -779,24 +742,20 @@ class EmailClickTrackingView(View):
     def get(self, request):
         """Track email clicks and redirect to original URL"""
         try:
-            # Get tracking ID from query parameters
             tracking_id = request.GET.get('t')
             original_url = request.GET.get('url', 'http://localhost:8000')
 
             if not tracking_id:
                 return HttpResponseRedirect(original_url)
 
-            # Find the campaign recipient by tracking ID
             recipient = CampaignRecipient.objects.select_related('campaign', 'customer').get(tracking_id=tracking_id)
 
             logger.info(f"Email click tracked: {recipient.customer.email}, Campaign: {recipient.campaign.name}")
 
-            # Update recipient engagement status to 'clicked' (highest engagement level)
             if recipient.email_engagement in ['not_opened', 'opened']:
                 recipient.email_engagement = 'clicked'
                 recipient.email_clicked_at = timezone.now()
 
-                # Set delivered and opened timestamps if not already set
                 if not recipient.email_delivered_at:
                     recipient.email_delivered_at = timezone.now()
                 if not recipient.email_opened_at:
@@ -804,23 +763,19 @@ class EmailClickTrackingView(View):
 
                 recipient.save()
 
-                # Update campaign statistics using the model method
                 campaign = recipient.campaign
                 campaign.update_campaign_statistics()
 
                 logger.info(f"Email clicked: Campaign {campaign.name}, Customer: {recipient.customer.email}")
                 logger.info(f"Campaign stats updated - Sent: {campaign.sent_count}, Delivered: {campaign.delivered_count}, Opened: {campaign.opened_count}, Clicked: {campaign.clicked_count}")
 
-            # Redirect to the original URL
             return HttpResponseRedirect(original_url)
 
         except CampaignRecipient.DoesNotExist:
             logger.warning(f"Invalid tracking ID for click: {tracking_id}")
-            # Redirect to a default URL
             return HttpResponseRedirect('http://localhost:8000')
         except Exception as e:
             logger.error(f"Error tracking email click: {str(e)}")
-            # Redirect to a default URL
             return HttpResponseRedirect('http://localhost:8000')
 
 
@@ -830,7 +785,6 @@ class EmailClickTrackingView(View):
 def test_tracking_pixel(request):
     """Test endpoint to verify tracking pixel functionality"""
     try:
-        # Get tracking ID from query parameters
         tracking_id = request.GET.get('t')
         if not tracking_id:
             return Response({
@@ -838,7 +792,6 @@ def test_tracking_pixel(request):
                 "message": "Missing tracking ID parameter 't'"
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Find the campaign recipient by tracking ID
         recipient = CampaignRecipient.objects.select_related('campaign').get(tracking_id=tracking_id)
 
         return Response({
@@ -872,10 +825,8 @@ def get_campaign_tracking_stats(request, campaign_id):
     try:
         campaign = Campaign.objects.get(id=campaign_id)
 
-        # Get recipients for this campaign
         recipients = CampaignRecipient.objects.filter(campaign=campaign)
 
-        # Calculate engagement rates
         total_recipients = recipients.count()
         open_rate = (campaign.opened_count / campaign.sent_count * 100) if campaign.sent_count > 0 else 0
         click_rate = (campaign.clicked_count / campaign.sent_count * 100) if campaign.sent_count > 0 else 0
