@@ -25,23 +25,19 @@ class TemplateViewSet(viewsets.ModelViewSet):
         """Filter templates based on query parameters"""
         queryset = Template.objects.all()
         
-        # Filter by channel if provided
         channel = self.request.query_params.get('channel', None)
         if channel:
             queryset = queryset.filter(channel=channel)
             
-        # Filter by category if provided
         category = self.request.query_params.get('category', None)
         if category:
             queryset = queryset.filter(category=category)
             
-        # Filter by is_active if provided
         is_active = self.request.query_params.get('is_active', None)
         if is_active is not None:
             is_active_bool = is_active.lower() == 'true'
             queryset = queryset.filter(is_active=is_active_bool)
             
-        # Search by name if provided
         search = self.request.query_params.get('search', None)
         if search:
             queryset = queryset.filter(
@@ -147,7 +143,6 @@ class TemplateViewSet(viewsets.ModelViewSet):
         try:
             original_template = self.get_object()
             
-            # Create a new template with modified name
             new_name = f"{original_template.name} (Copy)"
             counter = 1
             while Template.objects.filter(name=new_name).exists():
@@ -165,7 +160,7 @@ class TemplateViewSet(viewsets.ModelViewSet):
                 dlt_template_id=original_template.dlt_template_id,
                 tags=list(original_template.tags) if isinstance(original_template.tags, list) else [],
                 is_dlt_approved=original_template.is_dlt_approved,
-                is_active=False,  # Start as inactive
+                is_active=False,  
                 created_by=request.user
             )
             

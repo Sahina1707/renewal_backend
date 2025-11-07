@@ -668,7 +668,7 @@ def get_all_campaigns(request):
 @permission_classes([IsAuthenticated])
 def update_campaign_status(request, campaign_id):
     """
-    Update campaign status (active/paused)
+    Update campaign status (active/paused only)
     """
     try:
         campaign = Campaign.objects.get(id=campaign_id)
@@ -682,13 +682,16 @@ def update_campaign_status(request, campaign_id):
                 "message": "status is required"
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Validate status value - accept both active/paused and other valid statuses
-        valid_statuses = ['active', 'paused', 'draft', 'scheduled', 'running', 'completed', 'cancelled']
-        if new_status not in valid_statuses:
+        # Validate status value - only accept active and paused
+        valid_statuses = ['active', 'paused']
+        if new_status.lower() not in valid_statuses:
             return Response({
                 "success": False,
                 "message": f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
             }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Normalize status to lowercase
+        new_status = new_status.lower()
         
         # Update the campaign status
         campaign.status = new_status
