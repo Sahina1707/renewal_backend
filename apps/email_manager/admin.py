@@ -10,6 +10,7 @@ class EmailManagerAdmin(admin.ModelAdmin):
         'subject',
         'policy_number',
         'customer_name',
+        'template',
         'priority',
         'email_status',
         'schedule_send',
@@ -23,6 +24,7 @@ class EmailManagerAdmin(admin.ModelAdmin):
         'priority',
         'email_status',
         'schedule_send',
+        'template',
         'track_opens',
         'track_clicks',
         'created_at',
@@ -34,6 +36,7 @@ class EmailManagerAdmin(admin.ModelAdmin):
         'subject',
         'policy_number',
         'customer_name',
+        'template__name',
     ]
     readonly_fields = ['created_at', 'updated_at', 'email_status', 'sent_at', 'error_message']
     date_hierarchy = 'created_at'

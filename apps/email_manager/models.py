@@ -1,5 +1,6 @@
 from django.db import models
 from apps.core.models import BaseModel
+from apps.templates.models import Template
 
 
 class EmailManager(BaseModel):
@@ -105,6 +106,17 @@ class EmailManager(BaseModel):
         help_text="Error message if email sending failed"
     )
     
+    template = models.ForeignKey(
+        Template,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='email_managers',
+        db_column='templates_id',
+        help_text="Associated template"
+    )
+
+    
     class Meta:
         db_table = 'email_manager'
         ordering = ['-created_at']
@@ -114,6 +126,7 @@ class EmailManager(BaseModel):
             models.Index(fields=['priority']),
             models.Index(fields=['schedule_send', 'schedule_date_time']),
             models.Index(fields=['email_status']),
+            models.Index(fields=['template']),
             models.Index(fields=['created_at']),
         ]
     
