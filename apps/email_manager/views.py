@@ -6,11 +6,12 @@ from .models import EmailManager
 from .serializers import (
     EmailManagerSerializer,
     EmailManagerCreateSerializer,
-    EmailManagerUpdateSerializer
+    EmailManagerUpdateSerializer,
+    SentEmailListSerializer
 )
 from .services import EmailManagerService
 from apps.templates.models import Template
-
+from apps.customer_payment_schedule.models import PaymentSchedule
 
 class EmailManagerViewSet(viewsets.ModelViewSet):
     
@@ -92,7 +93,8 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                 from apps.templates.models import Template
                 template = Template.objects.get(id=template_id)
                 data['subject'] = data.get('subject') or template.subject
-                data['message'] = data.get('message') or template.message
+                data['message'] = data.get('message') or template.content
+
             except Template.DoesNotExist:
                 return Response({
                     'success': False,
@@ -249,7 +251,6 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['post'])
     def send_email(self, request):
-       
         try:
             email_id = request.data.get('id') or request.query_params.get('id')
             
@@ -277,77 +278,67 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                         'error': 'Please provide "to" field to send a new email, or provide "id" to send an existing email'
                     }, status=status.HTTP_400_BAD_REQUEST)
                 
-                templates_id = request.data.get('templates_id')
-                template = None
-                if templates_id:
+                email_data = request.data.copy()
+                if 'templates_id' in email_data:
+                    email_data['template'] = email_data.pop('templates_id')
+
+                from apps.policies.models import Policy
+                from django.template import Template as DjangoTemplate, Context
+
+                policy_number = email_data.get('policy_number')
+                context = {}
+
+                if policy_number:
                     try:
-                        templates_id = int(templates_id)
-                        template = Template.objects.get(id=templates_id, is_active=True)
+                        policy = Policy.objects.get(policy_number=policy_number)
+                        customer = policy.customer
+                        context = {
+                            'first_name': customer.first_name,
+                            'last_name': customer.last_name,
+                            'full_name': customer.full_name,
+                            'policy_number': policy.policy_number,
+                            'expiry_date': policy.end_date.strftime('%Y-%m-%d') if policy.end_date else '',
+                            'premium_amount': policy.premium_amount,
+                        }
+                    except Policy.DoesNotExist:
+                        pass
+
+                template = None
+                if email_data.get('template'):
+                    try:
+                        template = Template.objects.get(id=email_data['template'], is_active=True)
                     except (Template.DoesNotExist, ValueError, TypeError):
                         return Response({
                             'success': False,
                             'message': 'Template not found',
-                            'error': f'Template with ID {templates_id} does not exist or is not active'
+                            'error': f"Template with ID {email_data.get('template')} does not exist or is not active"
                         }, status=status.HTTP_404_NOT_FOUND)
-                
-                email_data = {}
-                for key, value in request.data.items():
-                    if key == 'templates_id':
-                        # Handle templates_id specially - ensure it's always an integer or None
-                        if value is None:
-                            email_data[key] = None
-                        elif isinstance(value, Template):
-                            # If somehow a Template object was passed, extract its ID
-                            email_data[key] = value.id
-                        elif isinstance(value, list) and len(value) > 0:
-                            # If it's a list, get first value and convert to int
-                            val = value[0]
-                            if isinstance(val, Template):
-                                email_data[key] = val.id
-                            else:
-                                try:
-                                    email_data[key] = int(val)
-                                except (ValueError, TypeError):
-                                    email_data[key] = None
-                        else:
-                            # Try to convert to int
-                            try:
-                                email_data[key] = int(value)
-                            except (ValueError, TypeError):
-                                email_data[key] = None
-                    else:
-                        # For other fields, handle normally
-                        if isinstance(value, list) and len(value) > 0:
-                            email_data[key] = value[0]
-                        else:
-                            email_data[key] = value
-                
-                # Ensure templates_id is ALWAYS an integer or None (override with our validated value)
-                # This is critical - the serializer expects an integer ID, not a Template object
-                if templates_id:
-                    email_data['templates_id'] = int(templates_id)
-                else:
-                    # If templates_id was not provided or is invalid, set to None
-                    email_data['templates_id'] = None
-                
+
                 if template:
                     if not email_data.get('subject') and template.subject:
                         email_data['subject'] = template.subject
                     if not email_data.get('message') and template.content:
                         email_data['message'] = template.content
-                
+                    
+                    if context:
+                        subject_template = DjangoTemplate(email_data['subject'])
+                        message_template = DjangoTemplate(email_data['message'])
+                        
+                        email_data['subject'] = subject_template.render(Context(context))
+                        email_data['message'] = message_template.render(Context(context))
+
                 if not email_data.get('subject'):
                     return Response({
                         'success': False,
                         'message': 'Required fields missing',
-                        'error': 'Please provide "subject" field or a valid "templates_id" with subject'
+                        'error': 'Please provide "subject" field or a valid "template" with subject'
                     }, status=status.HTTP_400_BAD_REQUEST)
                 
                 if not email_data.get('message'):
                     return Response({
                         'success': False,
                         'message': 'Required fields missing',
-                        'error': 'Please provide "message" field or a valid "templates_id" with content'
+                        'error': 'Please provide "message" field or a valid "template" with content'
                     }, status=status.HTTP_400_BAD_REQUEST)
                 
                 create_serializer = EmailManagerCreateSerializer(data=email_data)
@@ -359,9 +350,7 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                     }, status=status.HTTP_400_BAD_REQUEST)
                 
                 email_manager = create_serializer.save(created_by=request.user)
-                if email_manager.schedule_send and email_manager.schedule_date_time:
-                    pass
-                else:
+                if not email_manager.schedule_send:
                     email_manager.schedule_send = False
                     email_manager.save()
             
@@ -418,3 +407,81 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                 'error': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=False, methods=['get'])
+    def sent_emails(self, request):
+        """
+        List all sent emails with policy number, priority, sent date, and due date.
+        """
+        try:
+            sent_emails = EmailManager.objects.filter(
+                email_status='sent',
+                is_deleted=False
+            ).order_by('-sent_at')
+
+            serializer = SentEmailListSerializer(sent_emails, many=True)
+
+            return Response({
+                'success': True,
+                'message': 'Sent emails retrieved successfully',
+                'count': sent_emails.count(),
+                'data': serializer.data
+            }, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Error retrieving sent emails: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+    @action(detail=False, methods=['get'], url_path='email_details/(?P<pk>[^/.]+)')
+    def email_details(self, request, pk=None):
+        try:
+            email = EmailManager.objects.get(id=pk, is_deleted=False)
+            serializer = EmailManagerSerializer(email)
+
+            renewal_info = {}
+            if email.policy_number:
+                try:
+                    from apps.policies.models import Policy
+                    policy = Policy.objects.get(policy_number=email.policy_number)
+                    renewal_info = {
+                        "policy_number": policy.policy_number,
+                        "customer_name": policy.customer.full_name,
+                        "renewal_date": policy.renewal_date.strftime("%Y-%m-%d") if policy.renewal_date else None,
+                        "premium_amount": str(policy.premium_amount),
+                    }
+                except Policy.DoesNotExist:
+                    renewal_info = {
+                        "policy_number": email.policy_number,
+                        "customer_name": email.customer_name,
+                        "renewal_date": email.renewal_date,
+                        "premium_amount": str(email.premium_amount) if email.premium_amount else None,
+                    }
+
+            tracking_info = {
+                "opens": 0,
+                "clicks": 0,
+            }
+
+            response_data = {
+                "success": True,
+                "message": "Email details retrieved successfully",
+                "data": {
+                    "email_info": serializer.data,
+                    "renewal_information": renewal_info,
+                    "email_tracking": tracking_info,
+                },
+            }
+
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        except EmailManager.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": f"Email with ID {pk} not found"
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                "success": False,
+                "message": f"Error retrieving email details: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
