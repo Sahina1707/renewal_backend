@@ -95,10 +95,7 @@ def search_case_logs_by_case_number_api(request: HttpRequest) -> Response:
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def search_case_logs_by_policy_number_api(request: HttpRequest) -> Response:
-    """
-    Search case logs by policy number (case-insensitive)
-    Accepts both POL-12345 and pol-12345 formats
-    """
+    
     try:
         if hasattr(request, 'query_params'):
             policy_number = request.query_params.get('policy_number', '').strip() 

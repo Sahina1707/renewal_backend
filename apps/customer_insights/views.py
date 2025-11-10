@@ -11,7 +11,10 @@ from django.db.models import Q, Count, Avg, Sum
 from django.utils import timezone
 from datetime import datetime, timedelta
 from apps.claims.models import Claim
+<<<<<<< HEAD
 
+=======
+>>>>>>> d1b458828d06c4439a9012af900712159c9bcf1b
 from apps.customers.models import Customer
 from .models import CustomerInsight
 from .serializers import (
@@ -19,7 +22,7 @@ from .serializers import (
     CustomerInsightsSummarySerializer, InsightsDashboardSerializer,
     CustomerInsightsFilterSerializer, CustomerInsightsBulkUpdateSerializer,
     CustomerInsightsRecalculateSerializer,
-    CommunicationHistoryResponseSerializer, ClaimsHistoryResponseSerializer # --- ADDED ---
+    CommunicationHistoryResponseSerializer, ClaimsHistoryResponseSerializer 
 )
 from .services import CustomerInsightsService
 
@@ -35,7 +38,6 @@ class CustomerInsightsViewSet(viewsets.ModelViewSet):
         """Filter queryset based on user permissions"""
         queryset = super().get_queryset()
         
-        # Add customer filtering if needed
         customer_id = self.request.query_params.get('customer_id')
         if customer_id:
             queryset = queryset.filter(customer_id=customer_id)
@@ -46,14 +48,11 @@ class CustomerInsightsViewSet(viewsets.ModelViewSet):
     def get_customer_insights(self, request, case_number=None):
         """Get comprehensive insights for a specific customer - MAIN ENDPOINT"""
         try:
-            # Check for force recalculation parameter
             force_recalculate = request.query_params.get('force_recalculate', 'false').lower() == 'true'
             
-            # Check for specific sections to include
             sections = request.query_params.get('sections', '').split(',')
             sections = [s.strip() for s in sections if s.strip()]
             
-            # Get customer via RenewalCase using case_number
             try:
                 from apps.renewals.models import RenewalCase
                 renewal_case = RenewalCase.objects.select_related('customer').get(case_number=case_number)
@@ -74,7 +73,6 @@ class CustomerInsightsViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND
                 )
             
-            # Filter sections if requested
             if sections:
                 filtered_data = {
                     'customer_info': insights_data['customer_info'],
@@ -113,7 +111,6 @@ class CustomerInsightsViewSet(viewsets.ModelViewSet):
             force_recalculate = serializer.validated_data.get('force_recalculate', False)
             sections = serializer.validated_data.get('sections', [])
             
-            # Get customer via RenewalCase using case_number
             try:
                 from apps.renewals.models import RenewalCase
                 renewal_case = RenewalCase.objects.select_related('customer').get(case_number=case_number)
@@ -189,10 +186,8 @@ class CustomerInsightsViewSet(viewsets.ModelViewSet):
     def get_insights_dashboard(self, request):
         """Get insights dashboard data"""
         try:
-            # Get basic statistics
             total_customers = Customer.objects.filter(is_deleted=False).count()
             
-            # High value customers (HNI segment)
             high_value_customers = Customer.objects.filter(
                 is_deleted=False,
                 profile='HNI'
@@ -205,7 +200,6 @@ class CustomerInsightsViewSet(viewsets.ModelViewSet):
             total_premiums = 0.0
             payment_reliability_avg = 0.0
             
-            # Calculate from JSON fields in customer_insights table
             insights_records = CustomerInsight.objects.all()
             if insights_records.exists():
                 satisfaction_ratings = []
@@ -229,7 +223,6 @@ class CustomerInsightsViewSet(viewsets.ModelViewSet):
                 total_premiums = sum(premium_totals) if premium_totals else 0.0
                 payment_reliability_avg = sum(payment_rates) / len(payment_rates) if payment_rates else 0.0
             
-            # Recent insights (last 10 customers with insights)
             recent_insights = []
             recent_customers = Customer.objects.filter(
                 is_deleted=False,

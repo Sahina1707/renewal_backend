@@ -21,7 +21,6 @@ from apps.outstanding_amounts.serializers import (
 @permission_classes([permissions.IsAuthenticated])
 def get_outstanding_summary_api(request, case_id):
     try:
-        # Handle both integer ID and case_number
         if case_id.isdigit():
             renewal_case = get_object_or_404(RenewalCase, id=int(case_id))
             actual_case_id = int(case_id)
@@ -29,7 +28,6 @@ def get_outstanding_summary_api(request, case_id):
             renewal_case = get_object_or_404(RenewalCase, case_number=case_id)
             actual_case_id = renewal_case.id
         
-        # Get outstanding summary
         outstanding_data = OutstandingAmountsService.get_outstanding_summary(actual_case_id)
         
         if outstanding_data is None:
@@ -38,7 +36,6 @@ def get_outstanding_summary_api(request, case_id):
                 'error': 'Failed to calculate outstanding amounts'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
-        # Serialize the data
         serializer = OutstandingAmountsSummarySerializer(outstanding_data)
         
         return Response({
@@ -58,7 +55,6 @@ def get_outstanding_summary_api(request, case_id):
 @permission_classes([permissions.IsAuthenticated])
 def initiate_payment_api(request, case_id):
     try:
-        # Handle both integer ID and case_number
         if case_id.isdigit():
             renewal_case = get_object_or_404(RenewalCase, id=int(case_id))
             actual_case_id = int(case_id)
@@ -66,7 +62,6 @@ def initiate_payment_api(request, case_id):
             renewal_case = get_object_or_404(RenewalCase, case_number=case_id)
             actual_case_id = renewal_case.id
         
-        # Validate request data
         serializer = PaymentInitiationSerializer(data=request.data)
         if not serializer.is_valid():
             return Response({
@@ -77,20 +72,17 @@ def initiate_payment_api(request, case_id):
         
         validated_data = serializer.validated_data
         
-        # Prepare payment data
         payment_data = {
             'payment_mode': validated_data.get('payment_mode', 'upi'),
             'payment_notes': validated_data.get('payment_notes', '')
         }
         
-        # Initiate payment
         result = OutstandingAmountsService.initiate_payment_for_case(
             case_id=actual_case_id,
             installment_ids=validated_data.get('installment_ids'),
             payment_data=payment_data
         )
         
-        # Serialize response
         response_serializer = PaymentResponseSerializer(result)
         
         if result['success']:
@@ -116,7 +108,6 @@ def initiate_payment_api(request, case_id):
 @permission_classes([permissions.IsAuthenticated])
 def setup_payment_plan_api(request, case_id):
     try:
-        # Handle both integer ID and case_number
         if case_id.isdigit():
             renewal_case = get_object_or_404(RenewalCase, id=int(case_id))
             actual_case_id = int(case_id)
@@ -124,7 +115,6 @@ def setup_payment_plan_api(request, case_id):
             renewal_case = get_object_or_404(RenewalCase, case_number=case_id)
             actual_case_id = renewal_case.id
         
-        # Validate request data
         serializer = PaymentPlanSetupSerializer(data=request.data)
         if not serializer.is_valid():
             return Response({
@@ -135,13 +125,11 @@ def setup_payment_plan_api(request, case_id):
         
         validated_data = serializer.validated_data
         
-        # Setup payment plan
         result = OutstandingAmountsService.setup_payment_plan_for_case(
             case_id=actual_case_id,
             plan_data=validated_data
         )
         
-        # Serialize response
         response_serializer = PaymentPlanResponseSerializer(result)
         
         if result['success']:

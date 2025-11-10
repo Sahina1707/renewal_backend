@@ -40,12 +40,16 @@ class CaseLog(BaseModel):
     sub_status = models.CharField(
         max_length=50, 
         choices=SUB_STATUS_CHOICES,
+        null=True,
+        blank=True,
         help_text="Current sub-status of the case"
     )
     
     current_work_step = models.CharField(
         max_length=50, 
         choices=WORK_STEP_CHOICES,
+        null=True,
+        blank=True,
         help_text="Current work step in the renewal process"
     )
     
