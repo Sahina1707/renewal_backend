@@ -9,6 +9,7 @@ from .serializers import (
     EmailManagerUpdateSerializer
 )
 from .services import EmailManagerService
+from apps.templates.models import Template
 
 
 class EmailManagerViewSet(viewsets.ModelViewSet):
@@ -83,39 +84,48 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
         serializer.save(updated_by=self.request.user)
     
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
+        data = request.data.copy()
+        template_id = data.get('templates_id')
+
+        if template_id:
+            try:
+                from apps.templates.models import Template
+                template = Template.objects.get(id=template_id)
+                data['subject'] = data.get('subject') or template.subject
+                data['message'] = data.get('message') or template.message
+            except Template.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'message': f'Template with ID {template_id} not found.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         email_manager = serializer.instance
-        
+
         send_now = request.data.get('send_now', True)
         if send_now and not email_manager.schedule_send:
             send_result = EmailManagerService.send_email(email_manager)
             if not send_result['success']:
                 email_manager.refresh_from_db()
                 serializer = self.get_serializer(email_manager)
-                return Response(
-                    {
-                        'success': True,
-                        'message': 'Email manager entry created but sending failed',
-                        'data': serializer.data,
-                        'send_error': send_result.get('error')
-                    },
-                    status=status.HTTP_201_CREATED
-                )
+                return Response({
+                    'success': True,
+                    'message': 'Email created but sending failed',
+                    'data': serializer.data,
+                    'send_error': send_result.get('error')
+                }, status=status.HTTP_201_CREATED)
             email_manager.refresh_from_db()
             serializer = self.get_serializer(email_manager)
-        
+
         headers = self.get_success_headers(serializer.data)
-        return Response(
-            {
-                'success': True,
-                'message': 'Email manager entry created successfully',
-                'data': serializer.data
-            },
-            status=status.HTTP_201_CREATED,
-            headers=headers
-        )
+        return Response({
+            'success': True,
+            'message': 'Email manager entry created successfully',
+            'data': serializer.data
+        }, status=status.HTTP_201_CREATED, headers=headers)
+
     
     def update(self, request, *args, **kwargs):
         partial = kwargs.pop('partial', False)
@@ -260,15 +270,87 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                         'sent_at': email_manager.sent_at.isoformat() if email_manager.sent_at else None
                     }, status=status.HTTP_400_BAD_REQUEST)
             else:
-                
-                if not request.data.get('to') or not request.data.get('subject') or not request.data.get('message'):
+                if not request.data.get('to'):
                     return Response({
                         'success': False,
                         'message': 'Required fields missing',
-                        'error': 'Please provide "to", "subject", and "message" fields to send a new email, or provide "id" to send an existing email'
+                        'error': 'Please provide "to" field to send a new email, or provide "id" to send an existing email'
                     }, status=status.HTTP_400_BAD_REQUEST)
                 
-                create_serializer = EmailManagerCreateSerializer(data=request.data)
+                templates_id = request.data.get('templates_id')
+                template = None
+                if templates_id:
+                    try:
+                        templates_id = int(templates_id)
+                        template = Template.objects.get(id=templates_id, is_active=True)
+                    except (Template.DoesNotExist, ValueError, TypeError):
+                        return Response({
+                            'success': False,
+                            'message': 'Template not found',
+                            'error': f'Template with ID {templates_id} does not exist or is not active'
+                        }, status=status.HTTP_404_NOT_FOUND)
+                
+                email_data = {}
+                for key, value in request.data.items():
+                    if key == 'templates_id':
+                        # Handle templates_id specially - ensure it's always an integer or None
+                        if value is None:
+                            email_data[key] = None
+                        elif isinstance(value, Template):
+                            # If somehow a Template object was passed, extract its ID
+                            email_data[key] = value.id
+                        elif isinstance(value, list) and len(value) > 0:
+                            # If it's a list, get first value and convert to int
+                            val = value[0]
+                            if isinstance(val, Template):
+                                email_data[key] = val.id
+                            else:
+                                try:
+                                    email_data[key] = int(val)
+                                except (ValueError, TypeError):
+                                    email_data[key] = None
+                        else:
+                            # Try to convert to int
+                            try:
+                                email_data[key] = int(value)
+                            except (ValueError, TypeError):
+                                email_data[key] = None
+                    else:
+                        # For other fields, handle normally
+                        if isinstance(value, list) and len(value) > 0:
+                            email_data[key] = value[0]
+                        else:
+                            email_data[key] = value
+                
+                # Ensure templates_id is ALWAYS an integer or None (override with our validated value)
+                # This is critical - the serializer expects an integer ID, not a Template object
+                if templates_id:
+                    email_data['templates_id'] = int(templates_id)
+                else:
+                    # If templates_id was not provided or is invalid, set to None
+                    email_data['templates_id'] = None
+                
+                if template:
+                    if not email_data.get('subject') and template.subject:
+                        email_data['subject'] = template.subject
+                    if not email_data.get('message') and template.content:
+                        email_data['message'] = template.content
+                
+                if not email_data.get('subject'):
+                    return Response({
+                        'success': False,
+                        'message': 'Required fields missing',
+                        'error': 'Please provide "subject" field or a valid "templates_id" with subject'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                if not email_data.get('message'):
+                    return Response({
+                        'success': False,
+                        'message': 'Required fields missing',
+                        'error': 'Please provide "message" field or a valid "templates_id" with content'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                create_serializer = EmailManagerCreateSerializer(data=email_data)
                 if not create_serializer.is_valid():
                     return Response({
                         'success': False,

@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import EmailManager
+from apps.templates.models import Template
 
 
 class EmailManagerSerializer(serializers.ModelSerializer):
@@ -22,6 +23,7 @@ class EmailManagerSerializer(serializers.ModelSerializer):
             'schedule_date_time',
             'track_opens',
             'track_clicks',
+            'template_id',
             'email_status',
             'sent_at',
             'error_message',
@@ -34,6 +36,7 @@ class EmailManagerSerializer(serializers.ModelSerializer):
 
 
 class EmailManagerCreateSerializer(serializers.ModelSerializer):
+    templates_id = serializers.IntegerField(required=False, allow_null=True)
     
     class Meta:
         model = EmailManager
@@ -52,6 +55,7 @@ class EmailManagerCreateSerializer(serializers.ModelSerializer):
             'schedule_date_time',
             'track_opens',
             'track_clicks',
+            'templates_id',
         ]
     
     def validate_schedule_date_time(self, value):
@@ -61,12 +65,34 @@ class EmailManagerCreateSerializer(serializers.ModelSerializer):
             )
         return value
     
+    def validate_templates_id(self, value):
+        if value is not None:
+            if isinstance(value, Template):
+                value = value.id
+            try:
+                value = int(value)
+            except (ValueError, TypeError):
+                raise serializers.ValidationError("templates_id must be a valid integer.")
+            
+            try:
+                Template.objects.get(id=value)
+            except Template.DoesNotExist:
+                raise serializers.ValidationError(f"Template with ID {value} does not exist.")
+        return value
+    
     def validate(self, data):
         if data.get('schedule_send') and not data.get('schedule_date_time'):
             raise serializers.ValidationError({
                 'schedule_date_time': 'Schedule date and time is required when schedule_send is True.'
             })
         return data
+    
+    def create(self, validated_data):
+        template_pk = validated_data.pop('templates_id', None)
+        if template_pk is not None:
+            validated_data['template_id'] = template_pk
+            
+        return super().create(validated_data)
 
 
 class EmailManagerUpdateSerializer(serializers.ModelSerializer):
@@ -88,6 +114,7 @@ class EmailManagerUpdateSerializer(serializers.ModelSerializer):
             'schedule_date_time',
             'track_opens',
             'track_clicks',
+            'templates_id',
         ]
     
     def validate_schedule_date_time(self, value):
