@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 from django.db.models import Q, Count, Avg, Sum
 from django.utils import timezone
 from datetime import datetime, timedelta
+from apps.claims.models import Claim
 
 from apps.customers.models import Customer
 from .models import CustomerInsight
@@ -198,8 +199,7 @@ class CustomerInsightsViewSet(viewsets.ModelViewSet):
             ).count()
             
             # Customers with claims (mock data)
-            customers_with_claims = 150  
-            
+            customers_with_claims = Claim.objects.values('customer_id').distinct().count()            
             # Average satisfaction rating (from JSON fields)
             avg_satisfaction = 0.0
             total_premiums = 0.0
