@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from decouple import config
 from datetime import timedelta
-
+from celery.schedules import crontab
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -30,7 +30,7 @@ THIRD_PARTY_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'channels',
-    # 'django_celery_beat',  # Add when Celery is installed
+    'django_celery_beat',  # Add when Celery is installed
     # 'django_celery_results',  # Add when Celery is installed
     'drf_spectacular',
     'django_extensions',
@@ -376,7 +376,7 @@ CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://localho
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = TIME_ZONE
+CELERY_TIMEZONE = 'Asia/Kolkata'
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 # Third-party API Configuration
@@ -481,3 +481,11 @@ AUTH_USER_MODEL = 'users.User'
 
 # Email tracking settings
 BASE_URL = config('BASE_URL', default='http://13.233.6.207:8000')
+
+
+CELERY_BEAT_SCHEDULE = {
+    'send-scheduled-emails-every-minute': {
+        'task': 'apps.email_manager.tasks.process_scheduled_emails',
+        'schedule': crontab(minute='*'), 
+    },
+}

@@ -4,6 +4,8 @@ from django.core.mail import EmailMultiAlternatives
 from django.conf import settings
 from django.utils import timezone
 from .models import EmailManager
+from django.template import Template as DjangoTemplate, Context
+from apps.policies.models import Policy
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,37 @@ class EmailManagerService:
                         'scheduled_at': scheduled_at_str
                     }
             
+            subject = str(email_manager.subject)
+            message = str(email_manager.message)
+
+            if email_manager.policy_number:
+                try:
+                    policy = Policy.objects.get(policy_number=email_manager.policy_number)
+                    customer = policy.customer
+                    
+                    # Prepare context for template rendering
+                    context = {
+                        'first_name': customer.first_name,
+                        'last_name': customer.last_name,
+                        'policy_number': policy.policy_number,
+                        'expiry_date': policy.end_date.strftime('%d-%m-%Y') if getattr(policy, 'end_date', None) else 'N/A',
+                        'premium_amount': str(policy.premium_amount),
+                        'customer_name': customer.full_name,
+                        'renewal_date': policy.renewal_date.strftime('%Y-%m-%d') if policy.renewal_date else '',
+                    }
+                    
+                    subject_template = DjangoTemplate(subject)
+                    message_template = DjangoTemplate(message)
+
+                    subject = subject_template.render(Context(context))
+                    message = message_template.render(Context(context))
+
+                except Policy.DoesNotExist:
+                    logger.warning(f"Policy with number {email_manager.policy_number} not found. Sending email with static data.")
+                except Exception as e:
+                    logger.error(f"Error fetching policy or customer data for email {email_manager.id}: {e}")
+
+
             to_emails = [str(email_manager.to)]
             cc_email_str = str(email_manager.cc) if email_manager.cc else ''
             bcc_email_str = str(email_manager.bcc) if email_manager.bcc else ''
@@ -44,8 +77,8 @@ class EmailManagerService:
             from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com')
             
             msg = EmailMultiAlternatives(
-                subject=str(email_manager.subject),
-                body=str(email_manager.message), 
+                subject=subject,
+                body=message, 
                 from_email=from_email,
                 to=to_emails,
                 cc=cc_emails if cc_emails else None,
