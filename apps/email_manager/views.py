@@ -12,6 +12,9 @@ from .serializers import (
 from .services import EmailManagerService
 from apps.templates.models import Template
 from apps.customer_payment_schedule.models import PaymentSchedule
+from rest_framework.views import APIView
+from .models import EmailManagerInbox
+from .serializers import EmailManagerInboxSerializer
 
 class EmailManagerViewSet(viewsets.ModelViewSet):
     
@@ -485,3 +488,61 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                 "success": False,
                 "message": f"Error retrieving email details: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['get'])
+    def started_emails(self, request):
+        try:
+            started_emails = EmailManager.objects.filter(
+                started=True,
+                is_deleted=False
+            ).order_by('-updated_at')
+
+            serializer = self.get_serializer(started_emails, many=True)
+
+            return Response({
+                'success': True,
+                'message': 'Emails with started=True retrieved successfully',
+                'count': started_emails.count(),
+                'data': serializer.data
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Error retrieving started emails: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+    @action(detail=True, methods=['post'], url_path='update_started_status')
+    def update_started_status(self, request, pk=None):
+        try:
+            email = self.get_object()
+            started = request.data.get('started', False)
+            email.started = started
+            email.save()
+            return Response({'success': True, 'message': 'Started status updated'})
+        except Exception as e:
+            return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+
+class EmailManagerInboxViewSet(viewsets.ModelViewSet):
+    queryset = EmailManagerInbox.objects.all()
+    serializer_class = EmailManagerInboxSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = EmailManagerInbox.objects.filter(is_deleted=False)
+
+        from_email = self.request.query_params.get('from_email')
+        if from_email:
+            queryset = queryset.filter(from_email__icontains=from_email)
+
+        subject = self.request.query_params.get('subject')
+        if subject:
+            queryset = queryset.filter(subject__icontains=subject)
+
+        is_read = self.request.query_params.get('is_read')
+        if is_read is not None:
+            queryset = queryset.filter(is_read=is_read.lower() == "true")
+
+        return queryset
+       
