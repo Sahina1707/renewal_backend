@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import EmailManager
 from apps.templates.models import Template
 from apps.customer_payment_schedule.models import PaymentSchedule
-
+from .models import EmailManagerInbox
 class EmailManagerSerializer(serializers.ModelSerializer):
     
     class Meta:
@@ -143,3 +143,9 @@ class SentEmailListSerializer(serializers.ModelSerializer):
             return payment.due_date if payment else None
         except Exception:
             return None
+        
+class EmailManagerInboxSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmailManagerInbox
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']        

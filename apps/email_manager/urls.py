@@ -1,13 +1,9 @@
-from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import EmailManagerViewSet
+from .views import EmailManagerInboxViewSet
 
 router = DefaultRouter()
-# router.register(r'email-manager', EmailManagerViewSet, basename='email-manager')
 router.register(r'', EmailManagerViewSet, basename='email-manager')
+router.register(r'', EmailManagerInboxViewSet, basename='email-manager-inbox')
 
-
-urlpatterns = [
-    path('', include(router.urls)),
-]
-
+urlpatterns = router.urls
