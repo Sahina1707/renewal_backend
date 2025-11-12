@@ -25,7 +25,6 @@ class EmailManagerService:
     @staticmethod
     def send_email(email_manager: EmailManager) -> Dict[str, Any]:
         try:
-            # Handle scheduled emails
             if email_manager.schedule_send and email_manager.schedule_date_time:
                 if timezone.now() < email_manager.schedule_date_time:
                     EmailManager.objects.filter(id=email_manager.id).update(
@@ -43,7 +42,6 @@ class EmailManagerService:
             subject = str(email_manager.subject)
             message = str(email_manager.message)
 
-            # ✅ Render dynamic policy data into template if applicable
             if email_manager.policy_number:
                 try:
                     policy = Policy.objects.get(policy_number=email_manager.policy_number)
@@ -75,7 +73,6 @@ class EmailManagerService:
             bcc_emails = EmailManagerService.parse_email_list(str(email_manager.bcc or ''))
             from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com')
 
-            # ✅ Generate and enforce a custom Message-ID header (Gmail-safe)
             custom_msg_id = make_msgid(domain="nbinteli1001.welleazy.com")
             msg = EmailMultiAlternatives(
                 subject=subject,
@@ -84,13 +81,12 @@ class EmailManagerService:
                 to=to_emails,
                 cc=cc_emails if cc_emails else None,
                 bcc=bcc_emails if bcc_emails else None,
-                headers={'Message-ID': custom_msg_id}  # force Gmail to keep this Message-ID
+                headers={'Message-ID': custom_msg_id}  
             )
 
             # Send email
             msg.send(fail_silently=False)
 
-            # ✅ Extract clean Message-ID for DB storage
             real_msg_id = custom_msg_id.strip("<>").lower()
 
             # Update status in DB
@@ -189,11 +185,6 @@ class EmailInboxService:
 
     @staticmethod
     def fetch_incoming_emails():
-        """
-        Fetch unread/ALL incoming emails from IMAP inbox and store them
-        into the EmailManagerInbox table. Replies to renewal emails are
-        automatically linked to their corresponding EmailManager entry.
-        """
         IMAP_HOST = getattr(settings, "IMAP_HOST", "imap.gmail.com")
         IMAP_USER = getattr(settings, "EMAIL_HOST_USER")
         IMAP_PASS = getattr(settings, "EMAIL_HOST_PASSWORD")
@@ -219,7 +210,7 @@ class EmailInboxService:
             skipped = 0
             linked = 0
 
-            for eid in email_ids[-50:]:  # last 50 for testing
+            for eid in email_ids[-50:]: 
                 try:
                     status, msg_data = mail.fetch(eid, "(RFC822)")
                     if status != "OK":
@@ -234,10 +225,8 @@ class EmailInboxService:
                         skipped += 1
                         continue
 
-                    # Normalize Message-ID
                     msg_id_clean = EmailInboxService.clean_message_id(msg_id)
 
-                    # avoid duplicates
                     if EmailManagerInbox.objects.filter(message_id__iexact=msg_id_clean).exists():
                         skipped += 1
                         continue
@@ -248,7 +237,6 @@ class EmailInboxService:
                     in_reply_to_raw = msg.get("In-Reply-To")
                     references_raw = msg.get("References")
 
-                    # Decode subject safely
                     subject_parts = decode_header(subject_raw)
                     subject = ""
                     for part, encoding in subject_parts:
@@ -258,7 +246,6 @@ class EmailInboxService:
                             subject += part
                     subject = EmailInboxService.clean_text(subject)
 
-                    # Clean + normalize IDs
                     in_reply_to = EmailInboxService.clean_message_id(in_reply_to_raw)
                     references = [
                         EmailInboxService.clean_message_id(ref)
@@ -273,27 +260,23 @@ class EmailInboxService:
 
                     logger.debug(f"📨 Processing email '{subject}' | Candidates: {candidate_ids}")
 
-                    # Try to link this email to a previously sent one
                     related_email = None
                     for mid in candidate_ids:
                         if not mid:
                             continue
                         normalized_mid = mid.lower().strip().replace("<", "").replace(">", "")
                         try:
-                            # 1️⃣ Try exact normalized match
                             related_email = EmailManager.objects.filter(
                                 message_id__iexact=normalized_mid,
                                 is_deleted=False
                             ).first()
 
-                            # 2️⃣ Try partial match (contains)
                             if not related_email:
                                 related_email = EmailManager.objects.filter(
                                     message_id__icontains=normalized_mid,
                                     is_deleted=False
                                 ).first()
 
-                            # 3️⃣ Fallback: raw ID search
                             if not related_email:
                                 related_email = EmailManager.objects.filter(
                                     message_id__icontains=mid.lower(),
@@ -311,7 +294,6 @@ class EmailInboxService:
                             logger.exception(f"⚠️ Error linking MID {mid}: {ex}")
                             continue
 
-                    # Parse body and attachments
                     body = ""
                     html_body = ""
                     attachments = []
@@ -355,7 +337,6 @@ class EmailInboxService:
                         if payload:
                             body = payload.decode(errors="ignore")
 
-                    # ✅ Save email if linked
                     if related_email:
                         EmailManagerInbox.objects.create(
                             from_email=from_,
