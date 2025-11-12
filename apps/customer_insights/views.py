@@ -11,10 +11,6 @@ from django.db.models import Q, Count, Avg, Sum
 from django.utils import timezone
 from datetime import datetime, timedelta
 from apps.claims.models import Claim
-<<<<<<< HEAD
-
-=======
->>>>>>> d1b458828d06c4439a9012af900712159c9bcf1b
 from apps.customers.models import Customer
 from .models import CustomerInsight
 from .serializers import (

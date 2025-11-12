@@ -46,8 +46,7 @@ LOCAL_APPS = [
     'apps.policies',
     'apps.uploads',
     'apps.campaigns',
-    'apps.templates',
-    'apps.target_audience',
+    'apps.templates', 'apps.target_audience',
     'apps.policy_data',
     'apps.files_upload',
     'apps.renewals',
@@ -70,6 +69,8 @@ LOCAL_APPS = [
     'apps.customers_files',
     'apps.ai_insights',
     'apps.claims',
+    'apps.campaign_manager',
+    'apps.audience_manager',
     'apps.customer_insights',
     'apps.ai_policy_recommendations',
     'apps.policy_timeline',
@@ -372,6 +373,9 @@ MAX_FILES_PER_UPLOAD = config('MAX_FILES_PER_UPLOAD', default=5, cast=int)
 
 # Celery Configuration
 CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/1')
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    'socket_keepalive': True,
+}
 CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://localhost:6379/2')
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
