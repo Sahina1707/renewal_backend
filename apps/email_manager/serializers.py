@@ -1,8 +1,10 @@
 from rest_framework import serializers
+import re
 from .models import EmailManager
 from apps.templates.models import Template
 from apps.customer_payment_schedule.models import PaymentSchedule
 from .models import EmailManagerInbox
+from django.utils.html import strip_tags
 class EmailManagerSerializer(serializers.ModelSerializer):
     
     class Meta:
@@ -27,12 +29,13 @@ class EmailManagerSerializer(serializers.ModelSerializer):
             'email_status',
             'sent_at',
             'error_message',
+            'message_id',
             'created_by',
             'updated_by',
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['id', 'created_by', 'updated_by', 'created_at', 'updated_at', 'email_status', 'sent_at', 'error_message']
+        read_only_fields = ['id', 'created_by', 'updated_by', 'created_at', 'updated_at', 'email_status', 'sent_at', 'error_message', 'message_id']
 
 
 class EmailManagerCreateSerializer(serializers.ModelSerializer):
@@ -145,7 +148,20 @@ class SentEmailListSerializer(serializers.ModelSerializer):
             return None
         
 class EmailManagerInboxSerializer(serializers.ModelSerializer):
+    message = serializers.SerializerMethodField()
+    html_message = serializers.SerializerMethodField()
+
     class Meta:
         model = EmailManagerInbox
         fields = '__all__'
-        read_only_fields = ['id', 'created_at', 'updated_at']        
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_message(self, obj):
+        text = obj.message or ""
+        cleaned = re.sub(r'\s+', ' ', text).strip()
+        return cleaned
+
+    def get_html_message(self, obj):
+        if obj.html_message:
+            return strip_tags(obj.html_message).strip()
+        return None       

@@ -1,9 +1,16 @@
 from celery import shared_task
-from apps.email_manager.services import EmailManagerService
+from .services import EmailManagerService, EmailInboxService
 
 @shared_task
 def process_scheduled_emails():
     """
-    This Celery task sends all emails that are due for scheduled delivery.
+    Send emails that are scheduled and due for sending.
     """
     EmailManagerService.send_scheduled_emails()
+
+@shared_task
+def fetch_and_process_incoming_emails():
+    """
+    Fetch new incoming replies and store them in email_manager_inbox table.
+    """
+    EmailInboxService.fetch_incoming_emails()

@@ -106,6 +106,14 @@ class EmailManager(BaseModel):
         help_text="Error message if email sending failed"
     )
 
+    message_id = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        unique=True,
+        help_text="Unique message ID of the sent email"
+    )
+    
     started = models.BooleanField(
         default=False,
         help_text="Indicates whether the email sending process has started"
@@ -134,6 +142,7 @@ class EmailManager(BaseModel):
             models.Index(fields=['email_status']),
             models.Index(fields=['template']),
             models.Index(fields=['created_at']),
+            models.Index(fields=['message_id']),
         ]
     
     def __str__(self):
