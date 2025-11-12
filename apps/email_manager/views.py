@@ -15,6 +15,7 @@ from apps.customer_payment_schedule.models import PaymentSchedule
 from rest_framework.views import APIView
 from .models import EmailManagerInbox
 from .serializers import EmailManagerInboxSerializer
+from .services import EmailInboxService
 
 class EmailManagerViewSet(viewsets.ModelViewSet):
     
@@ -412,9 +413,6 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def sent_emails(self, request):
-        """
-        List all sent emails with policy number, priority, sent date, and due date.
-        """
         try:
             sent_emails = EmailManager.objects.filter(
                 email_status='sent',
@@ -545,4 +543,47 @@ class EmailManagerInboxViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(is_read=is_read.lower() == "true")
 
         return queryset
+
+    @action(detail=False, methods=['get'], url_path='reply-emails')
+    def reply_emails(self, request):
+        try:
+            reply_emails = self.get_queryset().exclude(in_reply_to__isnull=True).exclude(in_reply_to__exact='')
+
+            serializer = self.get_serializer(reply_emails, many=True)
+
+            return Response({
+                'success': True,
+                'message': 'Reply emails retrieved successfully',
+                'count': reply_emails.count(),
+                'data': serializer.data
+            }, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Error retrieving reply emails: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class SyncEmailsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        try:
+            result = EmailInboxService.fetch_incoming_emails()
+            if result['success']:
+                return Response({
+                    'success': True,
+                    'message': 'Emails synced successfully'
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response({
+                    'success': False,
+                    'message': 'Failed to sync emails'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
        

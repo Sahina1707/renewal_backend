@@ -10,8 +10,8 @@ from .models import EmailManagerInbox
 import imaplib, email
 from email.header import decode_header
 logger = logging.getLogger(__name__)
-
-
+from django.db.models import Q
+from email.utils import make_msgid
 class EmailManagerService:
     
     @staticmethod
@@ -21,10 +21,11 @@ class EmailManagerService:
         emails = [email.strip() for email in email_string.split(',') if email.strip()]
         return emails
     
+
     @staticmethod
     def send_email(email_manager: EmailManager) -> Dict[str, Any]:
-        
         try:
+            # Handle scheduled emails
             if email_manager.schedule_send and email_manager.schedule_date_time:
                 if timezone.now() < email_manager.schedule_date_time:
                     EmailManager.objects.filter(id=email_manager.id).update(
@@ -38,16 +39,16 @@ class EmailManagerService:
                         'message': 'Email scheduled for sending',
                         'scheduled_at': scheduled_at_str
                     }
-            
+
             subject = str(email_manager.subject)
             message = str(email_manager.message)
 
+            # ✅ Render dynamic policy data into template if applicable
             if email_manager.policy_number:
                 try:
                     policy = Policy.objects.get(policy_number=email_manager.policy_number)
                     customer = policy.customer
-                    
-                    # Prepare context for template rendering
+
                     context = {
                         'first_name': customer.first_name,
                         'last_name': customer.last_name,
@@ -57,73 +58,80 @@ class EmailManagerService:
                         'customer_name': customer.full_name,
                         'renewal_date': policy.renewal_date.strftime('%Y-%m-%d') if policy.renewal_date else '',
                     }
-                    
+
                     subject_template = DjangoTemplate(subject)
                     message_template = DjangoTemplate(message)
-
                     subject = subject_template.render(Context(context))
                     message = message_template.render(Context(context))
 
                 except Policy.DoesNotExist:
-                    logger.warning(f"Policy with number {email_manager.policy_number} not found. Sending email with static data.")
+                    logger.warning(f"Policy {email_manager.policy_number} not found. Sending static email.")
                 except Exception as e:
-                    logger.error(f"Error fetching policy or customer data for email {email_manager.id}: {e}")
+                    logger.error(f"Error rendering email for {email_manager.id}: {e}")
 
-
+            # Email fields
             to_emails = [str(email_manager.to)]
-            cc_email_str = str(email_manager.cc) if email_manager.cc else ''
-            bcc_email_str = str(email_manager.bcc) if email_manager.bcc else ''
-            cc_emails = EmailManagerService.parse_email_list(cc_email_str)
-            bcc_emails = EmailManagerService.parse_email_list(bcc_email_str)
-            
+            cc_emails = EmailManagerService.parse_email_list(str(email_manager.cc or ''))
+            bcc_emails = EmailManagerService.parse_email_list(str(email_manager.bcc or ''))
             from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com')
-            
+
+            # ✅ Generate and enforce a custom Message-ID header (Gmail-safe)
+            custom_msg_id = make_msgid(domain="nbinteli1001.welleazy.com")
             msg = EmailMultiAlternatives(
                 subject=subject,
-                body=message, 
+                body=message,
                 from_email=from_email,
                 to=to_emails,
                 cc=cc_emails if cc_emails else None,
-                bcc=bcc_emails if bcc_emails else None
+                bcc=bcc_emails if bcc_emails else None,
+                headers={'Message-ID': custom_msg_id}  # force Gmail to keep this Message-ID
             )
-            
+
+            # Send email
             msg.send(fail_silently=False)
-            
+
+            # ✅ Extract clean Message-ID for DB storage
+            real_msg_id = custom_msg_id.strip("<>").lower()
+
+            # Update status in DB
             now = timezone.now()
             EmailManager.objects.filter(id=email_manager.id).update(
+                message_id=real_msg_id,
                 email_status='sent',
                 sent_at=now,
                 error_message=None
             )
+
             email_manager.refresh_from_db()
-            
-            logger.info(f"Email sent successfully to {email_manager.to} - Subject: {email_manager.subject}")
-            
+
+            logger.info(f"✅ Email sent successfully to {email_manager.to} | Message-ID: {real_msg_id}")
+
             sent_at_value = email_manager.sent_at
             sent_at_str = sent_at_value.isoformat() if sent_at_value else None
-            
+
             return {
                 'success': True,
                 'message': 'Email sent successfully',
-                'sent_at': sent_at_str
+                'sent_at': sent_at_str,
+                'message_id': real_msg_id
             }
-            
+
         except Exception as e:
             error_message = str(e)
-            logger.error(f"Failed to send email to {email_manager.to}: {error_message}")
-            
+            logger.error(f"❌ Failed to send email to {email_manager.to}: {error_message}")
+
             EmailManager.objects.filter(id=email_manager.id).update(
                 email_status='failed',
                 error_message=error_message
             )
             email_manager.refresh_from_db()
-            
+
             return {
                 'success': False,
                 'message': f'Failed to send email: {error_message}',
                 'error': error_message
             }
-    
+
     @staticmethod
     def send_scheduled_emails() -> Dict[str, Any]:
         
@@ -165,55 +173,230 @@ class EmailInboxService:
 
     @staticmethod
     def clean_text(text):
-        return re.sub(r'\s+', ' ', text.strip()) if text else ""
+        return text.strip() if text else ""
+    
+    @staticmethod
+    def clean_message_id(raw_id):
+        if not raw_id:
+            return None
+        try:
+            cleaned = raw_id.strip().replace('<', '').replace('>', '').replace('\r', '').replace('\n', '').strip()
+            return cleaned
+        except Exception as e:
+            logger.error(f"Error cleaning Message-ID: {e}")
+            return None
+
 
     @staticmethod
     def fetch_incoming_emails():
-        EMAIL_HOST = "imap.gmail.com"
-        EMAIL_USER = "sahinayasin17@gmail.com"
-        EMAIL_PASS = "dfdr ihth gmbs ntxk"
+        """
+        Fetch unread/ALL incoming emails from IMAP inbox and store them
+        into the EmailManagerInbox table. Replies to renewal emails are
+        automatically linked to their corresponding EmailManager entry.
+        """
+        IMAP_HOST = getattr(settings, "IMAP_HOST", "imap.gmail.com")
+        IMAP_USER = getattr(settings, "EMAIL_HOST_USER")
+        IMAP_PASS = getattr(settings, "EMAIL_HOST_PASSWORD")
+        IMAP_PORT = int(getattr(settings, "IMAP_PORT", 993))
 
-        mail = imaplib.IMAP4_SSL(EMAIL_HOST)
-        mail.login(EMAIL_USER, EMAIL_PASS)
-        mail.select("inbox")
+        if not all([IMAP_HOST, IMAP_USER, IMAP_PASS]):
+            logger.error("❌ IMAP credentials not configured in settings.")
+            return {"success": False, "message": "IMAP credentials missing"}
 
-        _, messages = mail.search(None, "ALL")
-        email_ids = messages[0].split()
+        try:
+            logger.info(f"📥 Connecting to IMAP: {IMAP_HOST}:{IMAP_PORT} as {IMAP_USER}")
+            mail = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
+            mail.login(IMAP_USER, IMAP_PASS)
+            mail.select("inbox")
 
-        for eid in email_ids[-50:]:  # fetch last 50
-            _, msg_data = mail.fetch(eid, "(RFC822)")
-            msg = email.message_from_bytes(msg_data[0][1])
+            status, messages = mail.search(None, "ALL")
+            if status != "OK":
+                mail.logout()
+                return {"success": False, "message": "Failed to search inbox"}
 
-            subject, encoding = decode_header(msg["Subject"])[0]
-            if isinstance(subject, bytes):
-                subject = subject.decode(encoding or "utf-8", errors="ignore")
+            email_ids = messages[0].split()
+            processed = 0
+            skipped = 0
+            linked = 0
 
-            from_ = msg.get("From")
-            to_ = msg.get("To")
-            msg_id = msg.get("Message-ID")
-            in_reply_to = msg.get("In-Reply-To")
+            for eid in email_ids[-50:]:  # last 50 for testing
+                try:
+                    status, msg_data = mail.fetch(eid, "(RFC822)")
+                    if status != "OK":
+                        continue
 
-            # Skip if already exists
-            if EmailManagerInbox.objects.filter(message_id=msg_id).exists():
-                continue
+                    raw_email = msg_data[0][1]
+                    msg = email.message_from_bytes(raw_email)
 
-            body = ""
-            if msg.is_multipart():
-                for part in msg.walk():
-                    if part.get_content_type() == "text/plain":
-                        body += part.get_payload(decode=True).decode(errors="ignore")
-            else:
-                body = msg.get_payload(decode=True).decode(errors="ignore")
+                    msg_id = msg.get("Message-ID")
+                    if not msg_id:
+                        logger.debug("⏩ Skipped: No Message-ID header present.")
+                        skipped += 1
+                        continue
 
-            EmailManagerInbox.objects.create(
-                from_email=from_,
-                to_email=to_,
-                subject=EmailInboxService.clean_text(subject),
-                body=EmailInboxService.clean_text(body),
-                message_id=msg_id,
-                in_reply_to=in_reply_to,
-                received_at=timezone.now(),
-            )
+                    # Normalize Message-ID
+                    msg_id_clean = EmailInboxService.clean_message_id(msg_id)
 
-        mail.logout()
-        return {"success": True, "message": "Emails synced successfully."}
+                    # avoid duplicates
+                    if EmailManagerInbox.objects.filter(message_id__iexact=msg_id_clean).exists():
+                        skipped += 1
+                        continue
+
+                    from_ = msg.get("From", "")
+                    to_ = msg.get("To", "")
+                    subject_raw = msg.get("Subject", "")
+                    in_reply_to_raw = msg.get("In-Reply-To")
+                    references_raw = msg.get("References")
+
+                    # Decode subject safely
+                    subject_parts = decode_header(subject_raw)
+                    subject = ""
+                    for part, encoding in subject_parts:
+                        if isinstance(part, bytes):
+                            subject += part.decode(encoding or "utf-8", errors="ignore")
+                        else:
+                            subject += part
+                    subject = EmailInboxService.clean_text(subject)
+
+                    # Clean + normalize IDs
+                    in_reply_to = EmailInboxService.clean_message_id(in_reply_to_raw)
+                    references = [
+                        EmailInboxService.clean_message_id(ref)
+                        for ref in references_raw.split()
+                        if ref.strip()
+                    ] if references_raw else []
+
+                    candidate_ids = []
+                    if in_reply_to:
+                        candidate_ids.append(in_reply_to)
+                    candidate_ids.extend(references)
+
+                    logger.debug(f"📨 Processing email '{subject}' | Candidates: {candidate_ids}")
+
+                    # Try to link this email to a previously sent one
+                    related_email = None
+                    for mid in candidate_ids:
+                        if not mid:
+                            continue
+                        normalized_mid = mid.lower().strip().replace("<", "").replace(">", "")
+                        try:
+                            # 1️⃣ Try exact normalized match
+                            related_email = EmailManager.objects.filter(
+                                message_id__iexact=normalized_mid,
+                                is_deleted=False
+                            ).first()
+
+                            # 2️⃣ Try partial match (contains)
+                            if not related_email:
+                                related_email = EmailManager.objects.filter(
+                                    message_id__icontains=normalized_mid,
+                                    is_deleted=False
+                                ).first()
+
+                            # 3️⃣ Fallback: raw ID search
+                            if not related_email:
+                                related_email = EmailManager.objects.filter(
+                                    message_id__icontains=mid.lower(),
+                                    is_deleted=False
+                                ).first()
+
+                            if related_email:
+                                logger.info(
+                                    f"✅ Linked reply to EmailManager ID={related_email.id}, "
+                                    f"policy={related_email.policy_number}, subject={subject}"
+                                )
+                                linked += 1
+                                break
+                        except Exception as ex:
+                            logger.exception(f"⚠️ Error linking MID {mid}: {ex}")
+                            continue
+
+                    # Parse body and attachments
+                    body = ""
+                    html_body = ""
+                    attachments = []
+
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            content_type = part.get_content_type()
+                            content_disposition = str(part.get("Content-Disposition", ""))
+
+                            if "attachment" in content_disposition:
+                                filename = part.get_filename()
+                                if filename:
+                                    try:
+                                        decoded = decode_header(filename)[0]
+                                        filename = (
+                                            decoded[0]
+                                            if isinstance(decoded[0], str)
+                                            else decoded[0].decode(decoded[1] or "utf-8")
+                                        )
+                                    except Exception:
+                                        filename = filename or "unknown"
+                                    payload = part.get_payload(decode=True)
+                                    attachments.append({
+                                        "filename": filename,
+                                        "size": len(payload) if payload else 0,
+                                        "content_type": content_type,
+                                    })
+                                continue
+
+                            payload = part.get_payload(decode=True)
+                            if not payload:
+                                continue
+                            text = payload.decode(errors="ignore")
+
+                            if content_type == "text/plain" and "attachment" not in content_disposition:
+                                body += text + "\n"
+                            elif content_type == "text/html" and "attachment" not in content_disposition:
+                                html_body += text
+                    else:
+                        payload = msg.get_payload(decode=True)
+                        if payload:
+                            body = payload.decode(errors="ignore")
+
+                    # ✅ Save email if linked
+                    if related_email:
+                        EmailManagerInbox.objects.create(
+                            from_email=from_,
+                            to_email=to_,
+                            subject=subject,
+                            message=EmailInboxService.clean_text(body),
+                            html_message=html_body.strip() or None,
+                            received_at=timezone.now(),
+                            message_id=msg_id_clean,
+                            in_reply_to=in_reply_to or (references[0] if references else None),
+                            references=references_raw,
+                            attachments=attachments if attachments else None,
+                            related_email=related_email,
+                            is_read=False,
+                        )
+                        processed += 1
+                        logger.info(
+                            f"📩 Stored reply from {from_} for policy {related_email.policy_number} | Subject: {subject}"
+                        )
+                    else:
+                        skipped += 1
+                        logger.debug(f"⏩ Skipped unrelated email: {subject} from {from_}")
+
+                except Exception as e:
+                    logger.error(f"Error processing email ID {eid}: {str(e)}", exc_info=True)
+                    continue
+
+            mail.logout()
+            logger.info(f"📬 Summary: Processed={processed}, Skipped={skipped}, Linked={linked}")
+
+            return {
+                "success": True,
+                "message": "Emails synced successfully",
+                "processed": processed,
+                "skipped": skipped,
+                "linked_replies": linked,
+            }
+
+        except imaplib.IMAP4.error as e:
+            logger.error(f"IMAP error: {e}")
+            return {"success": False, "message": f"IMAP error: {str(e)}"}
+        except Exception as e:
+            logger.error(f"Unexpected error in fetch_incoming_emails: {e}", exc_info=True)
+            return {"success": False, "message": f"Sync failed: {str(e)}"}

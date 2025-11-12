@@ -27,12 +27,13 @@ class EmailManagerSerializer(serializers.ModelSerializer):
             'email_status',
             'sent_at',
             'error_message',
+            'message_id',
             'created_by',
             'updated_by',
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['id', 'created_by', 'updated_by', 'created_at', 'updated_at', 'email_status', 'sent_at', 'error_message']
+        read_only_fields = ['id', 'created_by', 'updated_by', 'created_at', 'updated_at', 'email_status', 'sent_at', 'error_message', 'message_id']
 
 
 class EmailManagerCreateSerializer(serializers.ModelSerializer):
