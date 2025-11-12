@@ -77,7 +77,7 @@ api_patterns = [
     path('email-inbox/', include('apps.email_inbox.urls')),
     path('email-integration/', include('apps.email_integration.urls')),
     path('email-manager/', include('apps.email_manager.urls')),
-    
+
     # WhatsApp Integration endpoints
     path('whatsapp/', include('apps.whatsapp_provider.urls')),
     path('offers/', include('apps.offers.urls')),

@@ -105,6 +105,20 @@ class EmailManager(BaseModel):
         null=True,
         help_text="Error message if email sending failed"
     )
+
+    message_id = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        unique=True,
+        help_text="Unique message ID of the sent email"
+    )
+    
+    started = models.BooleanField(
+        default=False,
+        help_text="Indicates whether the email sending process has started"
+    )
+
     
     template = models.ForeignKey(
         Template,
@@ -128,8 +142,81 @@ class EmailManager(BaseModel):
             models.Index(fields=['email_status']),
             models.Index(fields=['template']),
             models.Index(fields=['created_at']),
+            models.Index(fields=['message_id']),
         ]
     
     def __str__(self):
         return f"Email to {self.to} - {self.subject}"
 
+class EmailManagerInbox(BaseModel):
+    from_email = models.EmailField(
+        max_length=255,
+        help_text="Sender email address"
+    )
+    to_email = models.TextField(
+        help_text="Recipient email addresses (comma separated)"
+    )
+    subject = models.CharField(
+        max_length=500,
+        blank=True,
+        null=True,
+        help_text="Email subject"
+    )
+    message = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Plain text email body"
+    )
+    html_message = models.TextField(
+        blank=True,
+        null=True,
+        help_text="HTML version of email body if available"
+    )
+    received_at = models.DateTimeField(
+        help_text="Time when the email was received on the server"
+    )
+    message_id = models.CharField(
+        max_length=255,
+        unique=True,
+        help_text="Unique message ID from email header"
+    )
+    in_reply_to = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Message-ID of the email this is replying to"
+    )
+    references = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Thread reference IDs"
+    )
+    is_read = models.BooleanField(
+        default=False,
+        help_text="Marks whether this email has been read"
+    )
+    attachments = models.JSONField(
+        blank=True,
+        null=True,
+        help_text="Stores metadata of attachments (name, size, path)"
+    )
+
+    related_email = models.ForeignKey(
+        'EmailManager',
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name='inbox_replies'
+    )
+
+    class Meta:
+        db_table = 'email_manager_inbox'
+        ordering = ['-received_at']
+        indexes = [
+            models.Index(fields=['from_email']),
+            models.Index(fields=['to_email']),
+            models.Index(fields=['received_at']),
+        ]
+
+    def __str__(self):
+        return f"From {self.from_email} - {self.subject or '(no subject)'}"

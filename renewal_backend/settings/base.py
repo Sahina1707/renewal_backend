@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from decouple import config
 from datetime import timedelta
-
+from celery.schedules import crontab
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -30,7 +30,7 @@ THIRD_PARTY_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'channels',
-    # 'django_celery_beat',  # Add when Celery is installed
+    'django_celery_beat',  # Add when Celery is installed
     # 'django_celery_results',  # Add when Celery is installed
     'drf_spectacular',
     'django_extensions',
@@ -371,17 +371,14 @@ MAX_UPLOAD_SIZE = config('MAX_UPLOAD_SIZE', default=10485760, cast=int)  # 10MB
 ALLOWED_FILE_TYPES = config('ALLOWED_FILE_TYPES', default='.xlsx,.csv,.pdf').split(',')
 MAX_FILES_PER_UPLOAD = config('MAX_FILES_PER_UPLOAD', default=5, cast=int)
 
-# Celery Configuration
-CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/1')
-CELERY_BROKER_TRANSPORT_OPTIONS = {
-    'socket_keepalive': True,
-}
-CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://localhost:6379/2')
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
-CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = TIME_ZONE
-CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+# # Celery Configuration
+# CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/1')
+# CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://localhost:6379/2')
+# CELERY_ACCEPT_CONTENT = ['json']
+# CELERY_TASK_SERIALIZER = 'json'
+# CELERY_RESULT_SERIALIZER = 'json'
+# CELERY_TIMEZONE = 'Asia/Kolkata'
+# CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 # Third-party API Configuration
 TWILIO_ACCOUNT_SID = config('TWILIO_ACCOUNT_SID', default='')
@@ -485,3 +482,11 @@ AUTH_USER_MODEL = 'users.User'
 
 # Email tracking settings
 BASE_URL = config('BASE_URL', default='http://13.233.6.207:8000')
+
+
+CELERY_BEAT_SCHEDULE = {
+    'send-scheduled-emails-every-minute': {
+        'task': 'apps.email_manager.tasks.process_scheduled_emails',
+        'schedule': crontab(minute='*'), 
+    },
+}
