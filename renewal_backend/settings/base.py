@@ -389,9 +389,15 @@ WHATSAPP_ACCESS_TOKEN = config('WHATSAPP_ACCESS_TOKEN', default='')
 WHATSAPP_PHONE_NUMBER_ID = config('WHATSAPP_PHONE_NUMBER_ID', default='')
 WHATSAPP_BUSINESS_ACCOUNT_ID = config('WHATSAPP_BUSINESS_ACCOUNT_ID', default='')
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# OPENAI_ORGANIZATION = config('OPENAI_ORGANIZATION', default='')
+# OPENAI_MODEL = config('OPENAI_MODEL', default='gpt-4')
+
+OPENAI_API_KEY = config('OPENAI_API_KEY', default='')
 OPENAI_ORGANIZATION = config('OPENAI_ORGANIZATION', default='')
 OPENAI_MODEL = config('OPENAI_MODEL', default='gpt-4')
+OPENAI_MAX_TOKENS = config('OPENAI_MAX_TOKENS', default=150, cast=int)
+OPENAI_TEMPERATURE = config('OPENAI_TEMPERATURE', default=0.3, cast=float)
 
 RAZORPAY_KEY_ID = config('RAZORPAY_KEY_ID', default='')
 RAZORPAY_KEY_SECRET = config('RAZORPAY_KEY_SECRET', default='')
