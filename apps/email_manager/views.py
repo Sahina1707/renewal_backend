@@ -2,12 +2,13 @@ from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Q
-from .models import EmailManager
+from .models import EmailManager, EmailReply
 from .serializers import (
     EmailManagerSerializer,
     EmailManagerCreateSerializer,
     EmailManagerUpdateSerializer,
-    SentEmailListSerializer
+    SentEmailListSerializer,
+    EmailReplySerializer
 )
 from .services import EmailManagerService
 from apps.templates.models import Template
@@ -16,7 +17,9 @@ from rest_framework.views import APIView
 from .models import EmailManagerInbox
 from .serializers import EmailManagerInboxSerializer
 from .services import EmailInboxService
-
+from .ai_utils import analyze_email_sentiment_and_intent
+from django.db.models import Count, Avg, F, ExpressionWrapper, DurationField
+from .ai_utils import analyze_email_sentiment_and_intent
 class EmailManagerViewSet(viewsets.ModelViewSet):
     
     queryset = EmailManager.objects.all()
@@ -610,7 +613,222 @@ class EmailManagerInboxViewSet(viewsets.ModelViewSet):
             return Response({
                 'success': False,
                 'message': f'Error fetching reply emails: {str(e)}'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)    
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)   
+
+    @action(detail=True, methods=['get'], url_path='email_details')
+    def email_details(self, request, pk=None):
+        try:
+            email = self.get_object()
+            serializer = self.get_serializer(email)
+
+            ai_analysis = analyze_email_sentiment_and_intent(email.message or email.html_message or "")
+
+            related_info = {}
+            if email.related_email:
+                related = email.related_email
+                related_info = {
+                    "policy_number": related.policy_number,
+                    "customer_name": related.customer_name,
+                    "renewal_date": related.renewal_date.strftime("%Y-%m-%d") if related.renewal_date else None,
+                    "premium_amount": str(related.premium_amount) if related.premium_amount else None,
+                    "priority": related.priority,  
+                }
+
+            response_data = {
+                "id": email.id,
+                "from_email": email.from_email,
+                "to_email": email.to_email,
+                "subject": email.subject,
+                "message": email.message,
+                "html_message": email.html_message,
+                "received_at": email.received_at.isoformat() if email.received_at else None,  
+                "policy_info": related_info,
+                "priority": related_info.get("priority"),
+                "sentiment": ai_analysis.get("sentiment", "neutral (50%)"),
+                "intent": ai_analysis.get("intent", "unknown"),  
+            }
+
+            return Response({
+                "success": True,
+                "message": "Inbox email details retrieved successfully",
+                "data": response_data
+            }, status=status.HTTP_200_OK)
+
+        except EmailManagerInbox.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": f"Inbox email with ID {pk} not found"
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                "success": False,
+                "message": f"Error retrieving inbox email: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+    @action(detail=False, methods=['get'], url_path='analytics')
+    def analytics(self, request):
+        try:
+            total_emails = EmailManagerInbox.objects.filter(is_deleted=False).count()
+            unread_emails = EmailManagerInbox.objects.filter(
+                is_read=False, is_deleted=False
+            ).count()
+
+            sent_count = EmailManager.objects.filter(email_status="sent", is_deleted=False).count()
+            replied_count = EmailManagerInbox.objects.filter(
+                related_email__isnull=False, is_deleted=False
+            ).count()
+
+            response_rate = f"{round((replied_count / sent_count) * 100, 2)}%" if sent_count > 0 else "0%"
+
+            replies = EmailManagerInbox.objects.filter(
+                related_email__isnull=False,
+                related_email__sent_at__isnull=False,
+                is_deleted=False
+            ).annotate(
+                response_time=ExpressionWrapper(
+                    F('received_at') - F('related_email__sent_at'),
+                    output_field=DurationField()
+                )
+            )
+
+            avg_response = replies.aggregate(Avg('response_time'))['response_time__avg']
+            avg_response_str = f"{round(avg_response.total_seconds() / 3600, 2)}h" if avg_response else "0h"
+
+            top_senders = list(
+                EmailManagerInbox.objects.filter(is_deleted=False)
+                .values("from_email")
+                .annotate(count=Count("id"))
+                .order_by("-count")[:5]
+            )
+
+            positive = neutral = negative = 0
+
+            inbox_emails = EmailManagerInbox.objects.filter(is_deleted=False)
+
+            for email_obj in inbox_emails:
+
+                raw_text = email_obj.html_message or email_obj.message or ""
+                raw_text = raw_text.strip()
+
+                if not raw_text or len(raw_text) < 5:
+                    continue
+
+                import re
+                raw_text = re.sub(r"<(script|style).*?>.*?</\\1>", "", raw_text, flags=re.S)
+
+                print("AI INPUT (FIRST 300 CHARS):", raw_text[:300])
+
+                result = analyze_email_sentiment_and_intent(raw_text)
+                sentiment_full = result.get("sentiment", "").lower()
+
+                if "positive" in sentiment_full:
+                    positive += 1
+                elif "negative" in sentiment_full:
+                    negative += 1
+                else:
+                    neutral += 1
+
+            total_sentiment = positive + neutral + negative
+
+            if total_sentiment == 0:
+                sentiment_summary = {
+                    "positive": "0%",
+                    "neutral": "0%",
+                    "negative": "0%"
+                }
+            else:
+                sentiment_summary = {
+                    "positive": f"{round((positive / total_sentiment) * 100, 2)}%",
+                    "neutral": f"{round((neutral / total_sentiment) * 100, 2)}%",
+                    "negative": f"{round((negative / total_sentiment) * 100, 2)}%",
+                }
+
+            return Response({
+                "success": True,
+                "message": "Analytics fetched successfully",
+                "data": {
+                    "total_emails": total_emails,
+                    "unread_emails": unread_emails,
+                    "response_rate": response_rate,
+                    "avg_response_time_hours": avg_response_str,
+                    "top_senders": top_senders,
+                    "sentiment": sentiment_summary
+                }
+            })
+
+        except Exception as e:
+            return Response({
+                "success": False,
+                "message": f"Error generating analytics: {str(e)}"
+            }, status=500)
+
+
+        
+    @action(detail=True, methods=['patch'], url_path='mark-read')
+    def mark_read(self, request, pk=None):
+        try:
+            email_obj = self.get_object()
+            email_obj.is_read = True
+            email_obj.save()
+
+            return Response({
+                "success": True,
+                "message": "Email marked as read successfully"
+            }, status=200)
+
+        except Exception as e:
+            return Response({
+                "success": False,
+                "message": f"Error marking email as read: {str(e)}"
+            }, status=500)
+        
+    @action(detail=True, methods=['post'], url_path='reply')
+    def reply_email(self, request, pk=None):
+        try:
+            inbox = self.get_object()
+
+            serializer = EmailReplySerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+
+            reply = EmailReply.objects.create(
+                inbox=inbox,
+                to_email=inbox.from_email,
+                from_email="renewals@intelipro.in",
+                subject=f"Re: {inbox.subject}",
+                message=serializer.validated_data["message"],
+                html_message=serializer.validated_data.get("html_message"),
+                in_reply_to=inbox.message_id,
+                created_by=request.user
+            )
+
+            EmailManagerService.send_reply_email(reply)
+
+            # Store in EmailManager (sent emails)
+            EmailManager.objects.create(
+                to=reply.to_email,
+                subject=reply.subject,
+                message=reply.message,
+                email_status="sent",
+                message_id=reply.message_id,
+                sent_at=reply.sent_at,
+                policy_number=inbox.related_email.policy_number if inbox.related_email else None,
+                customer_name=inbox.related_email.customer_name if inbox.related_email else None,
+                created_by=request.user
+            )
+
+            return Response({
+                "success": True,
+                "message": "Reply sent successfully",
+                "reply_id": reply.id
+            })
+
+        except Exception as e:
+            return Response({
+                "success": False,
+                "message": f"Error sending reply: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    
 
 
 class SyncEmailsView(APIView):

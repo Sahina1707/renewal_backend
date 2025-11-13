@@ -12,6 +12,8 @@ from email.header import decode_header
 logger = logging.getLogger(__name__)
 from django.db.models import Q
 from email.utils import make_msgid
+from django.core.mail import EmailMessage
+
 class EmailManagerService:
     
     @staticmethod
@@ -60,7 +62,7 @@ class EmailManagerService:
                     subject_template = DjangoTemplate(subject)
                     message_template = DjangoTemplate(message)
                     subject = subject_template.render(Context(context))
-                    message = message_template.render(Context(context))
+                    message = message_template.render(Context(context)) 
 
                 except Policy.DoesNotExist:
                     logger.warning(f"Policy {email_manager.policy_number} not found. Sending static email.")
@@ -164,6 +166,36 @@ class EmailManagerService:
                 'message': f'Error processing scheduled emails: {str(e)}',
                 'error': str(e)
             }
+        
+    @staticmethod
+    def send_reply_email(reply_obj):
+        from email.utils import make_msgid
+        from django.utils import timezone
+
+        new_msg_id = make_msgid(domain="nbinteli1001.welleazy.com")
+
+        email = EmailMessage(
+            subject=reply_obj.subject,
+            body=reply_obj.message,
+            from_email=reply_obj.from_email,
+            to=[reply_obj.to_email],
+            headers={
+                "Message-ID": new_msg_id,
+                "In-Reply-To": reply_obj.in_reply_to,
+                "References": reply_obj.in_reply_to,
+            }
+        )
+
+        email.send()
+
+        reply_obj.message_id = new_msg_id.strip("<>")
+        reply_obj.sent_at = timezone.now()
+        reply_obj.status = "sent"
+        reply_obj.save()
+
+        return True
+
+    
 
 class EmailInboxService:
 

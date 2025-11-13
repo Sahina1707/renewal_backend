@@ -1,10 +1,12 @@
 from rest_framework import serializers
 import re
+import html
 from .models import EmailManager
 from apps.templates.models import Template
 from apps.customer_payment_schedule.models import PaymentSchedule
 from .models import EmailManagerInbox
 from django.utils.html import strip_tags
+from .models import EmailReply
 class EmailManagerSerializer(serializers.ModelSerializer):
     
     class Meta:
@@ -157,11 +159,21 @@ class EmailManagerInboxSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def get_message(self, obj):
-        text = obj.message or ""
-        cleaned = re.sub(r'\s+', ' ', text).strip()
-        return cleaned
+        if not obj.message:
+            return None
+        import html
+        text = html.unescape(obj.message)
+        text = text.replace("\r", "").replace("\n", "<br>").strip()
+        return text
 
     def get_html_message(self, obj):
-        if obj.html_message:
-            return strip_tags(obj.html_message).strip()
-        return None       
+        return obj.html_message
+
+        
+class EmailReplySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmailReply
+        fields = ['message', 'html_message']
+        extra_kwargs = {
+            'message': {'required': True}
+        }

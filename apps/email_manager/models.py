@@ -220,3 +220,46 @@ class EmailManagerInbox(BaseModel):
 
     def __str__(self):
         return f"From {self.from_email} - {self.subject or '(no subject)'}"
+
+class EmailReply(BaseModel):
+    inbox = models.ForeignKey(
+        EmailManagerInbox,
+        on_delete=models.CASCADE,
+        related_name="replies"
+    )
+
+    to_email = models.EmailField()
+    from_email = models.EmailField()  
+
+    subject = models.CharField(max_length=255)
+    message = models.TextField()
+    html_message = models.TextField(null=True, blank=True)
+
+    in_reply_to = models.CharField(max_length=255, null=True, blank=True)
+    message_id = models.CharField(max_length=255, null=True, blank=True)
+
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    status = models.CharField(
+        max_length=20,
+        default="pending",
+        choices=[
+            ("pending", "Pending"),
+            ("sent", "Sent"),
+            ("failed", "Failed"),
+        ]
+    )
+
+    class Meta:
+        db_table = "emailmanager_inbox_replymail"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['inbox']),
+            models.Index(fields=['to_email']),
+            models.Index(fields=['from_email']),
+            models.Index(fields=['message_id']),
+        ]
+
+    def __str__(self):
+        return f"Reply to {self.to_email} | {self.subject}"
+
