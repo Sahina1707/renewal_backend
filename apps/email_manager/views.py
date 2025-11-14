@@ -357,10 +357,15 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                     }, status=status.HTTP_400_BAD_REQUEST)
                 
                 email_manager = create_serializer.save(created_by=request.user)
+                email_manager.from_email = "renewals@intelipro.in"
+                email_manager.save(update_fields=['from_email'])
+
                 if not email_manager.schedule_send:
                     email_manager.schedule_send = False
                     email_manager.save()
             
+            email_manager.from_email = "renewals@intelipro.in"
+            email_manager.save(update_fields=['from_email'])
             result = EmailManagerService.send_email(email_manager)
             
             if result['success']:
@@ -471,7 +476,10 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                 "success": True,
                 "message": "Email details retrieved successfully",
                 "data": {
-                    "email_info": serializer.data,
+                    "email_info": {
+                        **serializer.data,              
+                        "from_email": email.from_email,   
+                    },
                     "renewal_information": renewal_info,
                     "email_tracking": tracking_info,
                 },
@@ -484,6 +492,7 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                 "success": False,
                 "message": f"Email with ID {pk} not found"
             }, status=status.HTTP_404_NOT_FOUND)
+
         except Exception as e:
             return Response({
                 "success": False,
@@ -639,8 +648,9 @@ class EmailManagerInboxViewSet(viewsets.ModelViewSet):
                 "from_email": email.from_email,
                 "to_email": email.to_email,
                 "subject": email.subject,
-                "message": email.message,
-                "html_message": email.html_message,
+                "message": serializer.data.get("message"),
+                "html_message": serializer.data.get("html_message"),
+                "clean_text": serializer.data.get("clean_text"),
                 "received_at": email.received_at.isoformat() if email.received_at else None,  
                 "policy_info": related_info,
                 "priority": related_info.get("priority"),
@@ -806,6 +816,7 @@ class EmailManagerInboxViewSet(viewsets.ModelViewSet):
             # Store in EmailManager (sent emails)
             EmailManager.objects.create(
                 to=reply.to_email,
+                from_email="renewals@intelipro.in",
                 subject=reply.subject,
                 message=reply.message,
                 email_status="sent",

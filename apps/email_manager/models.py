@@ -11,6 +11,13 @@ class EmailManager(BaseModel):
         ('High', 'High'),
     ]
     
+    from_email = models.EmailField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="From email address used to send this email"
+    )
+
     to = models.EmailField(
         max_length=255,
         help_text="Primary recipient email address"
