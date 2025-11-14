@@ -2,7 +2,6 @@ from openai import OpenAI
 from django.conf import settings
 import json
 
-# Initialize OpenAI client using your .env config
 client = OpenAI(
     api_key=settings.OPENAI_API_KEY
 )
@@ -15,14 +14,14 @@ def analyze_email_sentiment_and_intent(text: str):
 
         prompt = f"""
         Analyze the following email and provide:
-        1. The sentiment (positive, neutral, or negative)
-        2. A confidence score (0–100%)
-        3. The intent (e.g., renewal_request, complaint, inquiry, gratitude, unsubscribe, confirmation)
+        1. Sentiment (positive, neutral, negative)
+        2. Confidence score (0–100)
+        3. Intent (renewal_request, complaint, inquiry, gratitude, unsubscribe, confirmation)
 
         Email:
         {text}
 
-        Respond strictly in JSON format like this:
+        Respond strictly in JSON format:
         {{
             "sentiment": "positive",
             "confidence": 87,
@@ -36,13 +35,12 @@ def analyze_email_sentiment_and_intent(text: str):
                 {"role": "system", "content": "You are an AI email sentiment and intent analyzer."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=int(getattr(settings, "OPENAI_MAX_TOKENS", 150)),
-            temperature=float(getattr(settings, "OPENAI_TEMPERATURE", 0.3)),
+            max_tokens=settings.OPENAI_MAX_TOKENS,
+            temperature=settings.OPENAI_TEMPERATURE,
         )
 
         content = response.choices[0].message.content.strip()
 
-        # Parse JSON safely
         try:
             result = json.loads(content)
         except json.JSONDecodeError:
