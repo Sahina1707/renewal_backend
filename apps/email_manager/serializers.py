@@ -13,6 +13,7 @@ class EmailManagerSerializer(serializers.ModelSerializer):
         model = EmailManager
         fields = [
             'id',
+            'from_email',
             'to',
             'cc',
             'bcc',
@@ -152,22 +153,47 @@ class SentEmailListSerializer(serializers.ModelSerializer):
 class EmailManagerInboxSerializer(serializers.ModelSerializer):
     message = serializers.SerializerMethodField()
     html_message = serializers.SerializerMethodField()
-
+    clean_text = serializers.SerializerMethodField()
     class Meta:
         model = EmailManagerInbox
-        fields = '__all__'
+        fields = [
+            'id',
+            'from_email',
+            'to_email',
+            'subject',
+            'message',
+            'html_message',
+            'clean_text',     
+            'received_at',
+            'related_email',
+            'is_read',
+            'in_reply_to',
+            'created_at',
+            'updated_at',
+            'is_deleted',
+        ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def get_message(self, obj):
         if not obj.message:
             return None
-        import html
         text = html.unescape(obj.message)
-        text = text.replace("\r", "").replace("\n", "<br>").strip()
-        return text
+        text = text.replace("\r\n", "<br>").replace("\r", "<br>").replace("\n", "<br>")
+        while "<br><br>" in text:
+            text = text.replace("<br><br>", "<br>")
+
+        return text.strip()
+
 
     def get_html_message(self, obj):
         return obj.html_message
+    
+    def get_clean_text(self, obj):
+        content = obj.html_message or obj.message or ""
+        content = content.replace("<br>", "\n").replace("</p>", "\n").replace("<p>", "")
+        clean = strip_tags(content)
+        clean = re.sub(r'\n+', '\n', clean).strip()
+        return clean
 
         
 class EmailReplySerializer(serializers.ModelSerializer):
