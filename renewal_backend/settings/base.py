@@ -394,7 +394,7 @@ WHATSAPP_BUSINESS_ACCOUNT_ID = config('WHATSAPP_BUSINESS_ACCOUNT_ID', default=''
 # OPENAI_MODEL = config('OPENAI_MODEL', default='gpt-4')
 
 OPENAI_API_KEY = config('OPENAI_API_KEY', default='')
-OPENAI_ORGANIZATION = config('OPENAI_ORGANIZATION', default='')
+# OPENAI_ORGANIZATION = config('OPENAI_ORGANIZATION', default='')
 OPENAI_MODEL = config('OPENAI_MODEL', default='gpt-4')
 OPENAI_MAX_TOKENS = config('OPENAI_MAX_TOKENS', default=150, cast=int)
 OPENAI_TEMPERATURE = config('OPENAI_TEMPERATURE', default=0.3, cast=float)
