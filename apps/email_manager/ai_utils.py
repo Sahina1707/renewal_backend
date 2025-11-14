@@ -4,7 +4,7 @@ import json
 
 # Initialize OpenAI client using your .env config
 client = OpenAI(
-    api_key=settings.OPENAI_API_KEY,
+    api_key=settings.OPENAI_API_KEY
 )
 
 def analyze_email_sentiment_and_intent(text: str):
