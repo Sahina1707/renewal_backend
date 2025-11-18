@@ -20,6 +20,8 @@ from .services import EmailInboxService
 from .ai_utils import analyze_email_sentiment_and_intent
 from django.db.models import Count, Avg, F, ExpressionWrapper, DurationField
 from .ai_utils import analyze_email_sentiment_and_intent
+from django.template import Template as DjangoTemplate, Context
+
 class EmailManagerViewSet(viewsets.ModelViewSet):
     
     queryset = EmailManager.objects.all()
@@ -289,9 +291,6 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                 if 'templates_id' in email_data:
                     email_data['template'] = email_data.pop('templates_id')
 
-                from apps.policies.models import Policy
-                from django.template import Template as DjangoTemplate, Context
-
                 policy_number = email_data.get('policy_number')
                 context = {}
 
@@ -499,28 +498,49 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                 "message": f"Error retrieving email details: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
     @action(detail=False, methods=['get'])
     def started_emails(self, request):
         try:
-            started_emails = EmailManager.objects.filter(
+            # Fetch from EmailManager (sent / queued emails)
+            manager_emails = EmailManager.objects.filter(
                 started=True,
                 is_deleted=False
             ).order_by('-updated_at')
 
-            serializer = self.get_serializer(started_emails, many=True)
+            manager_data = EmailManagerSerializer(manager_emails, many=True).data
+
+            # Fetch from EmailManagerInbox (received replies)
+            inbox_emails = EmailManagerInbox.objects.filter(
+                started=True,
+                is_deleted=False
+            ).order_by('-updated_at')
+
+            inbox_data = EmailManagerInboxSerializer(inbox_emails, many=True).data
+
+            # Combine & label for frontend clarity
+            combined_data = {
+                "email_manager": manager_data,
+                "email_inbox": inbox_data
+            }
 
             return Response({
-                'success': True,
-                'message': 'Emails with started=True retrieved successfully',
-                'count': started_emails.count(),
-                'data': serializer.data
+                "success": True,
+                "message": "Started emails fetched successfully",
+                "count": {
+                    "email_manager": len(manager_data),
+                    "email_inbox": len(inbox_data),
+                    "total": len(manager_data) + len(inbox_data)
+                },
+                "data": combined_data
             }, status=status.HTTP_200_OK)
 
         except Exception as e:
             return Response({
-                'success': False,
-                'message': f'Error retrieving started emails: {str(e)}'
+                "success": False,
+                "message": f"Error retrieving started emails: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         
     @action(detail=True, methods=['post'], url_path='update_started_status')
     def update_started_status(self, request, pk=None):
@@ -532,6 +552,49 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
             return Response({'success': True, 'message': 'Started status updated'})
         except Exception as e:
             return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+    @action(detail=True, methods=['get'], url_path='started_email_details')
+    def started_email_details(self, request, pk=None):
+        try:
+            try:
+                email = EmailManager.objects.get(id=pk, started=True, is_deleted=False)
+                data = {
+                    "type": "email_manager",
+                    "details": EmailManagerSerializer(email).data
+                }
+                return Response({
+                    "success": True,
+                    "message": "Started email details fetched successfully",
+                    "data": data
+                }, status=status.HTTP_200_OK)
+            except EmailManager.DoesNotExist:
+                pass
+
+            try:
+                email_inbox = EmailManagerInbox.objects.get(id=pk, started=True, is_deleted=False)
+                data = {
+                    "type": "email_inbox",
+                    "details": EmailManagerInboxSerializer(email_inbox).data
+                }
+                return Response({
+                    "success": True,
+                    "message": "Started inbox email details fetched successfully",
+                    "data": data
+                }, status=status.HTTP_200_OK)
+            except EmailManagerInbox.DoesNotExist:
+                pass
+
+            return Response({
+                "success": False,
+                "message": f"No active started email found with ID {pk}"
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        except Exception as e:
+            return Response({
+                "success": False,
+                "message": f"Error fetching details: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
         
 
 class EmailManagerInboxViewSet(viewsets.ModelViewSet):
@@ -791,29 +854,54 @@ class EmailManagerInboxViewSet(viewsets.ModelViewSet):
                 "success": False,
                 "message": f"Error marking email as read: {str(e)}"
             }, status=500)
-        
+
+
     @action(detail=True, methods=['post'], url_path='reply')
     def reply_email(self, request, pk=None):
         try:
             inbox = self.get_object()
-
             serializer = EmailReplySerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
+
+            message = serializer.validated_data.get("message")
+            html_message = serializer.validated_data.get("html_message")
+            template_id = serializer.validated_data.get("template_id")
+
+            if template_id:
+                try:
+                    template = Template.objects.get(id=template_id)
+
+                    context_data = {
+                        "first_name": inbox.related_email.customer_name if inbox.related_email else "",
+                        "policy_number": inbox.related_email.policy_number if inbox.related_email else "",
+                        "expiry_date": inbox.related_email.renewal_date if inbox.related_email else "",
+                        "premium_amount": inbox.related_email.premium_amount if inbox.related_email else "",
+                        "agent_name": "Agent"
+                    }
+
+                    message = DjangoTemplate(template.content).render(Context(context_data))
+                    html_message = message  
+
+                except Template.DoesNotExist:
+                    return Response({"error": "Template not found"}, status=400)
+
+
+            if not message:
+                return Response({"error": "No message available to send"}, status=400)
 
             reply = EmailReply.objects.create(
                 inbox=inbox,
                 to_email=inbox.from_email,
                 from_email="renewals@intelipro.in",
                 subject=f"Re: {inbox.subject}",
-                message=serializer.validated_data["message"],
-                html_message=serializer.validated_data.get("html_message"),
+                message=message,
+                html_message=html_message,
                 in_reply_to=inbox.message_id,
                 created_by=request.user
             )
 
             EmailManagerService.send_reply_email(reply)
 
-            # Store in EmailManager (sent emails)
             EmailManager.objects.create(
                 to=reply.to_email,
                 from_email="renewals@intelipro.in",
@@ -824,8 +912,12 @@ class EmailManagerInboxViewSet(viewsets.ModelViewSet):
                 sent_at=reply.sent_at,
                 policy_number=inbox.related_email.policy_number if inbox.related_email else None,
                 customer_name=inbox.related_email.customer_name if inbox.related_email else None,
+                renewal_date=inbox.related_email.renewal_date if inbox.related_email else None,
+                premium_amount=inbox.related_email.premium_amount if inbox.related_email else None,
+                template_id=template_id if template_id else None,
                 created_by=request.user
             )
+
 
             return Response({
                 "success": True,
@@ -837,8 +929,35 @@ class EmailManagerInboxViewSet(viewsets.ModelViewSet):
             return Response({
                 "success": False,
                 "message": f"Error sending reply: {str(e)}"
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            }, status=500)
+        
+    @action(detail=True, methods=['patch'], url_path='update-started-status')
+    def update_started_status(self, request, pk=None):
+        try:
+            inbox_email = self.get_object()
+            started = request.data.get('started')
 
+            if started is None:
+                return Response({
+                    "success": False,
+                    "message": "'started' field is required (true/false)"
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            inbox_email.started = bool(started)
+            inbox_email.save(update_fields=['started'])
+
+            return Response({
+                "success": True,
+                "message": "Started status updated successfully",
+                "email_id": inbox_email.id,
+                "started": inbox_email.started
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({
+                "success": False,
+                "message": f"Error updating started status: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 
 

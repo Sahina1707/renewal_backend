@@ -215,6 +215,11 @@ class EmailManagerInbox(BaseModel):
         null=True,
         related_name='inbox_replies'
     )
+    started = models.BooleanField(
+        default=False,
+        help_text="Indicates whether processing for this inbox email has started"
+    )
+
 
     class Meta:
         db_table = 'email_manager_inbox'

@@ -168,6 +168,7 @@ class EmailManagerInboxSerializer(serializers.ModelSerializer):
             'related_email',
             'is_read',
             'in_reply_to',
+            'started',
             'created_at',
             'updated_at',
             'is_deleted',
@@ -197,9 +198,23 @@ class EmailManagerInboxSerializer(serializers.ModelSerializer):
 
         
 class EmailReplySerializer(serializers.ModelSerializer):
+    template_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
     class Meta:
         model = EmailReply
-        fields = ['message', 'html_message']
+        fields = ['message', 'html_message', 'template_id']
         extra_kwargs = {
-            'message': {'required': True}
+            'message': {'required': False},
         }
+
+    def validate(self, data):
+        if not data.get('message') and not data.get('template_id'):
+            raise serializers.ValidationError(
+                "Either message or template_id must be provided."
+            )
+        return data
+    
+class EmailReplyStatusUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmailReply
+        fields = ['started']
+
