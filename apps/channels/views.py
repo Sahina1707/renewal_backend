@@ -141,9 +141,7 @@ class ChannelViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def list_all_channels(self, request):
-        """
-        API to list all channels with formatted response
-        """
+       
         try:
             channels = self.get_queryset()
             serializer = ChannelCreateAPISerializer(channels, many=True, context={'request': request})
@@ -169,10 +167,7 @@ class ChannelViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def get_channel_by_id(self, request):
-        """
-        API to get a specific channel by ID
-        Usage: GET /api/channels/channels/get_channel_by_id/?id=1
-        """
+        
         try:
             channel_id = request.query_params.get('id')
 
@@ -575,5 +570,19 @@ class ChannelViewSet(viewsets.ModelViewSet):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+        
+    @action(detail=False, methods=['get'])
+    def manager_names(self, request):
+        managers = (
+            Channel.objects
+            .filter(is_deleted=False)
+            .exclude(manager_name__isnull=True)
+            .exclude(manager_name__exact='')
+            .values_list('manager_name', flat=True)
+            .distinct()
+        )
+
+        return Response(list(managers), status=status.HTTP_200_OK)
+    
 
 

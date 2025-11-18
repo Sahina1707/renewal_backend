@@ -4,7 +4,7 @@ from apps.customers.models import Customer
 from apps.policies.models import Policy
 from apps.core.models import BaseModel
 from apps.customer_payments.models import CustomerPayment
-
+from apps.channels.models import Channel 
 User = get_user_model()
 
 class RenewalCase(BaseModel):
@@ -57,6 +57,15 @@ class RenewalCase(BaseModel):
         related_name='renewal_cases',
         db_column='customer_payment_id',
         help_text="Payment record associated with this renewal case"
+    )
+
+    channel = models.ForeignKey(
+        Channel,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='renewal_cases', 
+        help_text="Channel associated with this renewal case"
     )
     
 
