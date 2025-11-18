@@ -571,18 +571,51 @@ class ChannelViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get', 'post'])
     def manager_names(self, request):
-        managers = (
-            Channel.objects
-            .filter(is_deleted=False)
-            .exclude(manager_name__isnull=True)
-            .exclude(manager_name__exact='')
-            .values_list('manager_name', flat=True)
-            .distinct()
-        )
+        if request.method == 'GET':
+            managers = (
+                Channel.objects
+                .filter(is_deleted=False)
+                .exclude(manager_name__isnull=True)
+                .exclude(manager_name__exact='')
+                .values_list('manager_name', flat=True)
+                .distinct()
+            )
 
-        return Response(list(managers), status=status.HTTP_200_OK)
-    
+            return Response(
+                {'success': True, 'managers': list(managers)},
+                status=status.HTTP_200_OK
+            )
+
+        if request.method == 'POST':
+            manager_name = request.data.get('manager_name', '').strip()
+
+            if not manager_name:
+                return Response(
+                    {'success': False, 'error': 'Manager name cannot be empty'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            exists = Channel.objects.filter(manager_name__iexact=manager_name).exists()
+            if exists:
+                return Response(
+                    {'success': True, 'message': 'Manager already exists', 'manager_name': manager_name},
+                    status=status.HTTP_200_OK
+                )
+
+            Channel.objects.create(
+                name=f"Temp-{manager_name}",
+                channel_type='Online',
+                manager_name=manager_name,
+                created_by=request.user
+            )
+
+            return Response(
+                {'success': True, 'message': 'Manager created successfully', 'manager_name': manager_name},
+                status=status.HTTP_201_CREATED
+            )
+
+        
 
 
