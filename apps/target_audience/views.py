@@ -68,3 +68,9 @@ class TargetAudienceViewSet(viewsets.ModelViewSet):
             }
         ]
         return Response(predefined_options)
+    
+    @action(detail=False, methods=['get'])
+    def names(self, request):
+        audiences = self.get_queryset().values_list('name', flat=True)
+        return Response(list(audiences), status=status.HTTP_200_OK)
+
