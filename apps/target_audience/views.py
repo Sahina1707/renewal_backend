@@ -73,4 +73,29 @@ class TargetAudienceViewSet(viewsets.ModelViewSet):
     def names(self, request):
         audiences = self.get_queryset().values_list('name', flat=True)
         return Response(list(audiences), status=status.HTTP_200_OK)
+    
+    @action(detail=False, methods=['post'])
+    def get_or_create(self, request):
+        name = request.data.get('name', '').strip()
+        description = request.data.get('description', '').strip()
+
+        if not name:
+            return Response({"error": "Name is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        key = name.lower().replace(" ", "_")
+
+        obj, created = TargetAudience.objects.get_or_create(
+            name__iexact=name,
+            defaults={
+                'name': name,
+                'key': key,
+                'description': description
+            }
+        )
+
+        return Response({
+            "created": created,
+            "data": TargetAudienceSerializer(obj).data
+        }, status=status.HTTP_200_OK)
+
 

@@ -5,6 +5,7 @@ from apps.policies.models import Policy
 from apps.core.models import BaseModel
 from apps.customer_payments.models import CustomerPayment
 from apps.channels.models import Channel 
+from apps.teams.models import Team
 User = get_user_model()
 
 class RenewalCase(BaseModel):
@@ -41,6 +42,13 @@ class RenewalCase(BaseModel):
     
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='pending')
     assigned_to = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_renewal_cases', db_column='assigned_to')
+    assigned_team = models.ForeignKey(
+        Team,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="renewal_cases"
+    )
     
     renewal_amount = models.DecimalField(max_digits=12, decimal_places=2)
     payment_status = models.CharField(max_length=20, choices=[

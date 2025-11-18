@@ -6,7 +6,8 @@ from django.db.models import Sum, Count, Q
 from decimal import Decimal
 import uuid
 import logging
-
+from django.utils import timezone
+from datetime import timedelta
 from apps.renewals.models import RenewalCase
 from apps.customer_payments.models import CustomerPayment
 from apps.ai_insights.services import ai_service
@@ -489,3 +490,101 @@ def ai_status(request):
             {'error': f'Failed to check AI status: {str(e)}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def dashboard_filtered(request):
+    try:
+        date_range = request.GET.get('date_range', '').lower()
+        policy_type = request.GET.get('policy_type', '').lower()
+        status_filter = request.GET.get('status', '').lower()
+        team = request.GET.get('team', '').lower()
+
+        renewal_cases = RenewalCase.objects.filter(is_deleted=False)
+
+        today = timezone.now().date()
+
+        if date_range == 'daily':
+            renewal_cases = renewal_cases.filter(created_at__date=today)
+
+        elif date_range == 'weekly':
+            week_start = today - timedelta(days=today.weekday())
+            renewal_cases = renewal_cases.filter(created_at__date__gte=week_start)
+
+        elif date_range == 'monthly':
+            renewal_cases = renewal_cases.filter(created_at__month=today.month)
+
+        elif date_range == 'custom':
+            start_date = request.GET.get('start_date')
+            end_date = request.GET.get('end_date')
+            if start_date and end_date:
+                renewal_cases = renewal_cases.filter(created_at__date__range=[start_date, end_date])
+
+        if policy_type and policy_type != 'all':
+            renewal_cases = renewal_cases.filter(
+                Q(policy__policy_type__name__iexact=policy_type) |
+                Q(policy__policy_type__code__iexact=policy_type) |
+                Q(policy__policy_type__category__iexact=policy_type)
+            )
+
+        # Status filter (already correct)
+        if status_filter and status_filter != 'all':
+            renewal_cases = renewal_cases.filter(status__iexact=status_filter)
+
+        # Team filter
+        if team and team != 'all':
+            renewal_cases = renewal_cases.filter(channel__name__iexact=team)
+
+        summary = {
+            "total_cases": renewal_cases.count(),
+            "in_progress": renewal_cases.filter(status='in_progress').count(),
+            "renewed": renewal_cases.filter(status='renewed').count(),
+            "pending_action": renewal_cases.filter(status='pending_action').count(),
+            "failed": renewal_cases.filter(status='failed').count(),
+            "total_revenue": renewal_cases.filter(status='renewed').aggregate(total=Sum('renewal_amount'))["total"] or Decimal('0.00')
+        }
+
+        channel_data = []
+        from apps.channels.models import Channel
+
+        channels = Channel.objects.filter(is_deleted=False)
+
+        for channel in channels:
+            channel_cases = renewal_cases.filter(channel=channel)
+            renewed_cases = channel_cases.filter(status='renewed')
+
+            total = channel_cases.count()
+            renewed_count = renewed_cases.count()
+
+            revenue = renewed_cases.aggregate(total=Sum('renewal_amount'))['total'] or 0
+            budget = float(channel.budget or 0)
+
+            conversion = round((renewed_count / total) * 100, 1) if total > 0 else 0
+            efficiency = round(min(100.0, (float(revenue) / budget) * 100), 1) if budget > 0 else 0
+
+            channel_data.append({
+                "channel_name": channel.name,
+                "type": channel.channel_type,
+                "manager": channel.manager_name,
+                "cases": total,
+                "renewed": renewed_count,
+                "conversion": conversion,
+                "efficiency": efficiency,
+                "revenue": f"{float(revenue):.2f}"
+            })
+
+        return Response({
+            "success": True,
+            "filters_applied": {
+                "date_range": date_range,
+                "policy_type": policy_type,
+                "status": status_filter,
+                "team": team
+            },
+            "summary": summary,
+            "channels": channel_data
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({"success": False, "error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
