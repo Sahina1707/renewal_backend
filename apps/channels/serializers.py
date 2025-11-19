@@ -60,7 +60,6 @@ class ChannelSerializer(serializers.ModelSerializer):
 
 
 class ChannelListSerializer(serializers.ModelSerializer):
-    """Simplified serializer for listing channels"""
 
     manager_name = serializers.CharField(source='get_manager_name', read_only=True)
     target_audience_name = serializers.CharField(source='get_target_audience_name', read_only=True)
@@ -79,8 +78,38 @@ class ChannelListSerializer(serializers.ModelSerializer):
             'cost_per_lead',
             'budget',
             'is_active',
-            'created_at',
+            'created_at'
         ]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+
+        total_cases = instance.renewal_cases.count()
+        renewed_cases = instance.renewal_cases.filter(status='renewed').count()
+
+        total_revenue = instance.renewal_cases.filter(status='renewed') \
+            .aggregate(total=Sum('renewal_amount')).get('total') or 0
+        revenue_value = float(total_revenue)
+
+        if total_cases > 0:
+            conversion_rate = round((renewed_cases / total_cases) * 100, 1)
+        else:
+            conversion_rate = 0.0
+
+        budget_value = float(instance.budget or 0)
+        if budget_value > 0:
+            efficiency_pct = round(min(100.0, (revenue_value / budget_value) * 100.0), 1)
+        else:
+            efficiency_pct = 100.0 if revenue_value > 0 else 0.0
+
+        data['cases'] = total_cases
+        data['renewed'] = renewed_cases
+        data['conversion'] = conversion_rate
+        data['efficiency'] = efficiency_pct
+        data['revenue'] = f"{revenue_value:.2f}"
+
+        return data
+
 
 
 class ChannelCreateSerializer(serializers.ModelSerializer):
@@ -229,37 +258,37 @@ class ChannelCreateAPISerializer(serializers.ModelSerializer):
         return super().to_internal_value(data)
 
     def to_representation(self, instance):
-        """Custom representation to ensure description is properly returned"""
         data = super().to_representation(instance)
-        if hasattr(instance, 'description'):
-            data['description'] = instance.description
-        
-        # Computed metrics for frontend display (read-only, non-breaking)
-        # Cases: total renewal cases linked to this channel
+
         total_cases = instance.renewal_cases.count()
+
         renewed_cases = instance.renewal_cases.filter(status='renewed').count()
-        total_revenue = instance.renewal_cases.filter(status='renewed').aggregate(total=Sum('renewal_amount')).get('total')
 
-        # Safe conversions
-        total_cases = int(total_cases or 0)
-        renewed_cases = int(renewed_cases or 0)
-        revenue_value = float(total_revenue or 0)
+        total_revenue = instance.renewal_cases.filter(status='renewed') \
+            .aggregate(total=Sum('renewal_amount')).get('total') or 0
 
-        # Conversion rate: renewed / total
-        conversion_rate = round((renewed_cases / total_cases) * 100, 1) if total_cases > 0 else 0.0
+        revenue_value = float(total_revenue)
 
-        # Efficiency: revenue vs budget (capped at 100%). If no budget, show 0 when revenue is 0 else 100
-        budget_value = float(instance.budget) if getattr(instance, 'budget', None) else 0.0
+        if total_cases > 0:
+            conversion_rate = round((renewed_cases / total_cases) * 100, 1)
+        else:
+            conversion_rate = 0.0
+
+        budget_value = float(instance.budget or 0)
+
         if budget_value > 0:
             efficiency_pct = round(min(100.0, (revenue_value / budget_value) * 100.0), 1)
         else:
             efficiency_pct = 100.0 if revenue_value > 0 else 0.0
 
         data['cases'] = total_cases
+        data['renewed'] = renewed_cases
         data['conversion'] = conversion_rate
-        data['efficiency'] = efficiency_pct
         data['revenue'] = f"{revenue_value:.2f}"
+        data['efficiency'] = efficiency_pct
+
         return data
+
 
     def validate_cost_per_lead(self, value):
         """Validate cost per lead is not negative"""
