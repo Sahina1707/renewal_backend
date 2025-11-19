@@ -71,6 +71,7 @@ class ChannelListSerializer(serializers.ModelSerializer):
             'id',
             'name',
             'channel_type',
+            'description',
             'status',
             'priority',
             'manager_name',
