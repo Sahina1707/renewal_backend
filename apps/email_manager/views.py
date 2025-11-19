@@ -2,7 +2,7 @@ from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Q
-from .models import EmailManager, EmailReply
+from .models import EmailManager, EmailReply, StartedReplyMail
 from .serializers import (
     EmailManagerSerializer,
     EmailManagerCreateSerializer,
@@ -502,7 +502,6 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def started_emails(self, request):
         try:
-            # Fetch from EmailManager (sent / queued emails)
             manager_emails = EmailManager.objects.filter(
                 started=True,
                 is_deleted=False
@@ -510,7 +509,6 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
 
             manager_data = EmailManagerSerializer(manager_emails, many=True).data
 
-            # Fetch from EmailManagerInbox (received replies)
             inbox_emails = EmailManagerInbox.objects.filter(
                 started=True,
                 is_deleted=False
@@ -518,7 +516,6 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
 
             inbox_data = EmailManagerInboxSerializer(inbox_emails, many=True).data
 
-            # Combine & label for frontend clarity
             combined_data = {
                 "email_manager": manager_data,
                 "email_inbox": inbox_data
@@ -596,6 +593,63 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         
+    @action(detail=True, methods=['post'], url_path='reply')
+    def reply_to_started_email(self, request, pk=None):
+        try:
+            message = request.data.get("message")
+            html_message = request.data.get("html_message")
+
+            if not message:
+                return Response({
+                    "success": False,
+                    "message": "Message is required"
+                }, status=400)
+
+            original_email = None
+            inbox_email = None
+            try:
+                original_email = EmailManager.objects.get(id=pk, started=True, is_deleted=False)
+                to_email = original_email.to
+                subject = f"Re: {original_email.subject}"
+            except EmailManager.DoesNotExist:
+                try:
+                    inbox_email = EmailManagerInbox.objects.get(id=pk, started=True, is_deleted=False)
+                    to_email = inbox_email.from_email
+                    subject = f"Re: {inbox_email.subject}"
+                except EmailManagerInbox.DoesNotExist:
+                    return Response({
+                        "success": False,
+                        "message": f"No started email found with ID {pk}"
+                    }, status=404)
+
+            EmailManagerService.send_reply_smtp(
+                to_email=to_email,
+                subject=subject,
+                message=message,
+                html_message=html_message
+            )
+
+            reply_record = StartedReplyMail.objects.create(
+                original_email_manager=original_email,
+                original_inbox_email=inbox_email,
+                to_email=to_email,
+                subject=subject,
+                message=message,
+                html_message=html_message,
+                created_by=request.user
+            )
+
+            return Response({
+                "success": True,
+                "message": "Reply sent successfully",
+                "reply_id": reply_record.id
+            }, status=200)
+
+        except Exception as e:
+            return Response({
+                "success": False,
+                "message": str(e)
+            }, status=500)    
 
 class EmailManagerInboxViewSet(viewsets.ModelViewSet):
     queryset = EmailManagerInbox.objects.all()

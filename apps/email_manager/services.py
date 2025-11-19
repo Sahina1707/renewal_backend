@@ -1,4 +1,5 @@
 import logging
+import smtplib
 from typing import List, Dict, Any
 from django.core.mail import EmailMultiAlternatives
 from django.conf import settings
@@ -13,7 +14,8 @@ logger = logging.getLogger(__name__)
 from django.db.models import Q
 from email.utils import make_msgid
 from django.core.mail import EmailMessage
-
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 class EmailManagerService:
     
     @staticmethod
@@ -194,9 +196,29 @@ class EmailManagerService:
         reply_obj.save()
 
         return True
+    
+    @staticmethod
+    def send_reply_smtp(to_email, subject, message, html_message=None):
+        msg = MIMEMultipart("alternative")
+        msg["From"] = "renewals@intelipro.in"
+        msg["To"] = to_email
+        msg["Subject"] = subject
+
+        part1 = MIMEText(message, "plain")
+        msg.attach(part1)
+
+        if html_message:
+            part2 = MIMEText(html_message, "html")
+            msg.attach(part2)
+
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login("renewals@intelipro.in", "APP_PASSWORD") 
+            server.sendmail("renewals@intelipro.in", to_email, msg.as_string())
+
+        return True
 
     
-
 class EmailInboxService:
 
     @staticmethod
