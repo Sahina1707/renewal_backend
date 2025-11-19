@@ -11,6 +11,13 @@ class EmailManager(BaseModel):
         ('High', 'High'),
     ]
     
+    from_email = models.EmailField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="From email address used to send this email"
+    )
+
     to = models.EmailField(
         max_length=255,
         help_text="Primary recipient email address"
@@ -208,6 +215,11 @@ class EmailManagerInbox(BaseModel):
         null=True,
         related_name='inbox_replies'
     )
+    started = models.BooleanField(
+        default=False,
+        help_text="Indicates whether processing for this inbox email has started"
+    )
+
 
     class Meta:
         db_table = 'email_manager_inbox'
@@ -220,3 +232,46 @@ class EmailManagerInbox(BaseModel):
 
     def __str__(self):
         return f"From {self.from_email} - {self.subject or '(no subject)'}"
+
+class EmailReply(BaseModel):
+    inbox = models.ForeignKey(
+        EmailManagerInbox,
+        on_delete=models.CASCADE,
+        related_name="replies"
+    )
+
+    to_email = models.EmailField()
+    from_email = models.EmailField()  
+
+    subject = models.CharField(max_length=255)
+    message = models.TextField()
+    html_message = models.TextField(null=True, blank=True)
+
+    in_reply_to = models.CharField(max_length=255, null=True, blank=True)
+    message_id = models.CharField(max_length=255, null=True, blank=True)
+
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    status = models.CharField(
+        max_length=20,
+        default="pending",
+        choices=[
+            ("pending", "Pending"),
+            ("sent", "Sent"),
+            ("failed", "Failed"),
+        ]
+    )
+
+    class Meta:
+        db_table = "emailmanager_inbox_replymail"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['inbox']),
+            models.Index(fields=['to_email']),
+            models.Index(fields=['from_email']),
+            models.Index(fields=['message_id']),
+        ]
+
+    def __str__(self):
+        return f"Reply to {self.to_email} | {self.subject}"
+

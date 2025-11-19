@@ -1,14 +1,19 @@
 from rest_framework import serializers
+import re
+import html
 from .models import EmailManager
 from apps.templates.models import Template
 from apps.customer_payment_schedule.models import PaymentSchedule
 from .models import EmailManagerInbox
+from django.utils.html import strip_tags
+from .models import EmailReply
 class EmailManagerSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = EmailManager
         fields = [
             'id',
+            'from_email',
             'to',
             'cc',
             'bcc',
@@ -146,7 +151,70 @@ class SentEmailListSerializer(serializers.ModelSerializer):
             return None
         
 class EmailManagerInboxSerializer(serializers.ModelSerializer):
+    message = serializers.SerializerMethodField()
+    html_message = serializers.SerializerMethodField()
+    clean_text = serializers.SerializerMethodField()
     class Meta:
         model = EmailManagerInbox
-        fields = '__all__'
-        read_only_fields = ['id', 'created_at', 'updated_at']        
+        fields = [
+            'id',
+            'from_email',
+            'to_email',
+            'subject',
+            'message',
+            'html_message',
+            'clean_text',     
+            'received_at',
+            'related_email',
+            'is_read',
+            'in_reply_to',
+            'started',
+            'created_at',
+            'updated_at',
+            'is_deleted',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_message(self, obj):
+        if not obj.message:
+            return None
+        text = html.unescape(obj.message)
+        text = text.replace("\r\n", "<br>").replace("\r", "<br>").replace("\n", "<br>")
+        while "<br><br>" in text:
+            text = text.replace("<br><br>", "<br>")
+
+        return text.strip()
+
+
+    def get_html_message(self, obj):
+        return obj.html_message
+    
+    def get_clean_text(self, obj):
+        content = obj.html_message or obj.message or ""
+        content = content.replace("<br>", "\n").replace("</p>", "\n").replace("<p>", "")
+        clean = strip_tags(content)
+        clean = re.sub(r'\n+', '\n', clean).strip()
+        return clean
+
+        
+class EmailReplySerializer(serializers.ModelSerializer):
+    template_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
+    class Meta:
+        model = EmailReply
+        fields = ['message', 'html_message', 'template_id']
+        extra_kwargs = {
+            'message': {'required': False},
+        }
+
+    def validate(self, data):
+        if not data.get('message') and not data.get('template_id'):
+            raise serializers.ValidationError(
+                "Either message or template_id must be provided."
+            )
+        return data
+    
+class EmailReplyStatusUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmailReply
+        fields = ['started']
+

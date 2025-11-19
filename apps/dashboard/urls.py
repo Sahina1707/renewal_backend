@@ -5,7 +5,8 @@ app_name = 'dashboard'
 
 urlpatterns = [
     path('summary/', views.dashboard_summary, name='dashboard-summary'),
-    
+    path('filter/', views.dashboard_filtered, name='dashboard-filter'),
+
     path('ai/chat/', views.ai_chat, name='ai-chat'),
     path('ai/suggestions/', views.ai_suggestions, name='ai-suggestions'),
     path('ai/analytics/', views.ai_analytics, name='ai-analytics'),
