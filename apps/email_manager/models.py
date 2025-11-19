@@ -274,4 +274,25 @@ class EmailReply(BaseModel):
 
     def __str__(self):
         return f"Reply to {self.to_email} | {self.subject}"
+class StartedReplyMail(BaseModel):
+    original_email_manager = models.ForeignKey(
+        EmailManager, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="started_replies"
+    )
+    original_inbox_email = models.ForeignKey(
+        EmailManagerInbox, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="started_replies"
+    )
 
+    to_email = models.CharField(max_length=255)
+    from_email = models.CharField(max_length=255, default="renewals@intelipro.in")
+    subject = models.CharField(max_length=255)
+    message = models.TextField(null=True, blank=True)
+    html_message = models.TextField(null=True, blank=True)
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "emailmanager_startedreply_mails"
+
+    def __str__(self):
+        return f"Reply to {self.original_email_manager or self.original_inbox_email}"
