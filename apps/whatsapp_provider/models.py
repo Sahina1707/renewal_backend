@@ -1,3 +1,6 @@
+#
+# models.py
+#
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -8,12 +11,27 @@ import json
 User = get_user_model()
 
 
-class WhatsAppBusinessAccount(models.Model):
-    """WhatsApp Business Account (WABA) configuration"""
+class WhatsAppProvider(models.Model):
+    """
+    Refactored model to store configuration for ANY WhatsApp provider
+    (Meta, Twilio, Gupshup, 360Dialog, etc.)
+    This replaces the old 'WhatsAppBusinessAccount' model.
+    """
     
+    # --- Provider Type ---
+    PROVIDER_CHOICES = [
+        ('meta', 'Meta Business API'),
+        ('twilio', 'Twilio WhatsApp'),
+        ('gupshup', 'Gupshup WhatsApp'),
+        ('360dialog', '360Dialog'),
+    ]
+    
+    # --- Status Choices (from old model) ---
     STATUS_CHOICES = [
-        ('pending', 'Pending Verification'),
-        ('verified', 'Verified'),
+        ('pending', 'Pending'),
+        ('verified', 'Verified'), # You can map 'connected' to this
+        ('connected', 'Connected'),
+        ('disconnected', 'Disconnected'),
         ('suspended', 'Suspended'),
         ('disabled', 'Disabled'),
     ]
@@ -26,17 +44,22 @@ class WhatsAppBusinessAccount(models.Model):
     ]
     
     id = models.BigAutoField(primary_key=True)
-    name = models.CharField(max_length=100, help_text="Friendly name for this WABA account")
+    name = models.CharField(max_length=100, help_text="Friendly name for this provider")
     
-    # Meta Business Account Details
-    waba_id = models.CharField(max_length=50, unique=True, help_text="WhatsApp Business Account ID from Meta")
-    meta_business_account_id = models.CharField(max_length=50, help_text="Meta Business Account ID")
-    app_id = models.CharField(max_length=50, blank=True, null=True, help_text="Meta App ID (optional)")
-    app_secret = models.TextField(blank=True, null=True, help_text="Meta App Secret (encrypted)")
+    provider_type = models.CharField(
+        max_length=20, 
+        choices=PROVIDER_CHOICES, 
+        default='meta'
+    )
     
-    # Access Tokens (encrypted)
-    access_token = models.TextField(help_text="Permanent access token (encrypted)")
-    webhook_verify_token = models.CharField(max_length=255, help_text="Webhook verification token")
+    # This JSON field will store ALL provider-specific credentials,
+    # which will be encrypted by the service/serializer before saving.
+    credentials = models.JSONField(
+        default=dict, 
+        help_text="Encrypted API credentials for the provider"
+    )
+    
+    # --- Common Fields (Kept from old model) ---
     
     # Business Profile Information
     business_name = models.CharField(max_length=255, blank=True, null=True)
@@ -81,32 +104,37 @@ class WhatsAppBusinessAccount(models.Model):
     last_reset_monthly = models.DateField(default=timezone.now)
     
     # Configuration
-    is_default = models.BooleanField(default=False)
-    is_active = models.BooleanField(default=True)
+    is_default = models.BooleanField(default=False, help_text="Use this provider by default")
+    is_active = models.BooleanField(default=True, help_text="Activate this provider")
     
-    # Webhook Configuration
-    webhook_url = models.URLField(blank=True, null=True, help_text="Webhook URL for receiving messages")
-    subscribed_webhook_events = models.JSONField(default=list, help_text="Subscribed webhook events")
+    # Webhook Configuration (This is common)
+    # This token is used to verify incoming webhooks are from the provider
+    webhook_verify_token = models.CharField(
+        max_length=255, 
+        help_text="A unique token to verify incoming webhooks",
+        blank=True,
+        null=True
+    )
     
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_whatsapp_accounts')
-    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_whatsapp_accounts')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_whatsapp_provider')
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_whatsapp_provider')
     is_deleted = models.BooleanField(default=False)
     
     class Meta:
-        db_table = 'whatsapp_business_accounts'
-        ordering = ['-created_at']
-        verbose_name = 'WhatsApp Business Account'
-        verbose_name_plural = 'WhatsApp Business Accounts'
+        db_table = 'whatsapp_provider' # Renamed table
+        ordering = ['-is_default', 'name']
+        verbose_name = 'WhatsApp Provider'
+        verbose_name_plural = 'WhatsApp Providers'
     
     def __str__(self):
-        return f"{self.name} ({self.waba_id})"
+        return f"{self.name} ({self.get_provider_type_display()})"
     
     def can_send_message(self) -> bool:
         """Check if account can send messages"""
-        if not self.is_active or self.status != 'verified':
+        if not self.is_active or self.status not in ['verified', 'connected']:
             return False
         
         # Check daily limits
@@ -120,16 +148,19 @@ class WhatsAppBusinessAccount(models.Model):
         return True
     
     def get_primary_phone_number(self):
-        """Get the primary phone number for this WABA"""
+        """Get the primary phone number for this provider"""
         return self.phone_numbers.filter(is_primary=True, is_active=True).first()
     
     def get_active_phone_numbers(self):
-        """Get all active phone numbers for this WABA"""
+        """Get all active phone numbers for this provider"""
         return self.phone_numbers.filter(is_active=True, status='verified')
 
 
 class WhatsAppPhoneNumber(models.Model):
-    """Phone numbers associated with WhatsApp Business Accounts"""
+    """
+    Phone numbers associated with WhatsApp Providers.
+    (This model is kept almost exactly as-is)
+    """
     
     STATUS_CHOICES = [
         ('pending', 'Pending Verification'),
@@ -139,10 +170,13 @@ class WhatsAppPhoneNumber(models.Model):
     ]
     
     id = models.BigAutoField(primary_key=True)
-    waba_account = models.ForeignKey(
-        WhatsAppBusinessAccount, 
+    # *** UPDATED FOREIGN KEY ***
+    provider = models.ForeignKey(
+        WhatsAppProvider, 
         on_delete=models.CASCADE, 
-        related_name='phone_numbers'
+        related_name='phone_numbers',
+        null=True,
+        blank=True
     )
     
     # Phone Number Details
@@ -175,17 +209,20 @@ class WhatsAppPhoneNumber(models.Model):
     
     class Meta:
         db_table = 'whatsapp_phone_numbers'
-        unique_together = ['waba_account', 'phone_number_id']
+        unique_together = ['provider', 'phone_number_id'] # Updated
         ordering = ['-is_primary', '-created_at']
         verbose_name = 'WhatsApp Phone Number'
         verbose_name_plural = 'WhatsApp Phone Numbers'
     
     def __str__(self):
-        return f"{self.display_phone_number or self.phone_number} ({self.waba_account.name})"
+        return f"{self.display_phone_number or self.phone_number} ({self.provider.name})"
 
 
 class WhatsAppMessageTemplate(models.Model):
-    """Approved message templates for WhatsApp Business API"""
+    """
+    Approved message templates for WhatsApp Business API.
+    (This model is kept almost exactly as-is)
+    """
     
     STATUS_CHOICES = [
         ('pending', 'Pending Approval'),
@@ -202,6 +239,7 @@ class WhatsAppMessageTemplate(models.Model):
     ]
     
     LANGUAGE_CHOICES = [
+        ('en_US', 'English (US)'),
         ('en', 'English'),
         ('hi', 'Hindi'),
         ('es', 'Spanish'),
@@ -215,10 +253,13 @@ class WhatsAppMessageTemplate(models.Model):
     ]
     
     id = models.BigAutoField(primary_key=True)
-    waba_account = models.ForeignKey(
-        WhatsAppBusinessAccount, 
+    # *** UPDATED FOREIGN KEY ***
+    provider = models.ForeignKey(
+        WhatsAppProvider, 
         on_delete=models.CASCADE, 
-        related_name='message_templates'
+        related_name='message_templates',
+        null=True,
+        blank=True
     )
     
     # Template Details
@@ -251,20 +292,23 @@ class WhatsAppMessageTemplate(models.Model):
     
     class Meta:
         db_table = 'whatsapp_message_templates'
-        unique_together = ['waba_account', 'name', 'language']
+        unique_together = ['provider', 'name', 'language'] # Updated
         ordering = ['-created_at']
         verbose_name = 'WhatsApp Message Template'
         verbose_name_plural = 'WhatsApp Message Templates'
     
     def __str__(self):
-        return f"{self.name} ({self.waba_account.name}) - {self.get_language_display()}"
+        return f"{self.name} ({self.provider.name}) - {self.get_language_display()}"
     
     def is_approved(self) -> bool:
         return self.status == 'approved' and self.meta_template_id
 
 
 class WhatsAppMessage(models.Model):
-    """Individual WhatsApp messages sent and received"""
+    """
+    Individual WhatsApp messages sent and received.
+    (This model is kept almost exactly as-is)
+    """
     
     MESSAGE_TYPE_CHOICES = [
         ('text', 'Text Message'),
@@ -289,14 +333,19 @@ class WhatsAppMessage(models.Model):
     ]
     
     id = models.BigAutoField(primary_key=True)
-    waba_account = models.ForeignKey(
-        WhatsAppBusinessAccount, 
+    # *** UPDATED FOREIGN KEY ***
+    provider = models.ForeignKey(
+        WhatsAppProvider, 
         on_delete=models.CASCADE, 
-        related_name='messages'
+        related_name='messages',
+        null=True,
+        blank=True
     )
     phone_number = models.ForeignKey(
         WhatsAppPhoneNumber, 
-        on_delete=models.CASCADE, 
+        on_delete=models.SET_NULL, # Changed from CASCADE
+        null=True,
+        blank=True,
         related_name='messages'
     )
     
@@ -330,7 +379,7 @@ class WhatsAppMessage(models.Model):
     delivered_at = models.DateTimeField(blank=True, null=True)
     read_at = models.DateTimeField(blank=True, null=True)
     
-    # Context
+    # Context (Assuming you have 'campaigns' and 'customers' apps)
     campaign = models.ForeignKey(
         'campaigns.Campaign', 
         on_delete=models.SET_NULL, 
@@ -360,7 +409,10 @@ class WhatsAppMessage(models.Model):
 
 
 class WhatsAppWebhookEvent(models.Model):
-    """Webhook events received from WhatsApp Business API"""
+    """
+    Webhook events received from WhatsApp Business API.
+    (This model is kept almost exactly as-is)
+    """
     
     EVENT_TYPE_CHOICES = [
         ('message', 'Message Received'),
@@ -372,8 +424,9 @@ class WhatsAppWebhookEvent(models.Model):
     ]
     
     id = models.BigAutoField(primary_key=True)
-    waba_account = models.ForeignKey(
-        WhatsAppBusinessAccount, 
+    # *** UPDATED FOREIGN KEY ***
+    provider = models.ForeignKey(
+        WhatsAppProvider, 
         on_delete=models.CASCADE, 
         related_name='received_webhook_events',
         null=True, 
@@ -412,7 +465,10 @@ class WhatsAppWebhookEvent(models.Model):
 
 
 class WhatsAppFlow(models.Model):
-    """WhatsApp Flows for interactive messages"""
+    """
+    WhatsApp Flows for interactive messages.
+    (This model is kept almost exactly as-is)
+    """
     
     STATUS_CHOICES = [
         ('draft', 'Draft'),
@@ -421,10 +477,13 @@ class WhatsAppFlow(models.Model):
     ]
     
     id = models.BigAutoField(primary_key=True)
-    waba_account = models.ForeignKey(
-        WhatsAppBusinessAccount, 
+    # *** UPDATED FOREIGN KEY ***
+    provider = models.ForeignKey(
+        WhatsAppProvider, 
         on_delete=models.CASCADE, 
-        related_name='flows'
+        related_name='flows',
+        null=True,
+        blank=True
     )
     
     # Flow Details
@@ -452,17 +511,23 @@ class WhatsAppFlow(models.Model):
         verbose_name_plural = 'WhatsApp Flows'
     
     def __str__(self):
-        return f"{self.name} ({self.waba_account.name})"
+        return f"{self.name} ({self.provider.name})"
 
 
 class WhatsAppAccountHealthLog(models.Model):
-    """Health check logs for WhatsApp accounts"""
+    """
+    Health check logs for WhatsApp accounts.
+    (This model is kept almost exactly as-is)
+    """
     
     id = models.BigAutoField(primary_key=True)
-    waba_account = models.ForeignKey(
-        WhatsAppBusinessAccount, 
+    # *** UPDATED FOREIGN KEY ***
+    provider = models.ForeignKey(
+        WhatsAppProvider, 
         on_delete=models.CASCADE, 
-        related_name='health_logs'
+        related_name='health_logs',
+        null=True,
+        blank=True
     )
     
     # Health Check Results
@@ -484,17 +549,23 @@ class WhatsAppAccountHealthLog(models.Model):
         verbose_name_plural = 'WhatsApp Account Health Logs'
     
     def __str__(self):
-        return f"{self.waba_account.name} - {self.health_status} ({self.checked_at})"
+        return f"{self.provider.name} - {self.health_status} ({self.checked_at})"
 
 
 class WhatsAppAccountUsageLog(models.Model):
-    """Usage tracking logs for WhatsApp accounts"""
+    """
+    Usage tracking logs for WhatsApp accounts.
+    (This model is kept almost exactly as-is)
+    """
     
     id = models.BigAutoField(primary_key=True)
-    waba_account = models.ForeignKey(
-        WhatsAppBusinessAccount, 
+    # *** UPDATED FOREIGN KEY ***
+    provider = models.ForeignKey(
+        WhatsAppProvider, 
         on_delete=models.CASCADE, 
-        related_name='usage_logs'
+        related_name='usage_logs',
+        null=True,
+        blank=True
     )
     
     # Usage Metrics
@@ -509,10 +580,10 @@ class WhatsAppAccountUsageLog(models.Model):
     
     class Meta:
         db_table = 'whatsapp_account_usage_logs'
-        unique_together = ['waba_account', 'date']
+        unique_together = ['provider', 'date'] # Updated
         ordering = ['-date']
         verbose_name = 'WhatsApp Account Usage Log'
         verbose_name_plural = 'WhatsApp Account Usage Logs'
     
     def __str__(self):
-        return f"{self.waba_account.name} - {self.date} ({self.messages_sent} sent)"
+        return f"{self.provider.name} - {self.date} ({self.messages_sent} sent)"

@@ -12,7 +12,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('audience_manager', '0001_initial'),
-        ('templates', '0007_template_is_dlt_approved'),
+        ('templates', '0001_initial'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

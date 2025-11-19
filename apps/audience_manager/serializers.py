@@ -16,15 +16,35 @@ class AudienceContactWriteSerializer(serializers.Serializer):
     """Serializer used for adding multiple contacts via bulk upload or manual batch."""
     
     name = serializers.CharField(max_length=200)
-    email = serializers.EmailField()
+    # --- UPDATE: Make email optional at the field level ---
+    email = serializers.EmailField(required=False, allow_null=True)
     phone = serializers.CharField(max_length=20, required=False, allow_null=True, allow_blank=True)
     policy_number = serializers.CharField(max_length=50, required=False, allow_null=True, allow_blank=True)
+
+    # --- UPDATE: Add a validation method ---
+    def validate(self, data):
+        """
+        Check that at least an email or a phone number is provided.
+        """
+        email = data.get('email')
+        phone = data.get('phone')
+
+        # Handle empty strings
+        if not email and not phone:
+             raise serializers.ValidationError("At least one of 'email' or 'phone' is required.")
+        
+        # Standardize empty strings to None to work with database constraints
+        if email == "":
+            data['email'] = None
+        if phone == "":
+            data['phone'] = None
+            
+        return data
 
 
 class AudienceSerializer(serializers.ModelSerializer):
     """Main serializer for Audience (used for listing cards and detail view)"""
     
-    # Use nested serializer to show contacts in the detail view
     contacts = AudienceContactSerializer(many=True, read_only=True) 
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True, allow_null=True)
     
@@ -42,7 +62,6 @@ class AudienceSerializer(serializers.ModelSerializer):
 class AudienceCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating and updating the Audience definition."""
     
-    # Handle the comma-separated segments from the modal input
     segments_csv = serializers.CharField(write_only=True, required=False, allow_blank=True)
     
     class Meta:
@@ -52,19 +71,16 @@ class AudienceCreateUpdateSerializer(serializers.ModelSerializer):
         ]
 
     def validate_segments_csv(self, value):
-        """Converts comma-separated string to a list for the JSONField 'segments'"""
         if value:
             return [s.strip() for s in value.split(',') if s.strip()]
         return []
     
     def create(self, validated_data):
-        # Move validated segments_csv to the actual segments field
         if 'segments_csv' in validated_data:
             validated_data['segments'] = validated_data.pop('segments_csv')
         return super().create(validated_data)
     
     def update(self, instance, validated_data):
-        # Move validated segments_csv to the actual segments field
         if 'segments_csv' in validated_data:
             validated_data['segments'] = validated_data.pop('segments_csv')
         return super().update(instance, validated_data)

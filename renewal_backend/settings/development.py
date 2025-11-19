@@ -11,8 +11,11 @@ DEBUG = config('DEBUG', default=True, cast=bool)
 ALLOWED_HOSTS = config(
     'ALLOWED_HOSTS',
     default='localhost,127.0.0.1,0.0.0.0,testserver,13.233.6.207',
-    cast=lambda v: [s.strip() for s in v.split(',')]
+    cast=lambda v: [s.strip() for s in v.split(',')],
+    
 )
+ALLOWED_HOSTS.append('.ngrok-free.dev')
+ALLOWED_HOSTS.append('overgrossly-sugarlike-xuan.ngrok-free.dev')
 
 # Development-specific apps
 INSTALLED_APPS += [
@@ -44,6 +47,7 @@ if DEBUG:
 # Email backend for development
 # Use console backend only if no EMAIL_HOST_USER is configured
 # This allows testing real email sending when SMTP credentials are provided
+# print(f"DEBUG: EMAIL_HOST_USER is: [ {config('EMAIL_HOST_USER', default='IS-NOT-SET')} ]")
 if not config('EMAIL_HOST_USER', default=None):
     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
     print("📧 Using console email backend (emails will appear in terminal)")

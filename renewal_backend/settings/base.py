@@ -46,10 +46,12 @@ LOCAL_APPS = [
     'apps.policies',
     'apps.uploads',
     'apps.campaigns',
-    'apps.templates', 'apps.target_audience',
+    'apps.templates',
+    'apps.target_audience',
     'apps.policy_data',
     'apps.files_upload',
     'apps.renewals',
+    'apps.communication_provider', 
     'apps.channels',
     'apps.distribution_channel',
     'apps.hierarchy',
@@ -82,12 +84,13 @@ LOCAL_APPS = [
     'apps.policy_conditions',
     'apps.renewal_timeline',
     'apps.email_provider',
+    'apps.whatsapp_provider',
+    'apps.sms_provider',
     'apps.email_templates',
     'apps.email_operations',
     'apps.email_inbox',
     'apps.email_integration',
     'apps.email_manager',
-    'apps.whatsapp_provider',
     'apps.offers',
     'apps.customer_installment',
     'apps.outstanding_amounts',
@@ -494,6 +497,11 @@ BASE_URL = config('BASE_URL', default='http://13.233.6.207:8000')
 CELERY_BEAT_SCHEDULE = {
     'send-scheduled-emails-every-minute': {
         'task': 'apps.email_manager.tasks.process_scheduled_emails',
-        'schedule': crontab(minute='*'), 
+        'schedule': crontab(minute='*'),
+    }, 
+    'check-scheduled-campaigns-every-minute': {
+        'task': 'apps.campaign_manager.tasks.check_scheduled_campaigns',
+        'schedule': crontab(minute='*'),
     },
+
 }

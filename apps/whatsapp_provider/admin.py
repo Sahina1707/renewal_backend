@@ -1,9 +1,12 @@
+#
+# admin.py
+#
 from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 from .models import (
-    WhatsAppBusinessAccount,
+    WhatsAppProvider, # Renamed
     WhatsAppPhoneNumber,
     WhatsAppMessageTemplate,
     WhatsAppMessage,
@@ -14,28 +17,28 @@ from .models import (
 )
 
 
-@admin.register(WhatsAppBusinessAccount)
-class WhatsAppBusinessAccountAdmin(admin.ModelAdmin):
+@admin.register(WhatsAppProvider)
+class WhatsAppProviderAdmin(admin.ModelAdmin):
     list_display = [
-        'name', 'waba_id', 'status', 'quality_rating', 'is_active', 
+        'name', 'provider_type', 'status', 'is_default', 'is_active', 
         'messages_sent_today', 'health_status', 'created_at'
     ]
     list_filter = [
-        'status', 'quality_rating', 'is_active', 'health_status',
+        'provider_type', 'status', 'is_default', 'is_active', 'health_status',
         'enable_auto_reply', 'use_knowledge_base', 'created_at'
     ]
-    search_fields = ['name', 'waba_id', 'meta_business_account_id', 'business_name']
+    search_fields = ['name', 'provider_type', 'business_name']
     readonly_fields = [
-        'waba_id', 'messages_sent_today', 'messages_sent_this_month',
+        'messages_sent_today', 'messages_sent_this_month',
         'last_reset_daily', 'last_reset_monthly', 'created_at', 'updated_at'
     ]
     
     fieldsets = (
-        ('Basic Information', {
-            'fields': ('name', 'waba_id', 'meta_business_account_id', 'app_id', 'app_secret')
+        ('Provider Information', {
+            'fields': ('name', 'provider_type')
         }),
-        ('Access Credentials', {
-            'fields': ('access_token', 'webhook_verify_token'),
+        ('Credentials (Warning: Edit via API/UI)', {
+            'fields': ('credentials',),
             'classes': ('collapse',)
         }),
         ('Business Profile', {
@@ -61,7 +64,7 @@ class WhatsAppBusinessAccountAdmin(admin.ModelAdmin):
             )
         }),
         ('Configuration', {
-            'fields': ('is_default', 'is_active', 'webhook_url', 'subscribed_webhook_events')
+            'fields': ('is_default', 'is_active', 'webhook_verify_token')
         }),
         ('Metadata', {
             'fields': ('created_by', 'updated_by', 'created_at', 'updated_at', 'is_deleted'),
@@ -82,16 +85,16 @@ class WhatsAppBusinessAccountAdmin(admin.ModelAdmin):
 @admin.register(WhatsAppPhoneNumber)
 class WhatsAppPhoneNumberAdmin(admin.ModelAdmin):
     list_display = [
-        'display_phone_number', 'waba_account', 'status', 'is_primary',
+        'display_phone_number', 'provider', 'status', 'is_primary',
         'quality_rating', 'messages_sent_today', 'created_at'
     ]
     list_filter = [
         'status', 'is_primary', 'is_active', 'quality_rating',
-        'waba_account', 'created_at'
+        'provider', 'created_at'
     ]
     search_fields = [
         'phone_number', 'display_phone_number', 'phone_number_id',
-        'waba_account__name'
+        'provider__name'
     ]
     readonly_fields = [
         'phone_number_id', 'messages_sent_today', 'messages_sent_this_month',
@@ -101,7 +104,7 @@ class WhatsAppPhoneNumberAdmin(admin.ModelAdmin):
     fieldsets = (
         ('Phone Number Details', {
             'fields': (
-                'waba_account', 'phone_number_id', 'phone_number',
+                'provider', 'phone_number_id', 'phone_number',
                 'display_phone_number'
             )
         }),
@@ -118,20 +121,20 @@ class WhatsAppPhoneNumberAdmin(admin.ModelAdmin):
     )
     
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('waba_account')
+        return super().get_queryset(request).select_related('provider')
 
 
 @admin.register(WhatsAppMessageTemplate)
 class WhatsAppMessageTemplateAdmin(admin.ModelAdmin):
     list_display = [
-        'name', 'waba_account', 'category', 'language', 'status',
+        'name', 'provider', 'category', 'language', 'status',
         'usage_count', 'created_at'
     ]
     list_filter = [
-        'status', 'category', 'language', 'waba_account', 'created_at'
+        'status', 'category', 'language', 'provider', 'created_at'
     ]
     search_fields = [
-        'name', 'body_text', 'waba_account__name', 'meta_template_id'
+        'name', 'body_text', 'provider__name', 'meta_template_id'
     ]
     readonly_fields = [
         'meta_template_id', 'usage_count', 'last_used', 'created_at',
@@ -140,7 +143,7 @@ class WhatsAppMessageTemplateAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('Template Information', {
-            'fields': ('waba_account', 'name', 'category', 'language')
+            'fields': ('provider', 'name', 'category', 'language')
         }),
         ('Template Content', {
             'fields': ('header_text', 'body_text', 'footer_text', 'components')
@@ -158,22 +161,22 @@ class WhatsAppMessageTemplateAdmin(admin.ModelAdmin):
     )
     
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('waba_account', 'created_by')
+        return super().get_queryset(request).select_related('provider', 'created_by')
 
 
 @admin.register(WhatsAppMessage)
 class WhatsAppMessageAdmin(admin.ModelAdmin):
     list_display = [
         'message_id', 'direction', 'message_type', 'to_phone_number',
-        'status', 'created_at', 'waba_account'
+        'status', 'created_at', 'provider'
     ]
     list_filter = [
-        'direction', 'message_type', 'status', 'waba_account',
+        'direction', 'message_type', 'status', 'provider',
         'phone_number', 'created_at'
     ]
     search_fields = [
         'message_id', 'to_phone_number', 'from_phone_number',
-        'waba_account__name', 'customer__first_name', 'customer__last_name'
+        'provider__name', 'customer__first_name', 'customer__last_name'
     ]
     readonly_fields = [
         'message_id', 'created_at', 'sent_at', 'delivered_at', 'read_at'
@@ -182,7 +185,7 @@ class WhatsAppMessageAdmin(admin.ModelAdmin):
     fieldsets = (
         ('Message Details', {
             'fields': (
-                'message_id', 'direction', 'message_type', 'waba_account',
+                'message_id', 'direction', 'message_type', 'provider',
                 'phone_number', 'template'
             )
         }),
@@ -206,20 +209,20 @@ class WhatsAppMessageAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request):
         return super().get_queryset(request).select_related(
-            'waba_account', 'phone_number', 'template', 'campaign', 'customer'
+            'provider', 'phone_number', 'template', 'campaign', 'customer'
         )
 
 
 @admin.register(WhatsAppWebhookEvent)
 class WhatsAppWebhookEventAdmin(admin.ModelAdmin):
     list_display = [
-        'event_type', 'waba_account', 'processed', 'received_at'
+        'event_type', 'provider', 'processed', 'received_at'
     ]
     list_filter = [
-        'event_type', 'processed', 'waba_account', 'received_at'
+        'event_type', 'processed', 'provider', 'received_at'
     ]
     search_fields = [
-        'waba_account__name', 'event_type', 'processing_error'
+        'provider__name', 'event_type', 'processing_error'
     ]
     readonly_fields = [
         'received_at', 'processed_at'
@@ -227,7 +230,7 @@ class WhatsAppWebhookEventAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('Event Information', {
-            'fields': ('event_type', 'waba_account', 'message')
+            'fields': ('event_type', 'provider', 'message')
         }),
         ('Processing Status', {
             'fields': ('processed', 'processing_error', 'processed_at')
@@ -243,19 +246,19 @@ class WhatsAppWebhookEventAdmin(admin.ModelAdmin):
     )
     
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('waba_account', 'message')
+        return super().get_queryset(request).select_related('provider', 'message')
 
 
 @admin.register(WhatsAppFlow)
 class WhatsAppFlowAdmin(admin.ModelAdmin):
     list_display = [
-        'name', 'waba_account', 'status', 'is_active', 'usage_count', 'created_at'
+        'name', 'provider', 'status', 'is_active', 'usage_count', 'created_at'
     ]
     list_filter = [
-        'status', 'is_active', 'waba_account', 'created_at'
+        'status', 'is_active', 'provider', 'created_at'
     ]
     search_fields = [
-        'name', 'description', 'waba_account__name'
+        'name', 'description', 'provider__name'
     ]
     readonly_fields = [
         'usage_count', 'last_used', 'created_at', 'updated_at'
@@ -263,7 +266,7 @@ class WhatsAppFlowAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('Flow Information', {
-            'fields': ('waba_account', 'name', 'description')
+            'fields': ('provider', 'name', 'description')
         }),
         ('Flow Configuration', {
             'fields': ('flow_json', 'status', 'is_active')
@@ -278,25 +281,25 @@ class WhatsAppFlowAdmin(admin.ModelAdmin):
     )
     
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('waba_account', 'created_by')
+        return super().get_queryset(request).select_related('provider', 'created_by')
 
 
 @admin.register(WhatsAppAccountHealthLog)
 class WhatsAppAccountHealthLogAdmin(admin.ModelAdmin):
     list_display = [
-        'waba_account', 'health_status', 'checked_at'
+        'provider', 'health_status', 'checked_at'
     ]
     list_filter = [
-        'health_status', 'waba_account', 'checked_at'
+        'health_status', 'provider', 'checked_at'
     ]
     search_fields = [
-        'waba_account__name', 'error_message'
+        'provider__name', 'error_message'
     ]
     readonly_fields = ['checked_at']
     
     fieldsets = (
         ('Health Check', {
-            'fields': ('waba_account', 'health_status', 'error_message')
+            'fields': ('provider', 'health_status', 'error_message')
         }),
         ('Check Details', {
             'fields': ('check_details',),
@@ -308,24 +311,24 @@ class WhatsAppAccountHealthLogAdmin(admin.ModelAdmin):
     )
     
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('waba_account')
+        return super().get_queryset(request).select_related('provider')
 
 
 @admin.register(WhatsAppAccountUsageLog)
 class WhatsAppAccountUsageLogAdmin(admin.ModelAdmin):
     list_display = [
-        'waba_account', 'date', 'messages_sent', 'messages_delivered',
+        'provider', 'date', 'messages_sent', 'messages_delivered',
         'messages_failed', 'messages_read'
     ]
     list_filter = [
-        'waba_account', 'date', 'created_at'
+        'provider', 'date', 'created_at'
     ]
-    search_fields = ['waba_account__name']
+    search_fields = ['provider__name']
     readonly_fields = ['created_at']
     
     fieldsets = (
         ('Usage Information', {
-            'fields': ('waba_account', 'date')
+            'fields': ('provider', 'date')
         }),
         ('Message Statistics', {
             'fields': (
@@ -339,4 +342,4 @@ class WhatsAppAccountUsageLogAdmin(admin.ModelAdmin):
     )
     
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('waba_account')
+        return super().get_queryset(request).select_related('provider')

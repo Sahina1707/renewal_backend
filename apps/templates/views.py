@@ -1,10 +1,11 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db.models import Q
+from django.db.models import Q,Sum
 from django.shortcuts import get_object_or_404
 from .models import Template
 from .serializers import TemplateSerializer, TemplateCreateSerializer, TemplateUpdateSerializer
+from apps.whatsapp_provider.models import WhatsAppProvider
 
 
 class TemplateViewSet(viewsets.ModelViewSet):
@@ -255,3 +256,51 @@ class TemplateViewSet(viewsets.ModelViewSet):
                 'message': f'Error retrieving template types: {str(e)}',
                 'data': []
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    # In views.py, inside TemplateViewSet
+    @action(detail=False, methods=['get'])
+    def stats(self, request):
+        """Get all available template stats"""
+        try:
+            total_templates = self.get_queryset().count()
+            active_templates = self.get_queryset().filter(is_active=True).count()
+            dlt_approved = self.get_queryset().filter(is_dlt_approved=True).count()
+            total_usage = self.get_queryset().aggregate(Sum('usage_count'))['usage_count__sum'] or 0
+
+            stats_data = {
+            'total_templates': total_templates,
+            'active_templates': active_templates,
+            'dlt_approved': dlt_approved,
+            'total_usage': total_usage
+        }
+
+            return Response({
+            'success': True,
+            'message': 'Stats retrieved successfully',
+            'data': stats_data
+        }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            # apps/whatsapp_provider/serializers.py
+            
+            from rest_framework import serializers
+            from .models import WhatsAppProvider
+            
+            class WhatsAppProviderCreateUpdateSerializer(serializers.ModelSerializer):
+                class Meta:
+                    model = WhatsAppProvider
+                    # Add 'meta_api_version' to the list of fields
+                    fields = [
+                        'name', 
+                        'phone_number_id', 
+                        'access_token', 
+                        'meta_api_version',  # Add the missing field here
+                        # ... other fields ...
+                        'is_active',
+                    ]
+            
+            return Response({
+            'success': False,
+            'message': f'Error retrieving stats: {str(e)}',
+            'data': None
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
