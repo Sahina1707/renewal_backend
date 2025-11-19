@@ -1,11 +1,14 @@
 from rest_framework import serializers
 from .models import DistributionChannel
 from apps.channels.models import Channel
-
-
+from django.db.models import Sum
+from apps.renewals.models import RenewalCase
 class DistributionChannelSerializer(serializers.ModelSerializer):
     """Full serializer for DistributionChannel model with all fields"""
-    
+    current_policies = serializers.IntegerField(read_only=True)
+    renewal_rate = serializers.FloatField(read_only=True)
+    revenue = serializers.CharField(read_only=True)
+
     channel_id = serializers.PrimaryKeyRelatedField(
         queryset=Channel.objects.filter(is_deleted=False),
         source='channel',
@@ -36,6 +39,9 @@ class DistributionChannelSerializer(serializers.ModelSerializer):
             'target_revenue',
             'status',
             'partner_since',
+            'current_policies',
+            'renewal_rate',
+            'revenue',
             'is_active',
             'created_at',
             'updated_at',
@@ -80,6 +86,30 @@ class DistributionChannelSerializer(serializers.ModelSerializer):
                 f"Invalid status. Valid options are: {', '.join(valid_statuses)}"
             )
         return value
+    
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+
+        from apps.renewals.models import RenewalCase
+
+        renewal_cases = RenewalCase.objects.filter(channel=instance.channel)
+
+        total_cases = renewal_cases.count()
+        renewed_cases = renewal_cases.filter(status='renewed').count()
+
+        data['current_policies'] = total_cases
+
+        if total_cases > 0:
+            data['renewal_rate'] = round((renewed_cases / total_cases) * 100, 1)
+        else:
+            data['renewal_rate'] = 0.0
+
+        total_revenue = renewal_cases.filter(status='renewed') \
+            .aggregate(total=Sum('renewal_amount')).get('total') or 0
+
+        data['revenue'] = f"₹{float(total_revenue):.1f}L"
+
+        return data
 
 
 class DistributionChannelListSerializer(serializers.ModelSerializer):
@@ -87,6 +117,12 @@ class DistributionChannelListSerializer(serializers.ModelSerializer):
     
     channel_name = serializers.CharField(source='channel.name', read_only=True)
     is_active = serializers.BooleanField(read_only=True)
+
+    current_policies = serializers.IntegerField(read_only=True)
+    renewal_rate = serializers.FloatField(read_only=True)
+    revenue = serializers.CharField(read_only=True)
+    efficiency = serializers.FloatField(read_only=True)
+    rating = serializers.FloatField(read_only=True)  
     
     class Meta:
         model = DistributionChannel
@@ -102,8 +138,34 @@ class DistributionChannelListSerializer(serializers.ModelSerializer):
             'status',
             'is_active',
             'partner_since',
+            'current_policies',
+            'renewal_rate',
+            'revenue',
+            'efficiency',
+            'rating',
             'created_at',
         ]
+
+    
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        qs = RenewalCase.objects.filter(channel=instance.channel)
+
+        total = qs.count()
+        renewed = qs.filter(status='renewed').count()
+
+        data['current_policies'] = total
+
+        data['renewal_rate'] = round((renewed / total) * 100, 1) if total > 0 else 0.0
+
+        total_revenue = qs.filter(status='renewed').aggregate(total=Sum('renewal_amount'))['total'] or 0
+        data['revenue'] = f"₹{float(total_revenue)/100000:.1f}L"
+
+        data['efficiency'] = round((renewed / total) * 100, 1) if total > 0 else 0.0
+
+        data['rating'] = round((data['efficiency'] / 20), 1) 
+
+        return data    
 
 
 class DistributionChannelCreateSerializer(serializers.ModelSerializer):
