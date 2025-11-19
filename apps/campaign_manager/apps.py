@@ -1,6 +1,10 @@
-from django.apps import AppConfig
+# File: apps/campaign_manager/apps.py
 
+from django.apps import AppConfig
 
 class CampaignManagerConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'apps.campaign_manager'
+
+    def ready(self):
+        pass # --- Make this function empty ---

@@ -13,6 +13,7 @@ app.config_from_object('django.conf:settings', namespace='CELERY')
 app.autodiscover_tasks()
 
 app.conf.beat_schedule = {
+    # --- YOUR EXISTING TASKS (UNCHANGED) ---
     'fetch-incoming-emails': {
         'task': 'apps.email_manager.tasks.fetch_and_process_incoming_emails',
         'schedule': 300.0,  
@@ -25,15 +26,19 @@ app.conf.beat_schedule = {
         'task': 'apps.policies.tasks.process_renewal_reminders',
         'schedule': crontab(hour=9, minute=0),
     },
+    'check-scheduled-campaigns-every-minute': {
+        'task': 'check_scheduled_campaigns', 
+        'schedule': 60.0, # Run every 60 seconds
+    },
 }
 
+# This file should already have your task_routes
 app.conf.task_routes = {
     'apps.email_manager.tasks.*': {'queue': 'emails'},
-    'apps.campaigns.tasks.*': {'queue': 'campaigns'},
     'apps.policies.tasks.*': {'queue': 'policies'},
     'apps.analytics.tasks.*': {'queue': 'analytics'},
+    'apps.campaign_manager.tasks.*': {'queue': 'campaigns'}, 
 }
-
 @app.task(bind=True)
 def debug_task(self):
     print(f"Request: {self.request!r}")

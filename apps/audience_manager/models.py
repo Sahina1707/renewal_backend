@@ -1,14 +1,24 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.db.models import Q # Import Q
 
 User = get_user_model()
+class SoftDeleteManager(models.Manager):
+    """
+    Custom manager to automatically filter for non-deleted objects.
+    """
+    def get_queryset(self):
+        return super().get_queryset().filter(is_deleted=False)
+
 
 class Audience(models.Model):
     """
     Represents a dynamic or static segment of contacts for targeting campaigns.
     Drives the cards seen in the Audience Manager interface.
     """
+    objects = SoftDeleteManager()
+    all_objects = models.Manager()
     
     id = models.BigAutoField(primary_key=True)
     name = models.CharField(max_length=200, unique=True, help_text="e.g., Policy Holders - Expiring Q4")
@@ -51,13 +61,16 @@ class AudienceContact(models.Model):
     Represents an individual contact belonging to an Audience segment.
     These are the rows seen in the Audience Details modal.
     """
+    objects = SoftDeleteManager()
+    all_objects = models.Manager()
     
     id = models.BigAutoField(primary_key=True)
     audience = models.ForeignKey(Audience, on_delete=models.CASCADE, related_name='contacts')
     
-    # Core contact fields (as seen in the video's manual entry modal)
+    # Core contact fields
     name = models.CharField(max_length=200)
-    email = models.EmailField(help_text="Primary email address for campaigning")
+    expiry_date = models.DateField(null=True, blank=True, help_text="Policy expiry date")
+    email = models.EmailField(help_text="Primary email address for campaigning", blank=True, null=True) # Make blank/null true
     phone = models.CharField(max_length=20, blank=True, null=True)
     policy_number = models.CharField(max_length=50, blank=True, null=True)
     
@@ -71,13 +84,26 @@ class AudienceContact(models.Model):
     class Meta:
         db_table = 'audience_manager_contacts'
         ordering = ['name']
-        # Ensure a contact isn't duplicated within the same audience
-        unique_together = ('audience', 'email') 
         verbose_name = 'Audience Contact'
         verbose_name_plural = 'Audience Contacts'
         
+        # --- THIS IS THE UPDATE ---
+        # Replaces `unique_together`
+        constraints = [
+            models.UniqueConstraint(
+                fields=['audience', 'email'], 
+                name='unique_email_per_audience',
+                condition=Q(email__isnull=False) # Only check unique if email is not null
+            ),
+            models.UniqueConstraint(
+                fields=['audience', 'phone'], 
+                name='unique_phone_per_audience',
+                condition=Q(phone__isnull=False) # Only check unique if phone is not null
+            )
+        ]
+        
     def __str__(self):
-        return f"{self.name} ({self.email})"
+        return f"{self.name} ({self.email or self.phone})"
     
     def soft_delete(self, user=None):
         self.is_deleted = True

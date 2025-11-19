@@ -2,24 +2,30 @@
 
 from django.core.mail import send_mail
 from django.conf import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 def send_smtp_email(subject, body_html, to_email):
     """
-    Sends an email using Django's email backend.
-    This respects the EMAIL_BACKEND setting in settings.py.
+    Sends an email using standard SMTP.
+    WARNING: This CANNOT get a message_id, so tracking will not work.
     """
     try:
         send_mail(
             subject=subject,
-            message='',  # Plain text message (optional)
-            from_email=settings.EMAIL_HOST_USER,
+            message='', # Use html_message instead
+            from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[to_email],
             html_message=body_html,
             fail_silently=False,
         )
-        print(f"Successfully sent email to {to_email}")
-        return True, None  # (success, error_message)
+        
+        message_id = None 
+
+        logger.info(f"Successfully sent email to {to_email} via SMTP.")
+        return True, None, message_id 
 
     except Exception as e:
-        print(f"Error: Failed to send email to {to_email}. Error: {e}")
-        return False, str(e)  # (success, error_message)
+        logger.error(f"Error: Failed to send SMTP email to {to_email}. Exception: {e}", exc_info=True)
+        return False, str(e), None  

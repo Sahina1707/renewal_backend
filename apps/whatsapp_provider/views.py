@@ -1,14 +1,19 @@
+#
+# views.py
+#
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
+from rest_framework.parsers import JSONParser
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.db.models import Q, Count, Sum
+from django.db.models import Q
 from django.contrib.auth import get_user_model
+import logging
+import uuid
 
 from .models import (
-    WhatsAppBusinessAccount,
+    WhatsAppProvider, # Renamed
     WhatsAppPhoneNumber,
     WhatsAppMessageTemplate,
     WhatsAppMessage,
@@ -18,101 +23,91 @@ from .models import (
     WhatsAppAccountUsageLog,
 )
 from .serializers import (
-    WhatsAppBusinessAccountSerializer,
-    WhatsAppBusinessAccountCreateSerializer,
-    WhatsAppAccountSetupSerializer,
+    WhatsAppProviderSerializer, # Renamed
+    WhatsAppProviderCreateUpdateSerializer, # Renamed
     WhatsAppPhoneNumberSerializer,
     WhatsAppMessageTemplateSerializer,
     WhatsAppMessageSerializer,
-    WhatsAppMessageCreateSerializer,
-    WhatsAppMessageSendSerializer,
+    MessageSendSerializer, # New serializer for sending
     WhatsAppWebhookEventSerializer,
     WhatsAppFlowSerializer,
     WhatsAppAccountHealthLogSerializer,
     WhatsAppAccountUsageLogSerializer,
 )
-from .services import WhatsAppService, WhatsAppAPIError
-
+from .services import WhatsAppService, WhatsAppAPIError, _encrypt_value 
+from rest_framework.decorators import action 
+from rest_framework import status
+from .serializers import TemplateProviderLinkSerializer
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
-class WhatsAppBusinessAccountViewSet(viewsets.ModelViewSet):
-    """ViewSet for managing WhatsApp Business Accounts"""
-    
-    queryset = WhatsAppBusinessAccount.objects.filter(is_deleted=False)
+class WhatsAppProviderViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing WhatsApp Providers (Meta, Twilio, etc.)
+    """
+    queryset = WhatsAppProvider.objects.filter(is_deleted=False)
     permission_classes = [permissions.IsAuthenticated]
     
     def get_serializer_class(self):
-        if self.action == 'create':
-            return WhatsAppBusinessAccountCreateSerializer
-        elif self.action == 'setup':
-            return WhatsAppAccountSetupSerializer
-        return WhatsAppBusinessAccountSerializer
+        """Return different serializers for read vs. write actions."""
+        if self.action in ['create', 'update', 'partial_update']:
+            return WhatsAppProviderCreateUpdateSerializer
+        return WhatsAppProviderSerializer
     
     def get_queryset(self):
         """Filter accounts based on user permissions"""
         queryset = super().get_queryset()
-        
-        # If user is not admin, filter by created_by
         if not self.request.user.is_staff:
             queryset = queryset.filter(created_by=self.request.user)
-        
         return queryset.select_related('created_by', 'updated_by').prefetch_related(
             'phone_numbers', 'message_templates'
         )
     
     def perform_create(self, serializer):
-        """Create a new WhatsApp Business Account"""
+        """Handle the creation of a new provider and its credentials."""
+        # The logic for bundling credentials and handling 'is_default'
+        # has been moved to the WhatsAppProviderCreateUpdateSerializer.
         serializer.save(created_by=self.request.user)
     
     def perform_update(self, serializer):
-        """Update WhatsApp Business Account"""
+        """Handle updating a provider and its credentials."""
+        # The logic for updating credentials has also been moved to the serializer.
         serializer.save(updated_by=self.request.user)
+
     
-    @action(detail=False, methods=['post'], url_path='setup')
-    def setup(self, request):
-        """Complete 6-step WhatsApp account setup"""
-        serializer = self.get_serializer(data=request.data)
-        if serializer.is_valid():
-            try:
-                waba_account = serializer.save()
-                response_serializer = WhatsAppBusinessAccountSerializer(waba_account)
-                return Response(response_serializer.data, status=status.HTTP_201_CREATED)
-            except Exception as e:
-                return Response(
-                    {'error': f'Setup failed: {str(e)}'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=['post'], url_path='health-check')
     def health_check(self, request, pk=None):
-        """Perform health check on WABA account"""
-        waba_account = self.get_object()
+        """Perform health check on this provider."""
+        provider_model = self.get_object()
         
         try:
-            service = WhatsAppService()
-            result = service.health_check_waba_account(waba_account)
+            service_factory = WhatsAppService()
+            # Get the specific service instance for this provider
+            provider_service = service_factory.get_service_instance(provider_id=provider_model.id)
+            
+            # Call the provider-specific health_check method
+            result = provider_service.health_check()
+            
             return Response(result, status=status.HTTP_200_OK)
         except Exception as e:
+            logger.error(f"Health check failed for provider {pk}: {e}")
             return Response(
-                {'error': f'Health check failed: {str(e)}'}, 
+                {'status': 'unhealthy', 'error': f'Health check failed: {str(e)}'}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
     @action(detail=True, methods=['get'], url_path='analytics')
     def analytics(self, request, pk=None):
-        """Get analytics for WABA account"""
-        waba_account = self.get_object()
+        """Get analytics for this specific provider."""
+        provider = self.get_object()
         
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
         
         try:
             service = WhatsAppService()
-            analytics_data = service.get_waba_account_analytics(
-                waba_account, start_date, end_date
-            )
+            analytics_data = service.get_analytics(provider, start_date, end_date)
             return Response(analytics_data, status=status.HTTP_200_OK)
         except Exception as e:
             return Response(
@@ -120,326 +115,290 @@ class WhatsAppBusinessAccountViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=['post'], url_path='send-message')
     def send_message(self, request, pk=None):
-        """Send a message via this WABA account"""
-        waba_account = self.get_object()
+        """Send a message via this specific provider."""
+        provider_model = self.get_object()
         
-        # Add WABA account ID to request data
-        request.data['waba_account_id'] = waba_account.id
+        serializer = MessageSendSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+        validated_data = serializer.validated_data
         
-        serializer = WhatsAppMessageSendSerializer(data=request.data)
-        if serializer.is_valid():
-            try:
-                service = WhatsAppService()
-                validated_data = serializer.validated_data
-                
-                # Get phone number
-                phone_number = waba_account.get_primary_phone_number()
-                if not phone_number:
-                    return Response(
-                        {'error': 'No active phone number found for this account'}, 
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-                
-                # Send message based on type
-                message_type = validated_data['message_type']
-                to_phone = validated_data['to_phone_number']
-                
-                if message_type == 'text':
-                    response = service.send_text_message(
-                        waba_account=waba_account,
-                        phone_number=phone_number,
-                        to_phone=to_phone,
-                        text_content=validated_data['text_content'],
-                        customer_id=validated_data.get('customer_id'),
-                        campaign_id=validated_data.get('campaign_id')
-                    )
-                
-                elif message_type == 'template':
-                    response = service.send_template_message(
-                        waba_account=waba_account,
-                        phone_number=phone_number,
-                        to_phone=to_phone,
-                        template=validated_data['template'],
-                        template_params=validated_data.get('template_params'),
-                        customer_id=validated_data.get('customer_id'),
-                        campaign_id=validated_data.get('campaign_id')
-                    )
-                
-                elif message_type == 'interactive':
-                    response = service.send_interactive_message(
-                        waba_account=waba_account,
-                        phone_number=phone_number,
-                        to_phone=to_phone,
-                        flow=validated_data['flow'],
-                        flow_token=validated_data.get('flow_token'),
-                        customer_id=validated_data.get('customer_id'),
-                        campaign_id=validated_data.get('campaign_id')
-                    )
-                
-                return Response(response, status=status.HTTP_200_OK)
-                
-            except WhatsAppAPIError as e:
-                return Response(
-                    {'error': f'Failed to send message: {str(e)}'}, 
-                    status=status.HTTP_400_BAD_REQUEST
+        try:
+            # 1. Get the main service factory
+            service_factory = WhatsAppService()
+            
+            # 2. Get the *specific* service instance for this provider
+            provider_service = service_factory.get_service_instance(provider_id=provider_model.id)
+            
+            # 3. Get data from serializer
+            message_type = validated_data['message_type']
+            to_phone = validated_data['to_phone_number']
+            
+            # Build kwargs for customer/campaign
+            kwargs = {
+                'customer_id': validated_data.get('customer_id'),
+                'campaign_id': validated_data.get('campaign_id'),
+            }
+
+            # 4. Call the correct method on the service instance
+            response = {}
+            if message_type == 'text':
+                response = provider_service.send_text_message(
+                    to_phone=to_phone,
+                    text_content=validated_data['text_content'],
+                    **kwargs
                 )
-            except Exception as e:
-                return Response(
-                    {'error': f'Unexpected error: {str(e)}'}, 
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            
+            elif message_type == 'template':
+                try:
+                    template = WhatsAppMessageTemplate.objects.get(
+                        id=validated_data['template_id'],
+                        provider=provider_model,
+                        status='approved'
+                    )
+                except WhatsAppMessageTemplate.DoesNotExist:
+                    raise WhatsAppAPIError("Template not found, not approved, or does not belong to this provider.")
+                
+                response = provider_service.send_template_message(
+                    to_phone=to_phone,
+                    template=template,
+                    template_params=validated_data['template_params'],
+                    **kwargs
                 )
-        
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+            elif message_type == 'interactive':
+                try:
+                    flow = WhatsAppFlow.objects.get(
+                        id=validated_data['flow_id'],
+                        provider=provider_model,
+                        status='published'
+                    )
+                except WhatsAppFlow.DoesNotExist:
+                    raise WhatsAppAPIError("Flow not found, not published, or does not belong to this provider.")
+
+                response = provider_service.send_interactive_message(
+                    to_phone=to_phone,
+                    flow=flow,
+                    flow_token=validated_data.get('flow_token'),
+                    **kwargs
+                )
+                
+            return Response(response, status=status.HTTP_200_OK)
+            
+        except WhatsAppAPIError as e:
+            return Response({'error': f'Failed to send message: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Unexpected error sending message via provider {pk}: {e}", exc_info=True)
+            return Response({'error': f'Unexpected error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class WhatsAppPhoneNumberViewSet(viewsets.ModelViewSet):
     """ViewSet for managing WhatsApp phone numbers"""
-    
     queryset = WhatsAppPhoneNumber.objects.all()
     serializer_class = WhatsAppPhoneNumberSerializer
     permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
-        """Filter phone numbers based on user permissions"""
         queryset = super().get_queryset()
         
-        # Filter by WABA account ownership
-        waba_account_id = self.request.query_params.get('waba_account')
-        if waba_account_id:
-            queryset = queryset.filter(waba_account_id=waba_account_id)
+        # Filter by provider
+        provider_id = self.request.query_params.get('provider')
+        if provider_id:
+            queryset = queryset.filter(provider_id=provider_id)
         
-        # If user is not admin, filter by WABA account ownership
         if not self.request.user.is_staff:
-            queryset = queryset.filter(
-                waba_account__created_by=self.request.user
-            )
+            queryset = queryset.filter(provider__created_by=self.request.user)
         
-        return queryset.select_related('waba_account')
+        return queryset.select_related('provider')
 
 
 class WhatsAppMessageTemplateViewSet(viewsets.ModelViewSet):
     """ViewSet for managing WhatsApp message templates"""
-    
     queryset = WhatsAppMessageTemplate.objects.all()
     serializer_class = WhatsAppMessageTemplateSerializer
     permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
-        """Filter templates based on user permissions"""
         queryset = super().get_queryset()
         
-        # Filter by WABA account
-        waba_account_id = self.request.query_params.get('waba_account')
-        if waba_account_id:
-            queryset = queryset.filter(waba_account_id=waba_account_id)
+        provider_id = self.request.query_params.get('provider')
+        if provider_id:
+            queryset = queryset.filter(provider_id=provider_id)
         
-        # Filter by status
         status_filter = self.request.query_params.get('status')
         if status_filter:
             queryset = queryset.filter(status=status_filter)
         
-        # If user is not admin, filter by WABA account ownership
         if not self.request.user.is_staff:
-            queryset = queryset.filter(
-                waba_account__created_by=self.request.user
-            )
+            queryset = queryset.filter(provider__created_by=self.request.user)
         
-        return queryset.select_related('waba_account', 'created_by')
+        return queryset.select_related('provider', 'created_by')
     
-    @action(detail=True, methods=['post'])
+    
+    @action(detail=True, methods=['post'], url_path='submit-for-approval')
     def submit_for_approval(self, request, pk=None):
-        """Submit template for Meta approval"""
+        """Submit template for Meta approval (Meta-specific)"""
         template = self.get_object()
-        
-        try:
-            service = WhatsAppService()
-            response = service.create_message_template(
-                template.waba_account, 
-                {
-                    'name': template.name,
-                    'category': template.category,
-                    'language': template.language,
-                    'header_text': template.header_text,
-                    'body_text': template.body_text,
-                    'footer_text': template.footer_text,
-                    'components': template.components
-                }
-            )
-            
-            return Response({
-                'message': 'Template submitted for approval successfully',
-                'meta_response': response
-            }, status=status.HTTP_200_OK)
-            
-        except WhatsAppAPIError as e:
+        if template.provider.provider_type != 'meta':
             return Response(
-                {'error': f'Failed to submit template: {str(e)}'}, 
+                {'error': 'This action is only available for Meta providers.'}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
-        except Exception as e:
-            return Response(
-                {'error': f'Unexpected error: {str(e)}'}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        
+        # This action is now less relevant as template creation should be
+        # handled by the provider's service or dashboard.
+        return Response(
+            {'message': 'Template submission logic needs to be implemented in MetaProviderService.'}, 
+            status=status.HTTP_501_NOT_IMPLEMENTED
+        )
 
 
 class WhatsAppMessageViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for viewing WhatsApp messages (read-only)"""
-    
     queryset = WhatsAppMessage.objects.all()
     serializer_class = WhatsAppMessageSerializer
     permission_classes = [permissions.IsAuthenticated]
-    filterset_fields = ['direction', 'message_type', 'status', 'waba_account', 'phone_number']
+    filterset_fields = ['direction', 'message_type', 'status', 'provider', 'phone_number']
     search_fields = ['message_id', 'to_phone_number', 'from_phone_number']
-    ordering_fields = ['created_at', 'sent_at', 'delivered_at', 'read_at']
     ordering = ['-created_at']
     
     def get_queryset(self):
-        """Filter messages based on user permissions"""
         queryset = super().get_queryset()
-        
-        # If user is not admin, filter by WABA account ownership
         if not self.request.user.is_staff:
-            queryset = queryset.filter(
-                waba_account__created_by=self.request.user
-            )
+            queryset = queryset.filter(provider__created_by=self.request.user)
         
         return queryset.select_related(
-            'waba_account', 'phone_number', 'template', 'campaign', 'customer'
+            'provider', 'phone_number', 'template', 'campaign', 'customer'
         )
 
 
 class WhatsAppWebhookEventViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for viewing WhatsApp webhook events (read-only)"""
-    
     queryset = WhatsAppWebhookEvent.objects.all()
     serializer_class = WhatsAppWebhookEventSerializer
     permission_classes = [permissions.IsAuthenticated]
-    filterset_fields = ['event_type', 'processed', 'waba_account']
+    filterset_fields = ['event_type', 'processed', 'provider']
     ordering = ['-received_at']
     
     def get_queryset(self):
-        """Filter webhook events based on user permissions"""
         queryset = super().get_queryset()
-        
-        # If user is not admin, filter by WABA account ownership
         if not self.request.user.is_staff:
-            queryset = queryset.filter(
-                waba_account__created_by=self.request.user
-            )
-        
-        return queryset.select_related('waba_account', 'message')
+            queryset = queryset.filter(provider__created_by=self.request.user)
+        return queryset.select_related('provider', 'message')
 
 
 class WhatsAppFlowViewSet(viewsets.ModelViewSet):
     """ViewSet for managing WhatsApp Flows"""
-    
     queryset = WhatsAppFlow.objects.all()
     serializer_class = WhatsAppFlowSerializer
     permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
-        """Filter flows based on user permissions"""
         queryset = super().get_queryset()
         
-        # Filter by WABA account
-        waba_account_id = self.request.query_params.get('waba_account')
-        if waba_account_id:
-            queryset = queryset.filter(waba_account_id=waba_account_id)
+        provider_id = self.request.query_params.get('provider')
+        if provider_id:
+            queryset = queryset.filter(provider_id=provider_id)
         
-        # If user is not admin, filter by WABA account ownership
         if not self.request.user.is_staff:
-            queryset = queryset.filter(
-                waba_account__created_by=self.request.user
-            )
+            queryset = queryset.filter(provider__created_by=self.request.user)
         
-        return queryset.select_related('waba_account', 'created_by')
+        return queryset.select_related('provider', 'created_by')
     
     def perform_create(self, serializer):
-        """Create a new WhatsApp Flow"""
         serializer.save(created_by=self.request.user)
 
 
 class WhatsAppWebhookView(viewsets.ViewSet):
-    """ViewSet for handling WhatsApp webhook events"""
-    
-    permission_classes = []  # No authentication required for webhooks
+    """
+    Handles incoming webhooks from all providers.
+    The URL must identify the provider, e.g., /api/webhook/<provider_id>/
+    """
+    permission_classes = []  # Webhooks are public
     parser_classes = [JSONParser]
     
-    @action(detail=False, methods=['get', 'post'], url_path='webhook')
-    def webhook(self, request):
-        """Handle WhatsApp webhook events"""
+    @action(detail=False, methods=['get'], url_path='(?P<provider_id>[0-9]+)')
+    def verify_webhook(self, request, provider_id=None):
+        """Handles webhook verification (e.g., Meta's GET request)."""
+        logger.info(f"Webhook verification attempt for provider ID: {provider_id}")
         
-        # Handle webhook verification (GET request)
-        if request.method == 'GET':
-            hub_mode = request.GET.get('hub.mode')
-            hub_challenge = request.GET.get('hub.challenge')
-            hub_verify_token = request.GET.get('hub.verify_token')
-            
-            # Find WABA account with matching verify token
-            try:
-                waba_account = WhatsAppBusinessAccount.objects.get(
-                    webhook_verify_token=hub_verify_token,
-                    is_active=True
-                )
+        try:
+            service_factory = WhatsAppService()
+            # Find provider by ID first
+            provider_service = service_factory.get_service_instance_for_webhook(provider_id=provider_id)
+            provider = provider_service.provider
+
+            # Meta-specific verification
+            if provider.provider_type == 'meta':
+                hub_mode = request.GET.get('hub.mode')
+                hub_challenge = request.GET.get('hub.challenge')
+                hub_verify_token = request.GET.get('hub.verify_token')
                 
-                if hub_mode == 'subscribe':
-                    return Response(hub_challenge, status=status.HTTP_200_OK)
+                expected_token = provider.webhook_verify_token
+                
+                if hub_mode == 'subscribe' and hub_verify_token == expected_token:
+                    logger.info(f"Webhook verified for Meta provider: {provider.name}")
+                    return Response(int(hub_challenge), status=status.HTTP_200_OK)
                 else:
-                    return Response('Invalid mode', status=status.HTTP_400_BAD_REQUEST)
-                    
-            except WhatsAppBusinessAccount.DoesNotExist:
-                return Response('Invalid verify token', status=status.HTTP_403_FORBIDDEN)
-        
-        # Handle webhook events (POST request)
-        elif request.method == 'POST':
-            try:
-                service = WhatsAppService()
-                webhook_event = service.process_webhook_event(request.data)
-                
-                return Response({
-                    'status': 'success',
-                    'event_id': webhook_event.id
-                }, status=status.HTTP_200_OK)
-                
-            except Exception as e:
-                logger.error(f"Webhook processing failed: {e}")
-                return Response(
-                    {'error': 'Webhook processing failed'}, 
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
-        
-        return Response('Method not allowed', status=status.HTTP_405_METHOD_NOT_ALLOWED)
+                    logger.warning(f"Webhook verification FAILED for Meta provider: {provider.name}. Token mismatch.")
+                    return Response('Invalid token', status=status.HTTP_403_FORBIDDEN)
+            
+            # ... (Add verification logic for other providers if needed) ...
+            
+            logger.warning(f"GET request received for non-Meta provider {provider.name}, not supported.")
+            return Response('Provider not configured for GET webhook', status=status.HTTP_400_BAD_REQUEST)
+
+        except WhatsAppAPIError as e:
+            return Response(str(e), status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Webhook verification error: {e}", exc_info=True)
+            return Response('Internal error', status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['post'], url_path='(?P<provider_id>[0-9]+)')
+    def handle_webhook(self, request, provider_id=None):
+        """Handles incoming webhook events (POST request)."""
+        logger.info(f"Received webhook POST for provider ID: {provider_id}")
+        try:
+            service_factory = WhatsAppService()
+            provider_service = service_factory.get_service_instance_for_webhook(provider_id=provider_id)
+            
+            # Pass data to the provider-specific handler
+            provider_service.handle_webhook(request.data)
+            
+            return Response({'status': 'success'}, status=status.HTTP_200_OK)
+            
+        except WhatsAppAPIError as e:
+            return Response(str(e), status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Webhook processing failed: {e}", exc_info=True)
+            return Response({'error': 'Webhook processing failed'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class WhatsAppAnalyticsViewSet(viewsets.ViewSet):
-    """ViewSet for WhatsApp analytics and reporting"""
-    
+    """ViewSet for WhatsApp analytics and reporting (Dashboard)"""
     permission_classes = [permissions.IsAuthenticated]
     
     @action(detail=False, methods=['get'], url_path='dashboard')
     def dashboard(self, request):
-        """Get dashboard analytics"""
+        """Get dashboard analytics (from your original file)"""
         user = request.user
         
-        # Base queryset
         if user.is_staff:
-            waba_accounts = WhatsAppBusinessAccount.objects.filter(is_deleted=False)
+            provider_qs = WhatsAppProvider.objects.filter(is_deleted=False)
         else:
-            waba_accounts = WhatsAppBusinessAccount.objects.filter(
+            provider_qs = WhatsAppProvider.objects.filter(
                 created_by=user, is_deleted=False
             )
         
-        # Get summary statistics
-        total_accounts = waba_accounts.count()
-        active_accounts = waba_accounts.filter(is_active=True, status='verified').count()
+        total_accounts = provider_qs.count()
+        active_accounts = provider_qs.filter(is_active=True, status__in=['connected', 'verified']).count()
         
-        # Get message statistics for last 30 days
         thirty_days_ago = timezone.now() - timezone.timedelta(days=30)
         recent_messages = WhatsAppMessage.objects.filter(
-            waba_account__in=waba_accounts,
+            provider__in=provider_qs,
             created_at__gte=thirty_days_ago
         )
         
@@ -447,36 +406,22 @@ class WhatsAppAnalyticsViewSet(viewsets.ViewSet):
         sent_messages = recent_messages.filter(direction='outbound').count()
         received_messages = recent_messages.filter(direction='inbound').count()
         
-        # Get delivery statistics
         delivered_messages = recent_messages.filter(status='delivered').count()
         read_messages = recent_messages.filter(status='read').count()
         failed_messages = recent_messages.filter(status='failed').count()
         
-        # Get template statistics
-        total_templates = WhatsAppMessageTemplate.objects.filter(
-            waba_account__in=waba_accounts
-        ).count()
+        total_templates = WhatsAppMessageTemplate.objects.filter(provider__in=provider_qs).count()
         approved_templates = WhatsAppMessageTemplate.objects.filter(
-            waba_account__in=waba_accounts, status='approved'
+            provider__in=provider_qs, status='approved'
         ).count()
         
         return Response({
-            'accounts': {
-                'total': total_accounts,
-                'active': active_accounts
-            },
+            'accounts': {'total': total_accounts, 'active': active_accounts},
             'messages_30_days': {
-                'total': total_messages,
-                'sent': sent_messages,
-                'received': received_messages,
-                'delivered': delivered_messages,
-                'read': read_messages,
-                'failed': failed_messages,
+                'total': total_messages, 'sent': sent_messages, 'received': received_messages,
+                'delivered': delivered_messages, 'read': read_messages, 'failed': failed_messages,
                 'delivery_rate': (delivered_messages / sent_messages * 100) if sent_messages > 0 else 0,
                 'read_rate': (read_messages / delivered_messages * 100) if delivered_messages > 0 else 0
             },
-            'templates': {
-                'total': total_templates,
-                'approved': approved_templates
-            }
+            'templates': {'total': total_templates, 'approved': approved_templates}
         }, status=status.HTTP_200_OK)

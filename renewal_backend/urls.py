@@ -59,6 +59,7 @@ api_patterns = [
     path('customer-insights/', include('apps.customer_insights.urls')),
     path('claims/', include('apps.claims.urls')),
     path('campaign_manager/',include('apps.campaign_manager.urls')),
+    path('sms_provider/',include('apps.sms_provider.urls')),
     path('target-audience/', include('apps.target_audience.urls')),
     path('policy-timeline/', include('apps.policy_timeline.urls')),
     path('renewal-timeline/', include('apps.renewal_timeline.urls')),
@@ -79,7 +80,7 @@ api_patterns = [
     path('email-manager/', include('apps.email_manager.urls')),
 
     # WhatsApp Integration endpoints
-    path('whatsapp/', include('apps.whatsapp_provider.urls')),
+    path('whatsapp_provider/', include('apps.whatsapp_provider.urls')),
     path('offers/', include('apps.offers.urls')),
     path('dashboard/', include('apps.dashboard.urls')),
     path('upload-chatbot/', include('apps.upload_chatbot.urls')),

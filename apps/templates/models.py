@@ -46,7 +46,7 @@ class Template(models.Model):
     tags = models.JSONField(default=list, blank=True, help_text="List of assigned tags for quick filtering")
     is_dlt_approved = models.BooleanField(default=False, help_text="Whether the template is approved on the DLT platform")
     is_active = models.BooleanField(default=True)
-
+    usage_count = models.PositiveIntegerField(default=0, help_text="How many times this template has been used")
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_templates')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
