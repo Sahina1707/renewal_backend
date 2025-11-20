@@ -100,7 +100,7 @@ class WhatsAppProviderSerializer(serializers.ModelSerializer):
             if key not in sensitive_keys:
                 credentials[key] = _decrypt_value(value)
             else:
-                credentials[key] = "********" # Mask sensitive fields
+                credentials[key] = "********" 
         
         data['credentials'] = credentials
         return data

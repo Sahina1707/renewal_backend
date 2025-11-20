@@ -124,7 +124,7 @@ class WhatsAppProvider(models.Model):
     is_deleted = models.BooleanField(default=False)
     
     class Meta:
-        db_table = 'whatsapp_provider' # Renamed table
+        db_table = 'whatsapp_provider' 
         ordering = ['-is_default', 'name']
         verbose_name = 'WhatsApp Provider'
         verbose_name_plural = 'WhatsApp Providers'
