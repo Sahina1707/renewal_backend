@@ -16,10 +16,9 @@ ALLOWED_HOSTS = config(
 )
 ALLOWED_HOSTS.append('.ngrok-free.dev')
 ALLOWED_HOSTS.append('overgrossly-sugarlike-xuan.ngrok-free.dev')
-
 # Development-specific apps
 INSTALLED_APPS += [
-    # 'django_extensions',  # Already included in base.py
+    
 ]
 
 if DEBUG:
