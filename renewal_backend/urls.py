@@ -49,6 +49,7 @@ api_patterns = [
     path('not-interested-cases/', include('apps.not_interested_cases.urls')),
     path('archived-cases/', include('apps.archived_cases.urls')),
     path('lost-cases/', include('apps.lost_cases.urls')),
+    path('whatsapp-manager/',include('apps.whatsapp_manager.urls')),
     path('financial-profiles/', include('apps.customer_financial_profile.urls')),
     path('customer-assets/', include('apps.customer_assets.urls')),
     path('customer-vehicles/', include('apps.customer_vehicle.urls')),

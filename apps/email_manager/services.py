@@ -200,7 +200,7 @@ class EmailManagerService:
     @staticmethod
     def send_reply_smtp(to_email, subject, message, html_message=None):
         msg = MIMEMultipart("alternative")
-        msg["From"] = "renewals@intelipro.in"
+        msg["From"] = settings.DEFAULT_FROM_EMAIL
         msg["To"] = to_email
         msg["Subject"] = subject
 
@@ -211,10 +211,10 @@ class EmailManagerService:
             part2 = MIMEText(html_message, "html")
             msg.attach(part2)
 
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        with smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT) as server:
             server.starttls()
-            server.login("renewals@intelipro.in", "APP_PASSWORD") 
-            server.sendmail("renewals@intelipro.in", to_email, msg.as_string())
+            server.login(settings.EMAIL_HOST_USER, settings.EMAIL_HOST_PASSWORD)
+            server.sendmail(settings.DEFAULT_FROM_EMAIL, to_email, msg.as_string())
 
         return True
 
