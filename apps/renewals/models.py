@@ -66,7 +66,14 @@ class RenewalCase(BaseModel):
         db_column='customer_payment_id',
         help_text="Payment record associated with this renewal case"
     )
-    
+    channel = models.ForeignKey(
+        Channel,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='renewal_cases',
+        help_text="Channel through which the renewal case was handled"
+    )
 
     notes = models.TextField(blank=True)
     
