@@ -50,6 +50,13 @@ class RenewalCase(BaseModel):
         ('high', 'High'),
         ('urgent', 'Urgent'),
     ]
+   
+    priority = models.CharField(
+        max_length=10, 
+        choices=PRIORITY_CHOICES, 
+        default='medium'
+    )
+
 
     LOST_REASON_CHOICES = [
         ('competitor_offer', 'Competitor Offer'),
@@ -73,7 +80,6 @@ class RenewalCase(BaseModel):
     batch_code = models.CharField(max_length=50, help_text="Batch code for tracking Excel import batches (e.g., BATCH-2025-07-25-A)")
     policy = models.ForeignKey(Policy, on_delete=models.CASCADE, related_name='renewal_cases')
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='renewal_cases')
-    
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='pending')
     assigned_to = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_renewal_cases', db_column='assigned_to')
     assigned_team = models.ForeignKey(
@@ -163,15 +169,6 @@ class RenewalCase(BaseModel):
     def get_communication_attempts(self):
         """Get the actual communication attempts count from logs"""
         return self.communication_attempts_count
-    
-    @property
-    def priority(self):
-        """Get priority - always returns 'medium' for backward compatibility"""
-        return 'medium'
-    
-    def get_priority_display(self):
-        """Get priority display name - always returns 'Medium' for backward compatibility"""
-        return 'Medium'
     
     @property
     def last_contact_date(self):

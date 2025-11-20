@@ -94,6 +94,7 @@ LOCAL_APPS = [
     'apps.email_inbox',
     'apps.email_integration',
     'apps.email_manager',
+    'apps.whatsapp_manager',
     'apps.offers',
     'apps.customer_installment',
     'apps.outstanding_amounts',
