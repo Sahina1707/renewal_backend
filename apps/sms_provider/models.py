@@ -46,6 +46,7 @@ class SmsProvider(models.Model):
     is_deleted = models.BooleanField(default=False)
 
     class Meta:
+        db_table = 'sms_provider_type' 
         ordering = ['-is_default', 'name']
         verbose_name = "SMS Provider"
         verbose_name_plural = "SMS Providers"
@@ -55,7 +56,6 @@ class SmsProvider(models.Model):
 
     def save(self, *args, **kwargs):
         if self.is_default:
-            # Ensure only one provider is default
             SmsProvider.objects.filter(is_default=True).exclude(pk=self.pk).update(is_default=False)
         super().save(*args, **kwargs)
 
@@ -105,6 +105,7 @@ class SmsMessage(models.Model):
     )
 
     class Meta:
+        db_table = 'sms_provider_message' 
         ordering = ['-created_at']
         verbose_name = "SMS Message"
         verbose_name_plural = "SMS Messages"
