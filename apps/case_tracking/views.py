@@ -31,7 +31,7 @@ class CaseTrackingViewSet(viewsets.ReadOnlyModelViewSet):
     lookup_url_kwarg = 'case_id'
     
     def get_queryset(self):
-        return RenewalCase.objects.select_related(
+        return RenewalCase.objects.filter(is_archived=False).select_related(
             'customer',                   
             'customer__channel_id',      
             'policy',                      

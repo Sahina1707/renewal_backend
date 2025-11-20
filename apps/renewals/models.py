@@ -8,6 +8,19 @@ from apps.channels.models import Channel
 from apps.teams.models import Team
 User = get_user_model()
 
+class Competitor(BaseModel):
+    """Model to store information about competitors."""
+    name = models.CharField(max_length=255, unique=True, help_text="The unique name of the competitor.") 
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='competitors_created')
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='competitors_updated')
+
+    class Meta:
+        db_table = 'competitors'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
 class RenewalCase(BaseModel):
     """Model for tracking policy renewal cases"""
 
@@ -19,6 +32,9 @@ class RenewalCase(BaseModel):
         ('failed', 'Failed'),
         ('renewed', 'Renewed'),
         ('not_interested', 'Not Interested'),
+        ('lost', 'Lost'),
+        ('expired', 'Expired'),
+        ('declined', 'Declined'),
         ('dnc_email', 'DNC email'),
         ('dnc_whatsapp', 'DNC WhatsApp'),
         ('dnc_sms', 'DNC SMS'),
@@ -35,6 +51,24 @@ class RenewalCase(BaseModel):
         ('urgent', 'Urgent'),
     ]
 
+    LOST_REASON_CHOICES = [
+        ('competitor_offer', 'Competitor Offer'),
+        ('price_too_high', 'Price Too High'),
+        ('better_coverage', 'Better Coverage Elsewhere'),
+        ('financial_constraints', 'Financial Constraints'),
+        ('other', 'Other'),
+    ]
+
+    NOT_INTERESTED_REASON_CHOICES = [
+        ('already_have_coverage', 'Already Have Coverage'),
+        ('cannot_afford', 'Cannot Afford Premium'),
+        ('moving_city', 'Moving to Another City'),
+        ('policy_terms', 'Policy Terms Not Suitable'),
+        ('no_immediate_need', 'No Immediate Need'),
+        ('happy_with_current', 'Happy with Current Plan'),
+        ('recently_purchased', 'Recently Purchased Elsewhere'),
+        ('other', 'Other'),
+    ]
     case_number = models.CharField(max_length=100, unique=True)
     batch_code = models.CharField(max_length=50, help_text="Batch code for tracking Excel import batches (e.g., BATCH-2025-07-25-A)")
     policy = models.ForeignKey(Policy, on_delete=models.CASCADE, related_name='renewal_cases')
@@ -82,6 +116,40 @@ class RenewalCase(BaseModel):
     follow_up_date = models.DateField(null=True, blank=True, help_text="Date for the next follow-up")
     follow_up_time = models.TimeField(null=True, blank=True, help_text="Time for the next follow-up")
     remarks = models.TextField(blank=True, help_text="Additional remarks or notes for the case")
+
+    lost_reason = models.CharField(
+        max_length=30, 
+        choices=LOST_REASON_CHOICES, 
+        null=True, 
+        blank=True
+    )
+    
+    competitor = models.ForeignKey(
+        Competitor,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='lost_cases'
+    )
+    lost_date = models.DateField(null=True, blank=True)
+
+    not_interested_reason = models.CharField(
+        max_length=50, 
+        choices=NOT_INTERESTED_REASON_CHOICES, 
+        null=True, 
+        blank=True
+    )
+
+    not_interested_date = models.DateField(null=True, blank=True)
+
+    # Archive Fields
+    is_archived = models.BooleanField(
+        default=False, 
+        help_text="If True, this case only appears in the Archived dashboard"
+    )
+    archived_reason = models.CharField(max_length=255, null=True, blank=True)
+    archived_date = models.DateField(null=True, blank=True)
+
     
     class Meta:
         db_table = 'renewal_cases'
