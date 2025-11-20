@@ -13,11 +13,12 @@ DEBUG = False
 
 ALLOWED_HOSTS = config(
     'ALLOWED_HOSTS',
+    default='localhost,127.0.0.1,0.0.0.0,testserver,13.233.6.207',
     cast=lambda v: [s.strip() for s in v.split(',')]
 )
 
 # Security settings for production
-SECURE_SSL_REDIRECT = True
+SECURE_SSL_REDIRECT = False
 SECURE_HSTS_SECONDS = 31536000  # 1 year
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
@@ -44,7 +45,7 @@ CORS_ALLOW_CREDENTIALS = True
 DATABASES['default']['OPTIONS'] = {
     'connect_timeout': 60,
     'options': '-c default_transaction_isolation=serializable',
-    'sslmode': 'require',
+    'sslmode': 'disable',
 }
 
 # Connection pooling for production

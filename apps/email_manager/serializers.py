@@ -6,7 +6,8 @@ from apps.templates.models import Template
 from apps.customer_payment_schedule.models import PaymentSchedule
 from .models import EmailManagerInbox
 from django.utils.html import strip_tags
-from .models import EmailReply
+from .models import EmailReply, StartedReplyMail
+
 class EmailManagerSerializer(serializers.ModelSerializer):
     
     class Meta:
@@ -218,3 +219,18 @@ class EmailReplyStatusUpdateSerializer(serializers.ModelSerializer):
         model = EmailReply
         fields = ['started']
 
+class StartedReplyMailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StartedReplyMail
+        fields = [
+            "id",
+            "original_email_manager",
+            "original_inbox_email",
+            "to_email",
+            "from_email",
+            "subject",
+            "message",
+            "html_message",
+            "sent_at",
+            "created_by",
+        ]

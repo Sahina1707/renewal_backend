@@ -17,7 +17,6 @@ def reverse_drop_communication_providers_table(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('communication_provider', '0003_alter_communicationprovider_channel'),
         ('email_provider', '0005_remove_communication_provider_mapping'),
     ]
 
