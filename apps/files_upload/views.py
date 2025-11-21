@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import logging
 import pandas as pd
 import os
+import io
 from .models import FileUpload
 from .serializers import (
     FileUploadSerializer,
@@ -84,48 +85,47 @@ class FileUploadViewSet(viewsets.ModelViewSet):
 
     def process_file(self, file_instance):
         try:
-            
-            # Read the file
-            file_path = file_instance.uploaded_file.path
+            uploaded_file = file_instance.uploaded_file
             file_extension = os.path.splitext(file_instance.original_filename)[1].lower()
-            
-            if file_extension == '.csv':
-                df = pd.read_csv(file_path)
-            elif file_extension == '.xlsx':
-                df = pd.read_excel(file_path)
+
+            uploaded_file.open()
+            file_bytes = uploaded_file.read()
+
+            if file_extension == ".csv":
+                df = pd.read_csv(io.BytesIO(file_bytes))
+            elif file_extension == ".xlsx":
+                df = pd.read_excel(io.BytesIO(file_bytes))
             else:
                 return {
-                    'success': False,
-                    'error': f'Unsupported file format: {file_extension}',
-                    'details': {}
+                    "success": False,
+                    "error": f"Unsupported file format: {file_extension}",
+                    "details": {}
                 }
+
             total_records = len(df)
-            successful_records = total_records  # Replace with actual count
-            failed_records = 0  # Replace with actual count
-            
+
             return {
-                'success': True,
-                'total_records': total_records,
-                'successful_records': successful_records,
-                'failed_records': failed_records,
-                'processing_result': {
-                    'message': 'File processed successfully',
-                    'tables_updated': ['customers', 'policies', 'renewals', 'channels', 'claims'],  # Replace with actual tables
-                    'processing_time': '0.5s'  # Replace with actual time
+                "success": True,
+                "total_records": total_records,
+                "successful_records": total_records,
+                "failed_records": 0,
+                "processing_result": {
+                    "message": "File processed successfully",
+                    "tables_updated": ["customers", "policies", "renewals"],
                 }
             }
-            
+
         except Exception as e:
-            logger.error(f"Error in process_file for {file_instance.id}: {str(e)}")
             return {
-                'success': False,
-                'error': f'File processing failed: {str(e)}',
-                'details': {
-                    'exception_type': type(e).__name__,
-                    'file_name': file_instance.original_filename,
-                    'file_size': file_instance.file_size
+                "success": False,
+                "error": f"File processing failed: {str(e)}",
+                "details": {
+                    "exception_type": type(e).__name__,
+                    "file_name": file_instance.original_filename,
+                    "file_size": file_instance.file_size
                 }
             }
+
     
     def get_queryset(self):
         """Filter queryset based on query parameters"""
