@@ -459,6 +459,7 @@ class FileUploadViewSet(viewsets.ModelViewSet):
         """Create records in both file upload tables with secure naming"""
         try:
             secure_filename = self._generate_secure_filename(uploaded_file.name, user.id)
+            uploaded_file.name = secure_filename
 
             try:
                 uploads_record = UploadsFileUpload.objects.create(
@@ -520,7 +521,7 @@ class FileUploadViewSet(viewsets.ModelViewSet):
                 original_filename=uploads_record.original_name,
                 file_size=uploads_record.file_size,
                 file_type=uploads_record.mime_type,
-                upload_path=uploads_record.file.path if uploads_record.file else '',
+                upload_path=uploads_record.file.name if uploads_record.file else '',
                 total_records=0,  
                 successful_records=0,
                 failed_records=0,
