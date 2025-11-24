@@ -4,14 +4,14 @@ from django.db import models
 from django.utils import timezone
 from apps.users.models import User 
 from apps.audience_manager.models import Audience, AudienceContact
+from apps.email_provider.models import EmailProviderConfig
 from apps.templates.models import Template
 
-# --- 2. CAMPAIGN MODEL ---
+# --- 2. CAMPAIGN MODEL
 class Campaign(models.Model):
     class CampaignTypes(models.TextChoices):
         PROMOTIONAL = 'promotional', 'Promotional'
         RENEWAL = 'renewal', 'Renewal'
-        # --- NEW (from video) ---
         WELCOME = 'welcome', 'Welcome' 
     
     class CampaignStatus(models.TextChoices):
@@ -32,6 +32,14 @@ class Campaign(models.Model):
         Audience, 
         on_delete=models.PROTECT,
         related_name="cm_campaigns"
+    )
+    # --- ADD THIS FIELD ---
+    email_provider = models.ForeignKey(
+        EmailProviderConfig, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        help_text="Specific provider for this campaign"
     )
     scheduled_date = models.DateTimeField(null=True, blank=True)
     

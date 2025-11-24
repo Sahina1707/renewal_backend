@@ -1,6 +1,8 @@
 import logging
 import re
 from typing import List, Dict, Any, Optional
+from django.core.mail import EmailMultiAlternatives
+from django.conf import settings
 from django.db.models import Q, Count, F, Avg
 from django.utils import timezone
 from datetime import timedelta
@@ -87,6 +89,27 @@ class EmailInboxService:
             # Update conversation thread
             self._update_conversation_thread(email_message)
             
+            # --- NEW CODE: Trigger the Rules Engine ---
+            try:
+                # We import here to avoid circular dependency issues
+                from apps.email_integration.services import EmailIntegrationService
+                integration_service = EmailIntegrationService()
+                
+                # Trigger automations for "email_received"
+                integration_service.trigger_automations(
+                    trigger_type='email_received', 
+                    context_data={
+                        'email_id': str(email_message.id),
+                        'sender': email_message.from_email,
+                        'subject': email_message.subject,
+                        'body': email_message.text_content or email_message.html_content
+                    }
+                )
+            except (ImportError, ModuleNotFoundError):
+                logger.warning("EmailIntegrationService not found. Skipping automations.")
+            except Exception as e:
+                logger.error(f"Failed to run automations for email {email_message.id}: {e}")
+
             return {
                 'success': True,
                 'message': 'Email received and processed successfully',
@@ -318,6 +341,47 @@ class EmailInboxService:
             return subject[4:].strip()
         return None
     
+    def send_outbound_email(self, email_message_obj, attachments=None):
+        """
+        Actually sends the email via SMTP/Gmail/Outlook
+        """
+        try:
+            # 1. Setup Email
+            subject = email_message_obj.subject
+            body_html = email_message_obj.html_content or email_message_obj.text_content
+            from_email = settings.DEFAULT_FROM_EMAIL
+            to_emails = email_message_obj.to_emails # Assuming this is a list in your JSONField
+            
+            # 2. Create Message Object
+            msg = EmailMultiAlternatives(
+                subject=subject,
+                body=email_message_obj.text_content or "Please view this email in an HTML compatible viewer.",
+                from_email=from_email,
+                to=to_emails,
+                cc=email_message_obj.cc_emails,
+                bcc=email_message_obj.bcc_emails,
+                reply_to=[email_message_obj.reply_to] if email_message_obj.reply_to else None
+            )
+            
+            # 3. Attach HTML alternative
+            if body_html:
+                msg.attach_alternative(body_html, "text/html")
+
+            # 4. Handle Attachments (If passed during creation)
+            if attachments:
+                for file in attachments:
+                    # file is an InMemoryUploadedFile from request.FILES
+                    msg.attach(file.name, file.read(), file.content_type)
+
+            # 5. Send
+            msg.send()
+            
+            return True, "Sent successfully"
+
+        except Exception as e:
+            logger.error(f"Failed to send email: {e}")
+            return False, str(e)
+    
     def reply_to_email(self, email_id: str, subject: str, html_content: str = '',
                       text_content: str = '', to_emails: List[str] = None,
                       cc_emails: List[str] = None, bcc_emails: List[str] = None,
@@ -327,9 +391,9 @@ class EmailInboxService:
             original_email = EmailInboxMessage.objects.get(id=email_id)
             
             # Create reply message
-            reply_message = EmailInboxMessage.objects.create(
-                from_email=original_email.to_email,  # Swap sender/recipient
-                to_email=original_email.from_email,
+            reply_message = EmailInboxMessage(
+                from_email=original_email.to_emails[0] if original_email.to_emails else settings.DEFAULT_FROM_EMAIL,
+                to_emails=[original_email.from_email] + (to_emails or []),
                 cc_emails=cc_emails or [],
                 bcc_emails=bcc_emails or [],
                 subject=subject,
@@ -337,11 +401,18 @@ class EmailInboxService:
                 text_content=text_content,
                 category=original_email.category,
                 priority=priority,
+                status='unread', # Temp status
                 thread_id=original_email.thread_id,
                 parent_message=original_email,
                 tags=tags or [],
                 message_id=str(uuid.uuid4())
             )
+            
+            # Send the actual email
+            success, error_msg = self.send_outbound_email(reply_message)
+            
+            if not success:
+                return {'success': False, 'message': f'Failed to send reply: {error_msg}'}
             
             # Mark original as replied
             original_email.mark_as_replied()
@@ -374,20 +445,27 @@ class EmailInboxService:
             
             # Create forward message
             forward_subject = subject or f"Fwd: {original_email.subject}"
-            forward_message = EmailInboxMessage.objects.create(
-                from_email=original_email.to_email,  # Current user
-                to_email=to_emails[0],  # Primary recipient
+            forward_message = EmailInboxMessage(
+                from_email=original_email.to_emails[0] if original_email.to_emails else settings.DEFAULT_FROM_EMAIL,
+                to_emails=to_emails,
                 cc_emails=cc_emails or [],
                 bcc_emails=bcc_emails or [],
                 subject=forward_subject,
-                html_content=original_email.html_content,
-                text_content=original_email.text_content,
+                html_content=f"{message}<br><hr><br>{original_email.html_content}",
+                text_content=f"{message}\n---\n{original_email.text_content}",
                 category=original_email.category,
                 priority=priority,
+                status='unread', # Temp status
                 tags=tags or [],
                 message_id=str(uuid.uuid4())
             )
             
+            # Send the actual email
+            success, error_msg = self.send_outbound_email(forward_message)
+
+            if not success:
+                return {'success': False, 'message': f'Failed to send forward: {error_msg}'}
+
             # Mark original as forwarded
             original_email.mark_as_forwarded()
             

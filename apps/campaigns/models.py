@@ -8,6 +8,18 @@ from apps.templates.models import Template
 from apps.files_upload.models import FileUpload
 from apps.target_audience.models import TargetAudience
 from apps.email_provider.models import EmailProviderConfig
+# Try to import SMS Provider
+try:
+    from apps.sms_provider.models import SmsProvider
+except ImportError:
+    SmsProvider = None
+
+# Try to import WhatsApp Provider (NEW)
+try:
+    from apps.whatsapp_provider.models import WhatsAppProvider
+except ImportError:
+    WhatsAppProvider = None
+
 from decimal import Decimal
 import uuid
 import json
@@ -62,14 +74,37 @@ class Campaign(BaseModel):
     channels = models.JSONField(default=list, help_text="List of communication channels")
     target_audience = models.ForeignKey(TargetAudience,on_delete=models.SET_NULL, null=True, blank=True, related_name='campaigns'
     )
-    communication_provider = models.ForeignKey(
-        EmailProviderConfig, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True, 
-        related_name='campaigns',
-        help_text="Communication provider for this campaign"
+    email_provider = models.ForeignKey(
+        EmailProviderConfig,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='email_campaigns',
+        help_text="Specific provider for Email channel. If null, uses system default."
     )
+
+    # Dynamic SMS Provider Field
+    if SmsProvider:
+        sms_provider = models.ForeignKey(
+            SmsProvider,
+            on_delete=models.SET_NULL,
+            null=True,
+            blank=True,
+            related_name='sms_campaigns',
+            help_text="Specific provider for SMS channel. If null, uses system default."
+        )
+
+    # Dynamic WhatsApp Provider Field (NEW)
+    if WhatsAppProvider:
+        whatsapp_provider = models.ForeignKey(
+            WhatsAppProvider,
+            on_delete=models.SET_NULL,
+            null=True,
+            blank=True,
+            related_name='whatsapp_campaigns',
+            help_text="Specific provider for WhatsApp channel. If null, uses system default."
+        )
+
 
     # Scheduling
     schedule_type = models.CharField(max_length=20, choices=[
@@ -690,14 +725,14 @@ class CampaignScheduleInterval(BaseModel):
         related_name='campaign_schedules',
         help_text="Template to use for this interval"
     )
-    communication_provider = models.ForeignKey(
-        EmailProviderConfig,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='campaign_schedules',
-        help_text="Communication provider for this interval"
-    )
+    # communication_provider = models.ForeignKey(
+    #     EmailProviderConfig,
+    #     on_delete=models.SET_NULL,
+    #     null=True,
+    #     blank=True,
+    #     related_name='campaign_schedules',
+    #     help_text="Communication provider for this interval"
+    # )
     
     # Schedule configuration
     sequence_order = models.PositiveIntegerField(

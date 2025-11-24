@@ -1,5 +1,5 @@
 #
-# views.py
+# apps/whatsapp_provider/views.py
 #
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
@@ -13,7 +13,7 @@ import logging
 import uuid
 
 from .models import (
-    WhatsAppProvider, # Renamed
+    WhatsAppProvider,
     WhatsAppPhoneNumber,
     WhatsAppMessageTemplate,
     WhatsAppMessage,
@@ -23,21 +23,21 @@ from .models import (
     WhatsAppAccountUsageLog,
 )
 from .serializers import (
-    WhatsAppProviderSerializer, # Renamed
-    WhatsAppProviderCreateUpdateSerializer, # Renamed
+    WhatsAppProviderSerializer,
+    WhatsAppProviderCreateUpdateSerializer,
     WhatsAppPhoneNumberSerializer,
     WhatsAppMessageTemplateSerializer,
     WhatsAppMessageSerializer,
-    MessageSendSerializer, # New serializer for sending
+    MessageSendSerializer,
     WhatsAppWebhookEventSerializer,
     WhatsAppFlowSerializer,
     WhatsAppAccountHealthLogSerializer,
     WhatsAppAccountUsageLogSerializer,
+    TemplateProviderLinkSerializer
 )
-from .services import WhatsAppService, WhatsAppAPIError, _encrypt_value 
-from rest_framework.decorators import action 
-from rest_framework import status
-from .serializers import TemplateProviderLinkSerializer
+# REMOVED _encrypt_value from this import as it does not exist in services.py
+from .services import WhatsAppService, WhatsAppAPIError
+
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
@@ -65,14 +65,11 @@ class WhatsAppProviderViewSet(viewsets.ModelViewSet):
         )
     
     def perform_create(self, serializer):
-        """Handle the creation of a new provider and its credentials."""
-        # The logic for bundling credentials and handling 'is_default'
-        # has been moved to the WhatsAppProviderCreateUpdateSerializer.
+        """Handle the creation of a new provider."""
         serializer.save(created_by=self.request.user)
     
     def perform_update(self, serializer):
-        """Handle updating a provider and its credentials."""
-        # The logic for updating credentials has also been moved to the serializer.
+        """Handle updating a provider."""
         serializer.save(updated_by=self.request.user)
 
     
@@ -248,8 +245,6 @@ class WhatsAppMessageTemplateViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # This action is now less relevant as template creation should be
-        # handled by the provider's service or dashboard.
         return Response(
             {'message': 'Template submission logic needs to be implemented in MetaProviderService.'}, 
             status=status.HTTP_501_NOT_IMPLEMENTED
@@ -383,7 +378,7 @@ class WhatsAppAnalyticsViewSet(viewsets.ViewSet):
     
     @action(detail=False, methods=['get'], url_path='dashboard')
     def dashboard(self, request):
-        """Get dashboard analytics (from your original file)"""
+        """Get dashboard analytics."""
         user = request.user
         
         if user.is_staff:

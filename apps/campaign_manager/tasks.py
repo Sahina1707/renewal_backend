@@ -2,10 +2,11 @@ from celery import shared_task
 from django.utils import timezone
 from datetime import timedelta # <-- NEW
 from .models import Campaign, SequenceStep, CampaignLog, PendingTask # <-- UPDATED
+from apps.email_provider.services import EmailProviderService
+from apps.email_provider.models import EmailProviderConfig
 from apps.audience_manager.models import AudienceContact
 from apps.whatsapp_provider.services import WhatsAppService, WhatsAppAPIError
 from apps.whatsapp_provider.models import WhatsAppMessageTemplate, WhatsAppProvider
-from .helpers import send_smtp_email
 import time
 
 @shared_task(name="check_scheduled_campaigns")
@@ -156,10 +157,46 @@ def schedule_step_for_contact(self, campaign_id, step_id, contact_id):
 
     if step.channel == 'email' and campaign.enable_email:
         if contact.email:
-            subject = template.subject
-            body = template.content # You must add variable replacement here
             print(f"--- CELERY: Sending email for step {step.step_order} to {contact.email}... ---")
-            success, error_msg, message_id = send_smtp_email(subject, body, contact.email)
+            
+            # 1. Get the Provider
+            provider = getattr(campaign, 'email_provider', None)
+            
+            if not provider:
+                # Fetch System Default
+                provider = EmailProviderConfig.objects.filter(is_default=True, is_active=True).first()
+                if provider:
+                    campaign.email_provider = provider
+                    campaign.save(update_fields=['email_provider'])
+            
+            # 2. Send
+            if provider:
+                try:
+                    # CRITICAL: Pass config=provider
+                    email_service = EmailProviderService(config=provider)
+                    
+                    rendered_content = template.content 
+                    
+                    result = email_service.send_email(
+                        to_emails=[contact.email],
+                        subject=template.subject,
+                        html_content=rendered_content,
+                        from_email=provider.from_email
+                    )
+                    
+                    success = result.get('success', False)
+                    if success:
+                        message_id = result.get('message_id', 'sent_via_api')
+                    else:
+                        error_msg = result.get('error', 'Unknown Error')
+                        
+                except Exception as e:
+                    print(f"🔥 EXCEPTION during send: {e}")
+                    success = False
+                    error_msg = str(e)
+            else:
+                error_msg = "No active default provider found."
+            
         else:
             error_msg = "Contact has no email."
     

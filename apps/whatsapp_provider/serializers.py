@@ -1,20 +1,14 @@
 import uuid
+import logging
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.conf import settings
 from cryptography.fernet import Fernet
 from .models import (
-    WhatsAppProvider, # Renamed
-    WhatsAppPhoneNumber,
-    WhatsAppMessageTemplate,
-    WhatsAppMessage,
-    WhatsAppWebhookEvent,
-    WhatsAppFlow,
-    WhatsAppAccountHealthLog,
-    WhatsAppAccountUsageLog,
+    WhatsAppProvider, WhatsAppPhoneNumber, WhatsAppMessageTemplate,
+    WhatsAppMessage, WhatsAppWebhookEvent, WhatsAppFlow,
+    WhatsAppAccountHealthLog, WhatsAppAccountUsageLog
 )
-from apps.whatsapp_provider.services import WhatsAppService, WhatsAppAPIError
-import logging
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -23,7 +17,6 @@ User = get_user_model()
 def _encrypt_value(value):
     encryption_key = getattr(settings, 'WHATSAPP_ENCRYPTION_KEY', None)
     if not encryption_key or not value:
-        logger.warning("Encrypt: No key or value, returning raw value.")
         return value
     try:
         fernet = Fernet(encryption_key.encode())
@@ -36,210 +29,127 @@ def _encrypt_value(value):
 def _decrypt_value(value):
     encryption_key = getattr(settings, 'WHATSAPP_ENCRYPTION_KEY', None)
     if not encryption_key or not value:
-        logger.warning("Decrypt: No key or value, returning raw value.")
         return value
     try:
         fernet = Fernet(encryption_key.encode())
         return fernet.decrypt(value.encode()).decode()
-    except Exception as e:
-        logger.warning(f"Decryption failed, returning raw value: {e}")
-        return value # Return raw value if decryption fails (e.g., already plain text)
+    except Exception:
+        return value
 
-
-class WhatsAppPhoneNumberSerializer(serializers.ModelSerializer):
-    """Serializer for WhatsApp phone numbers"""
-    class Meta:
-        model = WhatsAppPhoneNumber
-        fields = [
-            'id', 'provider', 'phone_number_id', 'phone_number', 'display_phone_number',
-            'status', 'is_primary', 'is_active', 'quality_rating',
-            'messages_sent_today', 'messages_sent_this_month',
-            'last_message_sent', 'created_at', 'updated_at', 'verified_at'
-        ]
-        read_only_fields = [
-            'id', 'messages_sent_today', 'messages_sent_this_month',
-            'last_message_sent', 'created_at', 'updated_at', 'verified_at'
-        ]
-
-
-class WhatsAppMessageTemplateSerializer(serializers.ModelSerializer):
-    """Serializer for WhatsApp message templates"""
-    class Meta:
-        model = WhatsAppMessageTemplate
-        fields = [
-            'id', 'provider', 'name', 'category', 'language', 'header_text', 'body_text',
-            'footer_text', 'components', 'status', 'meta_template_id',
-            'rejection_reason', 'usage_count', 'last_used',
-            'created_at', 'updated_at', 'approved_at'
-        ]
-        read_only_fields = [
-            'id', 'meta_template_id', 'rejection_reason', 'usage_count',
-            'last_used', 'created_at', 'updated_at', 'approved_at'
-        ]
-
+# --------------------------------------
+# PROVIDER SERIALIZERS
+# --------------------------------------
 
 class WhatsAppProviderSerializer(serializers.ModelSerializer):
     """
-    Serializer for *displaying* WhatsApp Providers.
-    (READ-ONLY)
+    Serializer for DISPLAYING providers.
     """
-    phone_numbers = WhatsAppPhoneNumberSerializer(many=True, read_only=True)
-    message_templates = WhatsAppMessageTemplateSerializer(many=True, read_only=True)
+    phone_numbers = serializers.StringRelatedField(many=True, read_only=True)
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
-    updated_by_name = serializers.CharField(source='updated_by.get_full_name', read_only=True)
-    provider_type_display = serializers.CharField(source='get_provider_type_display', read_only=True)
     
-    # We dynamically add decrypted credentials for display
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        # Add decrypted (or raw) credentials for display, excluding sensitive keys
-        credentials = {}
-        sensitive_keys = ['meta_access_token', 'twilio_auth_token', 'gupshup_api_key', 'dialog_api_key']
-        
-        for key, value in instance.credentials.items():
-            if key not in sensitive_keys:
-                credentials[key] = _decrypt_value(value)
-            else:
-                credentials[key] = "********" 
-        
-        data['credentials'] = credentials
-        return data
-
     class Meta:
         model = WhatsAppProvider
         fields = [
-            'id', 'name', 'provider_type', 'provider_type_display',
-            'business_name', 'business_description', 'business_email',
-            'status', 'quality_rating', 'health_status', 'last_health_check',
-            'daily_limit', 'monthly_limit', 'rate_limit_per_minute',
-            'messages_sent_today', 'messages_sent_this_month',
-            'is_default', 'is_active',
-            'phone_numbers', 'message_templates', 'created_by_name',
-            'updated_by_name', 'created_at', 'updated_at',
-            # Bot config
-            'enable_auto_reply', 'use_knowledge_base', 'greeting_message',
-            'fallback_message', 'enable_business_hours',
-            'business_hours_start', 'business_hours_end', 'business_timezone',
+            'id', 'name', 'provider_type', 'business_name',
+            'status', 'quality_rating', 'health_status',
+            'account_id', 'phone_number_id', 'app_id', 'api_version', 'api_url',
+            'is_default', 'is_active', 'created_by_name', 'created_at',
+            'enable_auto_reply', 'greeting_message', 'phone_numbers'
         ]
-        # Excludes 'credentials' field by default, added manually in to_representation
 
-
-class WhatsAppProviderCreateUpdateSerializer(serializers.ModelSerializer): # Renamed
+class WhatsAppProviderCreateUpdateSerializer(serializers.ModelSerializer):
     """
-    Serializer for *creating and updating* WhatsApp Providers.
-    This serializer accepts provider-specific fields and bundles them into the 'credentials' JSON field.
+    Serializer for CREATING/UPDATING providers.
     """
-    meta_access_token = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    meta_phone_number_id = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    meta_business_account_id = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    twilio_account_sid = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    twilio_auth_token = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    twilio_from_number = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    meta_api_version = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    twilio_status_callback_url = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    # Add other provider fields as needed
-
     class Meta:
         model = WhatsAppProvider
-        fields = [
-            'id', 'name', 'provider_type', 'is_active', 'is_default',
-            'webhook_verify_token',
-            # Add the provider-specific fields to the list
-            'meta_access_token', 'meta_phone_number_id', 'meta_business_account_id',
-            'meta_api_version', 'twilio_account_sid', 'twilio_auth_token', 
-            'twilio_from_number', 'twilio_status_callback_url',
-        ]
-        read_only_fields = ['id', 'webhook_verify_token']
-
-    def _bundle_and_encrypt_credentials(self, validated_data):
-        """
-        Gathers provider-specific fields from validated_data,
-        encrypts them, and returns them as a credentials dictionary.
-        """
-        credentials = {}
-        # Use provider_type from instance if updating, otherwise from validated_data
-        provider_type = validated_data.get('provider_type') or (self.instance and self.instance.provider_type)
-
-        # Define which keys belong to which provider
-        PROVIDER_CREDENTIAL_KEYS = {
-            'meta': [
-            'meta_access_token', 
-            'meta_phone_number_id', 
-            'meta_business_account_id', 
-            'meta_api_version'
-        ],
-            'twilio': [
-            'twilio_account_sid', 
-            'twilio_auth_token', 
-            'twilio_from_number', 
-            'twilio_status_callback_url' 
-        ],
-            # Add other providers and their keys here
+        fields = '__all__'
+        read_only_fields = ['id', 'webhook_verify_token', 'created_by', 'updated_by']
+        extra_kwargs = {
+            'access_token': {'write_only': True}, # Hide token in responses
         }
 
-        credential_keys = PROVIDER_CREDENTIAL_KEYS.get(provider_type, [])
-
-        for key in credential_keys:
-            if key in validated_data:
-                value = validated_data.pop(key) 
-                if value:
-                    # Encrypt sensitive tokens
-                    if 'token' in key or 'key' in key:
-                         credentials[key] = _encrypt_value(value)
-                    else:
-                         credentials[key] = value
-        
-        return credentials
+    def validate(self, data):
+        # Encrypt the access_token if it exists
+        if 'access_token' in data and data['access_token']:
+            data['access_token'] = _encrypt_value(data['access_token'])
+                
+        if not data.get('webhook_verify_token') and not self.instance:
+            data['webhook_verify_token'] = str(uuid.uuid4())
+            
+        return data
 
     def create(self, validated_data):
-        """
-        Create a new WhatsApp Provider instance.
-        """
-        credentials = self._bundle_and_encrypt_credentials(validated_data)
-        validated_data['credentials'] = credentials
-
-        # Generate a webhook verify token if one isn't provided
-        if not validated_data.get('webhook_verify_token'):
-            validated_data['webhook_verify_token'] = str(uuid.uuid4())
-
-        # Handle 'is_default' logic
         if validated_data.get('is_default', False):
             WhatsAppProvider.objects.filter(is_default=True).update(is_default=False)
+        return super().create(validated_data)
 
-        provider = WhatsAppProvider.objects.create(**validated_data)
-        return provider
-    
     def update(self, instance, validated_data):
-        """
-        Update an existing WhatsApp Provider instance.
-        """
-        # Handle 'is_default' logic
         if validated_data.get('is_default', False) and not instance.is_default:
             WhatsAppProvider.objects.filter(is_default=True).exclude(pk=instance.pk).update(is_default=False)
+        return super().update(instance, validated_data)
 
-        # Get new credentials and merge them with existing ones
-        new_credentials = self._bundle_and_encrypt_credentials(validated_data)
-        
-        # Start with the existing credentials and update them
-        # This ensures we don't lose credentials for other providers if not all are sent
-        updated_credentials = instance.credentials.copy()
-        updated_credentials.update(new_credentials)
-        
-        instance.credentials = updated_credentials
+# --------------------------------------
+# PHONE NUMBER SERIALIZER (Was Missing)
+# --------------------------------------
 
-        # Update other fields on the instance
-        instance.name = validated_data.get('name', instance.name)
-        instance.provider_type = validated_data.get('provider_type', instance.provider_type)
-        instance.is_active = validated_data.get('is_active', instance.is_active)
-        instance.is_default = validated_data.get('is_default', instance.is_default)
-        
-        instance.save()
-        return instance
+class WhatsAppPhoneNumberSerializer(serializers.ModelSerializer):
+    provider_name = serializers.CharField(source='provider.name', read_only=True)
+    
+    class Meta:
+        model = WhatsAppPhoneNumber
+        fields = [
+            'id', 'provider', 'provider_name', 'phone_number_id', 
+            'phone_number', 'display_phone_number', 'status', 
+            'is_primary', 'is_active', 'quality_rating', 
+            'messages_sent_today', 'created_at', 'verified_at'
+        ]
+        read_only_fields = [
+            'messages_sent_today', 'messages_sent_this_month', 
+            'created_at', 'updated_at', 'verified_at'
+        ]
+
+# --------------------------------------
+# TEMPLATE SERIALIZER (Was Missing)
+# --------------------------------------
+
+class WhatsAppMessageTemplateSerializer(serializers.ModelSerializer):
+    provider_name = serializers.CharField(source='provider.name', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
+    
+    class Meta:
+        model = WhatsAppMessageTemplate
+        fields = [
+            'id', 'provider', 'provider_name', 'name', 'category', 'language',
+            'header_text', 'body_text', 'footer_text', 'components',
+            'status', 'meta_template_id', 'rejection_reason',
+            'usage_count', 'last_used', 'created_by_name', 'created_at', 'approved_at'
+        ]
+        read_only_fields = [
+            'status', 'meta_template_id', 'usage_count', 
+            'last_used', 'created_at', 'approved_at'
+        ]
+
+class TemplateProviderLinkSerializer(serializers.Serializer):
+    """
+    Serializer to validate the provider_id for linking.
+    """
+    provider_id = serializers.IntegerField(required=True)
+
+    def validate_provider_id(self, value):
+        try:
+            WhatsAppProvider.objects.get(id=value, is_deleted=False)
+        except WhatsAppProvider.DoesNotExist:
+            raise serializers.ValidationError("A provider with this ID does not exist.")
+        return value
+
+# --------------------------------------
+# MESSAGE SENDING SERIALIZER
+# --------------------------------------
 
 class MessageSendSerializer(serializers.Serializer):
     """
-    New, simpler serializer for the 'send_message' ViewSet action.
-    The provider is determined by the URL.
+    Serializer for the 'send_message' ViewSet action.
     """
     to_phone_number = serializers.CharField(max_length=20, required=True)
     message_type = serializers.ChoiceField(choices=[
@@ -268,8 +178,11 @@ class MessageSendSerializer(serializers.Serializer):
     campaign_id = serializers.IntegerField(required=False, allow_null=True)
     
     def validate_to_phone_number(self, value):
+        # Basic validation, clean up spaces/dashes
+        value = value.replace(" ", "").replace("-", "")
         if not value.startswith('+'):
-            raise serializers.ValidationError("Phone number must include country code (e.g., +1234567890)")
+            # You might want to enforce + or add it automatically in the service
+            pass 
         return value
 
     def validate(self, data):
@@ -289,7 +202,9 @@ class MessageSendSerializer(serializers.Serializer):
         
         return data
 
-# --- Message Serializers (from original file, updated) ---
+# --------------------------------------
+# MESSAGE LOG SERIALIZER
+# --------------------------------------
 
 class WhatsAppMessageSerializer(serializers.ModelSerializer):
     """Serializer for WhatsApp messages"""
@@ -317,7 +232,9 @@ class WhatsAppMessageSerializer(serializers.ModelSerializer):
             return f"{obj.customer.first_name} {obj.customer.last_name}".strip()
         return None
 
-# --- Other Serializers (from original file, updated) ---
+# --------------------------------------
+# WEBHOOK & LOGGING SERIALIZERS
+# --------------------------------------
 
 class WhatsAppWebhookEventSerializer(serializers.ModelSerializer):
     provider_name = serializers.CharField(source='provider.name', read_only=True)
@@ -357,19 +274,3 @@ class WhatsAppAccountUsageLogSerializer(serializers.ModelSerializer):
             'id', 'provider', 'date', 'messages_sent', 'messages_delivered',
             'messages_failed', 'messages_read', 'provider_name', 'created_at'
         ]
-class TemplateProviderLinkSerializer(serializers.Serializer):
-    """
-    Serializer to validate the provider_id for linking.
-    """
-    provider_id = serializers.IntegerField(required=True)
-
-    def validate_provider_id(self, value):
-        """
-        Check that the provider exists.
-        """
-        try:
-            # Note: We are validating against the main WhatsAppProvider model
-            provider = WhatsAppProvider.objects.get(id=value, is_deleted=False)
-        except WhatsAppProvider.DoesNotExist:
-            raise serializers.ValidationError("A provider with this ID does not exist.")
-        return value
