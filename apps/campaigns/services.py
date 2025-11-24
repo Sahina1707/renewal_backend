@@ -10,23 +10,13 @@ from apps.email_provider.services import EmailProviderService
 
 logger = logging.getLogger(__name__)
 
-try:
-    from celery import shared_task
-    CELERY_AVAILABLE = True
-except ImportError:
-    CELERY_AVAILABLE = False
-    def shared_task(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-
 class EmailCampaignService:
-    """Service class for handling email campaigns"""
+    """Service class for handling email campaigns (Synchronous Version)"""
     
     @staticmethod
     def send_campaign_emails(campaign_id):
         """
-        Send emails for a specific campaign
+        Send emails for a specific campaign immediately (Synchronous)
         """
         try:
             import traceback
@@ -90,10 +80,9 @@ class EmailCampaignService:
 
             logger.info(f"Campaign {campaign_id} email sending completed: {sent_count} sent, {failed_count} failed")
 
-            # Schedule delivery status update if emails were sent
-            if sent_count > 0:
-                EmailCampaignService._schedule_delivery_status_update(campaign.pk)
-
+            # NOTE: Delivery status updates are skipped because Celery is disabled.
+            # In a real production environment, we would schedule a check here.
+            
             return {
                 "success": True,
                 "sent_count": sent_count,
@@ -130,16 +119,13 @@ class EmailCampaignService:
             template_content = campaign.template.content if campaign.template else "Default email content"
             subject = campaign.template.subject if campaign.template else campaign.name
 
-            logger.info(f"Email subject: {subject}")
-            logger.info(f"Template content length: {len(template_content)}")
-
             # Replace template variables
             email_content = EmailCampaignService._process_template(
                 template_content,
                 customer,
                 recipient.policy,
                 campaign,
-                recipient  # Pass recipient for tracking
+                recipient
             )
 
             tracked_content = EmailCampaignService._add_email_tracking(email_content, recipient, campaign)
@@ -157,25 +143,26 @@ class EmailCampaignService:
 
             logger.info(f"Attempting to send email to {customer.email} using SendGrid")
 
-            # Use SendGrid via EmailProviderService
+            # Use EmailProviderService
             email_service = EmailProviderService()
             
-            # Get the communication provider from campaign or use default
-            provider = None
-            if campaign.communication_provider:
-                provider = campaign.communication_provider
-                logger.info(f"Using campaign-specific provider: {provider.name}")
-            else:
-                # Get the best available provider (SendGrid with highest priority)
-                provider = email_service.get_available_provider()
-                if provider:
-                    logger.info(f"Using available provider: {provider.name}")
-                else:
-                    logger.warning("No available email providers found, falling back to Django email")
+            # Check specific provider first
+            provider = getattr(campaign, 'email_provider', None)
+            
+            if not provider:
+                # Auto-select the Default (SendGrid) if the user didn't pick one
+                from apps.email_provider.models import EmailProviderConfig
+                provider = EmailProviderConfig.objects.filter(is_default=True, is_active=True).first()
+            
+            if not provider:
+                logger.error("❌ CRITICAL: No Email Provider found. Cannot send.")
+                recipient.email_status = 'failed'
+                recipient.email_error_message = "No active default email provider configured."
+                recipient.save()
+                return False
 
             # Send email using SendGrid if provider is available
             if provider and provider.provider_type == 'sendgrid':
-                # Prepare custom_args for SendGrid webhook tracking
                 custom_args = {
                     'campaign_id': str(campaign.id),
                     'recipient_id': str(recipient.id),
@@ -196,15 +183,14 @@ class EmailCampaignService:
                 if result['success']:
                     logger.info(f"SendGrid email sent successfully to {customer.email}")
                     current_time = timezone.now()
-                    recipient.email_status = 'sent'  # Changed to 'sent' - will be updated to 'delivered' by webhook
+                    recipient.email_status = 'sent'  
                     recipient.email_sent_at = current_time
-                    recipient.provider_message_id = result.get('message_id')  # Store SendGrid message ID
+                    recipient.provider_message_id = result.get('message_id')
                     recipient.save()
                     
                     # Update campaign statistics immediately
                     campaign.update_campaign_statistics()
                     
-                    logger.info(f"Email sent successfully to {customer.email}, message_id: {result.get('message_id')}")
                     return True
                 else:
                     error_msg = result.get('error', 'Unknown SendGrid error')
@@ -236,7 +222,6 @@ class EmailCampaignService:
 
             logger.info(f"Using Django email fallback for {customer.email}")
 
-            # Create email message with HTML content
             msg = EmailMultiAlternatives(
                 subject=subject,
                 body=plain_text,  
@@ -246,13 +231,11 @@ class EmailCampaignService:
 
             msg.attach_alternative(tracked_content, "text/html")
 
-            # Send email with detailed error handling
             try:
                 msg.send(fail_silently=False)
                 logger.info(f"Django email sent successfully to {customer.email}")
             except Exception as send_error:
                 logger.error(f"Django email send failed to {customer.email}: {str(send_error)}")
-                logger.error(f"Django email send traceback: {traceback.format_exc()}")
                 raise send_error
 
             current_time = timezone.now()
@@ -261,10 +244,8 @@ class EmailCampaignService:
             recipient.email_delivered_at = current_time  
             recipient.save()
 
-            # Update campaign statistics immediately
             campaign.update_campaign_statistics()
 
-            logger.info(f"Django email sent and delivered successfully to {customer.email}")
             return True
 
         except Exception as e:
@@ -276,13 +257,9 @@ class EmailCampaignService:
     
     @staticmethod
     def _process_template(template_content, customer, policy, campaign, recipient=None):
-        """
-        Process template with customer and policy data
-        """
         try:
             from django.template import Template, Context
 
-            # Create template context
             context_data = {
                 'customer_name': f"{customer.first_name} {customer.last_name}",
                 'customer_email': customer.email,
@@ -293,7 +270,6 @@ class EmailCampaignService:
                 'phone': customer.phone,
             }
 
-            # Add customer address data
             context_data.update({
                 'address': getattr(customer, 'address', ''),
                 'city': getattr(customer, 'city', ''),
@@ -301,7 +277,6 @@ class EmailCampaignService:
                 'postal_code': getattr(customer, 'postal_code', ''),
             })
 
-            # Add policy data if available
             if policy:
                 context_data.update({
                     'policy_number': policy.policy_number,
@@ -313,7 +288,6 @@ class EmailCampaignService:
                     'renewal_link': f"http://localhost:8000/renew/{policy.policy_number}/"
                 })
 
-            # Process template using Django template engine
             template = Template(template_content)
             context = Context(context_data)
             processed_content = template.render(context)
@@ -322,34 +296,15 @@ class EmailCampaignService:
 
         except Exception as e:
             logger.error(f"Error processing template: {str(e)}")
-            processed_content = template_content
-            context_data = {
-                'customer_name': f"{customer.first_name} {customer.last_name}",
-                'customer_email': customer.email,
-                'customer_phone': customer.phone,
-                'company_name': 'Your Insurance Company',
-                'campaign_name': campaign.name,
-            }
-
-            for key, value in context_data.items():
-                processed_content = processed_content.replace(f'{{{{{key}}}}}', str(value))
-
-            return processed_content
+            return template_content
 
     @staticmethod
     def _add_email_tracking(email_content, recipient, campaign):
-        """
-        Prepare email content for SendGrid webhook tracking
-        No pixel tracking - using SendGrid webhooks instead
-        """
         try:
-            # Ensure recipient has tracking ID
             if not recipient.tracking_id:
                 recipient.save()
 
-            # Ensure content is HTML format
             if not ('<html>' in email_content.lower() or '<body>' in email_content.lower()):
-                # Convert plain text to HTML
                 html_content = email_content.replace('\n', '<br>\n')
                 email_content = f'''<!DOCTYPE html>
 <html>
@@ -362,156 +317,9 @@ class EmailCampaignService:
     {html_content}
 </body>
 </html>'''
-
-            # No pixel tracking - SendGrid will track opens via webhooks
-            # No link wrapping - SendGrid will track clicks via webhooks
             
-            logger.info(f"Prepared email for recipient {recipient.id}, campaign {campaign.id} (SendGrid webhook tracking)")
-
             return email_content
 
         except Exception as e:
             logger.error(f"Error preparing email content: {str(e)}")
             return email_content
-
-    @staticmethod
-    def create_campaign_recipients(campaign, target_audience_type, file_upload=None):
-        """
-        Create campaign recipients based on target audience
-        """
-        try:
-            recipients_created = 0
-            
-            if target_audience_type == 'all_customers':
-                # Get all customers
-                customers = Customer.objects.all()
-                
-                for customer in customers:
-                    # Get customer's latest policy (if any)
-                    latest_policy = Policy.objects.filter(
-                        customer=customer
-                    ).order_by('-created_at').first()
-                    
-                    # Create recipient
-                    recipient, created = CampaignRecipient.objects.get_or_create(
-                        campaign=campaign,
-                        customer=customer,
-                        defaults={
-                            'policy': latest_policy,
-                            'email_status': 'pending'
-                        }
-                    )
-                    
-                    if created:
-                        recipients_created += 1
-            
-            elif target_audience_type == 'expired_policies':
-                # Get customers with expired policies
-                expired_policies = Policy.objects.filter(
-                    end_date__lt=timezone.now().date(),
-                    renewal_status='pending'
-                )
-                
-                for policy in expired_policies:
-                    recipient, created = CampaignRecipient.objects.get_or_create(
-                        campaign=campaign,
-                        customer=policy.customer,
-                        defaults={
-                            'policy': policy,
-                            'email_status': 'pending'
-                        }
-                    )
-                    
-                    if created:
-                        recipients_created += 1
-            
-            elif target_audience_type == 'file_customers' and file_upload:
-                pass
-            
-            return recipients_created
-            
-        except Exception as e:
-            logger.error(f"Error creating campaign recipients: {str(e)}")
-            return 0
-
-    @staticmethod
-    def _schedule_delivery_status_update(campaign_id):
-        """
-        Schedule delivery status update for sent emails
-        """
-        try:
-           
-            update_delivery_status_task.apply_async(
-                args=[campaign_id],
-                countdown=120 
-            )
-
-        except Exception as e:
-            logger.error(f"Error scheduling delivery status update: {str(e)}")
-
-    @staticmethod
-    def update_delivery_status(campaign_id):
-        """
-        Update delivery status for sent emails (simulates real email delivery tracking)
-        """
-        try:
-            from .models import Campaign, CampaignRecipient
-            import random
-
-            campaign = Campaign.objects.get(id=campaign_id)
-            sent_recipients = CampaignRecipient.objects.filter(
-                campaign=campaign,
-                email_status='sent'
-            )
-
-            delivered_count = 0
-            bounced_count = 0
-
-            for recipient in sent_recipients:
-                if random.random() < 0.9:  
-                    recipient.mark_delivered('email')
-                    delivered_count += 1
-                else:
-                    recipient.email_status = 'bounced'
-                    recipient.save()
-                    bounced_count += 1
-
-            # Update campaign statistics
-            campaign.update_campaign_statistics()
-
-            logger.info(f"Updated delivery status for campaign {campaign_id}: {delivered_count} delivered, {bounced_count} bounced")
-
-            return {
-                "delivered_count": delivered_count,
-                "bounced_count": bounced_count
-            }
-
-        except Exception as e:
-            logger.error(f"Error updating delivery status: {str(e)}")
-            return {"error": str(e)}
-
-
-@shared_task(bind=True, max_retries=3)
-def send_campaign_emails_async(self, campaign_id):
-    """
-    Async task to send campaign emails
-    """
-    try:
-        result = EmailCampaignService.send_campaign_emails(campaign_id)
-        return result
-    except Exception as e:
-        logger.error(f"Error in async email sending: {str(e)}")
-        raise self.retry(countdown=60, exc=e)
-
-# Celery task for delivery status updates
-@shared_task(bind=True, max_retries=3)
-def update_delivery_status_task(self, campaign_id):
-    """
-    Async task to update email delivery status
-    """
-    try:
-        result = EmailCampaignService.update_delivery_status(campaign_id)
-        return result
-    except Exception as e:
-        logger.error(f"Error updating delivery status: {str(e)}")
-        raise self.retry(countdown=60, exc=e)

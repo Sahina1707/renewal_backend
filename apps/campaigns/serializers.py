@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.utils import timezone
+from django.utils.functional import SimpleLazyObject
 from datetime import timedelta
 from .models import Campaign, CampaignType, CampaignRecipient, CampaignScheduleInterval
 from apps.templates.models import Template
@@ -7,25 +8,64 @@ from apps.files_upload.models import FileUpload
 from apps.customers.models import Customer
 from apps.policies.models import Policy
 from apps.renewals.models import RenewalCase
+from apps.email_provider.models import EmailProviderConfig
+# FIXED: Removed task import
+# from .tasks import send_scheduled_campaign_email
+
+try:
+    from apps.sms_provider.models import SmsProvider
+except ImportError:
+    SmsProvider = None
+
+try:
+    from apps.whatsapp_provider.models import WhatsAppProvider
+except ImportError:
+    WhatsAppProvider = None
 
 class CampaignSerializer(serializers.ModelSerializer):
     simplified_status = serializers.SerializerMethodField()
+    
+    # Add provider names for display in UI
+    email_provider_name = serializers.SerializerMethodField()
+    sms_provider_name = serializers.SerializerMethodField()
+    whatsapp_provider_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Campaign
         fields = [
             'id', 'name', 'campaign_type', 'description', 'status', 'simplified_status',
-            'target_count','upload', 'delivered_count', 'sent_count', 'opened_count', 'clicked_count', 'total_responses',
-            'channels', 'target_audience', 'communication_provider', 'started_at', 'completed_at',
-            'is_recurring', 'recurrence_pattern', 'subject_line',
-            'template', 'use_personalization', 'personalization_fields',
-            'created_by', 'assigned_to','created_at', 'updated_at','delivery_rate', 'open_rate', 'click_rate', 'response_rate',
+            'target_count', 'upload', 'delivered_count', 'sent_count', 'opened_count',
+            'clicked_count', 'total_responses', 'channels', 'target_audience',
+            'email_provider', 'email_provider_name',
+            'sms_provider' if hasattr(Campaign, 'sms_provider') else None,
+            'sms_provider_name' if hasattr(Campaign, 'sms_provider') else None,
+            'whatsapp_provider' if hasattr(Campaign, 'whatsapp_provider') else None,
+            'whatsapp_provider_name' if hasattr(Campaign, 'whatsapp_provider') else None,
+            'started_at', 'completed_at', 'is_recurring', 'recurrence_pattern',
+            'subject_line', 'template', 'use_personalization', 'personalization_fields',
+            'created_by', 'assigned_to', 'created_at', 'updated_at', 'delivery_rate',
+            'open_rate', 'click_rate', 'response_rate',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'delivery_rate', 'open_rate', 'click_rate', 'response_rate', 'created_by']
+        # Filter out None values dynamically
+        fields = [f for f in fields if f is not None]
 
     def get_simplified_status(self, obj):
         """Get simplified status for frontend"""
         return obj.get_simplified_status()
+
+    def get_email_provider_name(self, obj):
+        return obj.email_provider.name if obj.email_provider else "System Default"
+
+    def get_sms_provider_name(self, obj):
+        if hasattr(obj, 'sms_provider') and obj.sms_provider:
+            return obj.sms_provider.name
+        return "System Default"
+
+    def get_whatsapp_provider_name(self, obj):
+        if hasattr(obj, 'whatsapp_provider') and obj.whatsapp_provider:
+            return obj.whatsapp_provider.name
+        return "System Default"
 
 
 class CampaignCreateSerializer(serializers.Serializer):
@@ -36,9 +76,21 @@ class CampaignCreateSerializer(serializers.Serializer):
     campaign_name = serializers.CharField(max_length=200, required=False, help_text="Campaign name (defaults to file name if not provided)")
     campaign_type_id = serializers.IntegerField(help_text="ID of campaign type (should be email type)")
     template_id = serializers.IntegerField(help_text="ID of template to use for the campaign")
-    communication_provider_id = serializers.IntegerField(
+    email_provider_id = serializers.IntegerField(
         required=False,
-        help_text="ID of email provider to use for this campaign"
+        allow_null=True,
+        help_text="ID of specific Email provider. Leave null for default."
+    )
+    sms_provider_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text="ID of specific SMS provider. Leave null for default."
+    )
+
+    whatsapp_provider_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text="ID of specific WhatsApp provider. Leave null for default."
     )
 
     # Target audience options
@@ -115,7 +167,6 @@ class CampaignCreateSerializer(serializers.Serializer):
         """Validate that template exists and is email template"""
         try:
             template = Template.objects.get(id=value)
-            print(f"Template found: ID={template.id}, Name={template.name}, Channel={template.channel}, Active={template.is_active}")
             if template.channel is not None and template.channel != 'email':
                 raise serializers.ValidationError(f"Template must be an email template. Found channel: {template.channel}")
             if not template.is_active:
@@ -135,18 +186,39 @@ class CampaignCreateSerializer(serializers.Serializer):
         except TargetAudience.DoesNotExist:
             raise serializers.ValidationError("Target audience not found")
 
-    def validate_communication_provider_id(self, value):
+    def validate_email_provider_id(self, value):
         """Validate that the communication provider exists and is active"""
         if value is None:
             return value
         try:
-            from apps.email_provider.models import EmailProviderConfig
             provider = EmailProviderConfig.objects.get(id=value, is_deleted=False)
             if not provider.is_active:
-                raise serializers.ValidationError("Communication provider must be active")
+                raise serializers.ValidationError("Selected Email provider is not active")
             return value
         except EmailProviderConfig.DoesNotExist:
-            raise serializers.ValidationError("Communication provider not found")
+            raise serializers.ValidationError("Email provider not found")
+
+    def validate_sms_provider_id(self, value):
+        """Validate that the SMS provider exists and is active"""
+        if not value:
+            return value
+        try:
+            provider = SmsProvider.objects.get(id=value, is_deleted=False)
+            if not provider.is_active:
+                raise serializers.ValidationError("Selected SMS provider is not active")
+            return value
+        except (ImportError, SmsProvider.DoesNotExist):
+            raise serializers.ValidationError("SMS provider not found or app not installed")
+
+    def validate_whatsapp_provider_id(self, value):
+        if not value: return None
+        try:
+            provider = WhatsAppProvider.objects.get(id=value, is_deleted=False)
+            if not provider.is_active:
+                raise serializers.ValidationError("Selected WhatsApp provider is not active")
+            return value
+        except (ImportError, WhatsAppProvider.DoesNotExist):
+            raise serializers.ValidationError("WhatsApp provider not found or app not installed")
 
     def validate(self, data):
         """Validate the entire serializer data"""
@@ -179,7 +251,6 @@ class CampaignCreateSerializer(serializers.Serializer):
         valid_conditions = ['no_response', 'no_action', 'no_engagement', 'always']
         
         for i, interval in enumerate(value):
-            # Validate required fields
             if 'channel' not in interval:
                 raise serializers.ValidationError(f"Interval {i+1}: 'channel' is required")
             if 'delay_value' not in interval:
@@ -187,15 +258,12 @@ class CampaignCreateSerializer(serializers.Serializer):
             if 'delay_unit' not in interval:
                 raise serializers.ValidationError(f"Interval {i+1}: 'delay_unit' is required")
             
-            # Validate channel
             if interval['channel'] not in valid_channels:
                 raise serializers.ValidationError(f"Interval {i+1}: Invalid channel '{interval['channel']}'. Must be one of {valid_channels}")
             
-            # Validate delay unit
             if interval['delay_unit'] not in valid_units:
                 raise serializers.ValidationError(f"Interval {i+1}: Invalid delay_unit '{interval['delay_unit']}'. Must be one of {valid_units}")
             
-            # Validate delay value
             try:
                 delay_value = int(interval['delay_value'])
                 if delay_value <= 0:
@@ -203,27 +271,12 @@ class CampaignCreateSerializer(serializers.Serializer):
             except (ValueError, TypeError):
                 raise serializers.ValidationError(f"Interval {i+1}: delay_value must be a positive integer")
             
-            # Validate trigger conditions if provided
             if 'trigger_conditions' in interval:
                 for condition in interval['trigger_conditions']:
                     if condition not in valid_conditions:
                         raise serializers.ValidationError(f"Interval {i+1}: Invalid trigger condition '{condition}'. Must be one of {valid_conditions}")
         
         return value
-
-    def validate(self, data):
-        """Cross-field validation"""
-        if data.get('schedule_type') == 'scheduled' and not data.get('scheduled_at'):
-            raise serializers.ValidationError("scheduled_at is required when schedule_type is 'scheduled'")
-
-        if data.get('scheduled_at') and data.get('scheduled_at') <= timezone.now():
-            raise serializers.ValidationError("scheduled_at must be in the future")
-        
-        # Validate advanced scheduling
-        if data.get('enable_advanced_scheduling') and not data.get('schedule_intervals'):
-            raise serializers.ValidationError("schedule_intervals is required when enable_advanced_scheduling is True")
-
-        return data
 
     def create(self, validated_data):
         """Create campaign and recipients based on target audience"""
@@ -245,10 +298,22 @@ class CampaignCreateSerializer(serializers.Serializer):
             target_audience = TargetAudience.objects.get(id=validated_data['target_audience_id'])
 
         # Handle communication provider
-        communication_provider = None
-        if validated_data.get('communication_provider_id'):
-            from apps.email_provider.models import EmailProviderConfig
-            communication_provider = EmailProviderConfig.objects.get(id=validated_data['communication_provider_id'])
+        email_provider = None
+        if validated_data.get('email_provider_id'):
+            email_provider = EmailProviderConfig.objects.get(id=validated_data['email_provider_id'])
+
+        sms_provider = None
+        if validated_data.get('sms_provider_id'):
+            try:
+                sms_provider = SmsProvider.objects.get(id=validated_data['sms_provider_id'])
+            except (ImportError, SmsProvider.DoesNotExist):
+                pass 
+
+        whatsapp_provider = None
+        if validated_data.get('whatsapp_provider_id'):
+            try:
+                whatsapp_provider = WhatsAppProvider.objects.get(id=validated_data['whatsapp_provider_id'])
+            except (ImportError, WhatsAppProvider.DoesNotExist): pass
 
         # Determine campaign status based on schedule type
         schedule_type = validated_data.get('schedule_type', 'immediate')
@@ -270,7 +335,9 @@ class CampaignCreateSerializer(serializers.Serializer):
             'status': campaign_status,
             'upload': file_upload,
             'target_audience': target_audience,
-            'communication_provider': communication_provider,
+            'email_provider': email_provider,
+            'sms_provider': sms_provider,
+            'whatsapp_provider': whatsapp_provider,
             'channels': ['email'],
             'schedule_type': schedule_type,
             'scheduled_at': scheduled_at,
@@ -278,9 +345,15 @@ class CampaignCreateSerializer(serializers.Serializer):
             'subject_line': validated_data.get('subject_line', template.subject),
             'enable_advanced_scheduling': validated_data.get('enable_advanced_scheduling', False),
             'advanced_scheduling_config': validated_data.get('schedule_intervals', []),
-            'created_by': self.context['request'].user,
+            'created_by': self.context['request'].user if 'request' in self.context else SimpleLazyObject(lambda: get_user_model().objects.first()),
             'assigned_to': self._get_assigned_agent()
         }
+
+        # Remove keys that might not exist in model if apps aren't installed
+        if not hasattr(Campaign, 'sms_provider'):
+            campaign_data.pop('sms_provider', None)
+        if not hasattr(Campaign, 'whatsapp_provider'):
+            campaign_data.pop('whatsapp_provider', None)
 
         campaign = Campaign.objects.create(**campaign_data)
 
@@ -344,30 +417,12 @@ class CampaignCreateSerializer(serializers.Serializer):
             campaign.save()
             
         elif schedule_type == 'scheduled' and scheduled_at:
-            # Schedule campaign for later - Celery will handle the sending
-            try:
-                from .tasks import send_scheduled_campaign_email
-                import logging
-                
-                logger = logging.getLogger(__name__)
-                logger.info(f"Scheduling campaign {campaign.pk} for {scheduled_at}")
-                
-                # Schedule the email sending task
-                send_scheduled_campaign_email.apply_async(
-                    args=[campaign.pk],
-                    eta=scheduled_at
-                )
-                
-                campaign.description += f" [Scheduled for {scheduled_at}]"
-                logger.info(f"Campaign {campaign.pk} scheduled successfully for {scheduled_at}")
-                
-            except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"Exception scheduling campaign: {str(e)}")
-                campaign.status = 'draft'
-                campaign.description += f" [Scheduling Error: {str(e)}]"
-                campaign.save()
+            # FIXED: Removed Celery scheduling
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Campaign {campaign.pk} saved as scheduled for {scheduled_at}. Background task scheduling is currently disabled.")
+            campaign.description += f" [Scheduled for {scheduled_at} (Task not queued)]"
+            campaign.save()
 
         return campaign
 
@@ -382,18 +437,14 @@ class CampaignCreateSerializer(serializers.Serializer):
         }
 
         audience_name = audience_name_map.get(target_audience_type, f"Custom Audience - {file_upload.original_filename}")
-
-        # Create unique key to avoid conflicts
         unique_key = f"{target_audience_type}_{file_upload.id}_{file_upload.created_at.strftime('%Y%m%d')}"
 
-        # Try to get existing target audience first
         try:
             target_audience = TargetAudience.objects.get(key=unique_key)
             return target_audience
         except TargetAudience.DoesNotExist:
             pass
 
-        # Create new target audience
         try:
             target_audience = TargetAudience.objects.create(
                 key=unique_key,
@@ -402,7 +453,6 @@ class CampaignCreateSerializer(serializers.Serializer):
             )
             return target_audience
         except Exception as e:
-            # If creation fails, try to get by name as fallback
             target_audience, created = TargetAudience.objects.get_or_create(
                 name=audience_name,
                 defaults={
@@ -413,7 +463,6 @@ class CampaignCreateSerializer(serializers.Serializer):
             return target_audience
 
     def _get_assigned_agent(self):
-        """Auto-assign agent based on workload or round-robin"""
         from django.contrib.auth import get_user_model
         from django.db.models import Count
 
@@ -429,25 +478,21 @@ class CampaignCreateSerializer(serializers.Serializer):
         return available_agents.first() if available_agents.exists() else None
 
     def _create_campaign_recipients(self, campaign, target_audience_type, file_upload):
-        """Create campaign recipients based on target audience type - OPTIMIZED VERSION"""
         from django.db import transaction
         import logging
 
         logger = logging.getLogger(__name__)
         recipients_created = 0
 
-        # Check if recipients already exist for this campaign
         existing_recipients = CampaignRecipient.objects.filter(campaign=campaign).count()
         if existing_recipients > 0:
             logger.warning(f"Campaign {campaign.id} already has {existing_recipients} recipients. Skipping recipient creation.")
             return existing_recipients
 
-        # Use atomic transaction for better performance
         with transaction.atomic():
             recipients_to_create = []
 
             if target_audience_type == 'pending_renewals':
-                # Date-based pending renewals: policies where renewal date has arrived but not yet expired
                 from datetime import date
                 today = date.today()
                 
@@ -468,15 +513,11 @@ class CampaignCreateSerializer(serializers.Serializer):
                         created_at__range=(time_window_start, time_window_end)
                     )
 
-                    # If we found policies in the time window, use them
                     if file_related_policies.exists():
                         policies = file_related_policies
                     else:
                         policies = policies.order_by('-created_at')[:file_upload.successful_records]
 
-                logger.info(f"Found {policies.count()} policies with pending renewals for campaign {campaign.id if campaign else 'test'}")
-
-                # Prepare bulk recipients
                 for policy in policies:
                     recipients_to_create.append(
                         CampaignRecipient(
@@ -490,7 +531,6 @@ class CampaignCreateSerializer(serializers.Serializer):
                     )
 
             elif target_audience_type == 'expired_policies':
-                # Date-based expired policies: policies where end date has passed
                 from datetime import date
                 today = date.today()
                 
@@ -501,7 +541,6 @@ class CampaignCreateSerializer(serializers.Serializer):
                     customer__email__gt=''
                 ).select_related('customer')
 
-                # If we have a file upload, try to match policies from that upload
                 if file_upload:
                     upload_time = file_upload.created_at
                     time_window_start = upload_time - timedelta(hours=1)
@@ -511,15 +550,11 @@ class CampaignCreateSerializer(serializers.Serializer):
                         created_at__range=(time_window_start, time_window_end)
                     )
 
-                    # If we found policies in the time window, use them
                     if file_related_policies.exists():
                         expired_policies = file_related_policies
                     else:
                         expired_policies = expired_policies.order_by('-created_at')[:file_upload.successful_records]
 
-                logger.info(f"Found {expired_policies.count()} expired policies for campaign {campaign.id if campaign else 'test'}")
-
-                # Prepare bulk recipients
                 for policy in expired_policies:
                     recipients_to_create.append(
                         CampaignRecipient(
@@ -533,7 +568,6 @@ class CampaignCreateSerializer(serializers.Serializer):
                     )
 
             elif target_audience_type == 'all_customers':
-                # Get customers from file upload - IMPROVED LOGIC
                 customers = Customer.objects.filter(
                     is_deleted=False,
                     email__isnull=False,
@@ -541,10 +575,8 @@ class CampaignCreateSerializer(serializers.Serializer):
                 )
 
                 if file_upload:
-                    # For file uploads, use the successful_records count as target
                     target_count = file_upload.successful_records if file_upload.successful_records > 0 else customers.count()
                     
-                    # Try to find customers created around the file upload time first
                     upload_time = file_upload.created_at
                     time_window_start = upload_time - timedelta(hours=2)
                     time_window_end = upload_time + timedelta(hours=2)
@@ -553,23 +585,12 @@ class CampaignCreateSerializer(serializers.Serializer):
                         created_at__range=(time_window_start, time_window_end)
                     )
 
-                    # If we found customers in the time window, use them (up to target count)
                     if file_related_customers.exists():
                         customers = file_related_customers.order_by('-created_at')[:target_count]
-                        logger.info(f"Found {customers.count()} customers from file upload time window")
                     else:
-                        # Fallback: use most recent customers up to target count
                         customers = customers.order_by('-created_at')[:target_count]
-                        logger.info(f"Using {customers.count()} most recent customers (target: {target_count})")
                 else:
-                    # No file upload, get all customers
                     logger.info(f"No file upload specified, using all customers")
-
-                logger.info(f"Total customers selected for campaign {campaign.id if campaign else 'test'}: {customers.count()}")
-                
-                # Debug: Log customer details
-                for customer in customers[:3]:  # Log first 3 customers for debugging
-                    logger.info(f"Selected customer: {customer.email} (ID: {customer.pk}, Created: {customer.created_at})")
 
                 customer_ids = list(customers.values_list('id', flat=True))
 
@@ -600,8 +621,6 @@ class CampaignCreateSerializer(serializers.Serializer):
                     )
 
             if recipients_to_create:
-                logger.info(f"Creating {len(recipients_to_create)} campaign recipients for campaign {campaign.id if campaign else 'test'}")
-                recipients_created = 0
                 try:
                     recipients_to_create.sort(
                         key=lambda r: (
@@ -632,12 +651,11 @@ class CampaignCreateSerializer(serializers.Serializer):
                             policy=recipient_data.policy,
                             email_status=recipient_data.email_status,
                             whatsapp_status=recipient_data.whatsapp_status,
-                            sms_status=recipient_data.sms_status,
+                            sms_status=recipient_data.sms_status, # type: ignore
                             tracking_id=tracking_id,
                             created_by=self.context['request'].user
                         )
                         recipients_created += 1
-                        logger.debug(f"Created recipient for customer {recipient_data.customer.email}")
 
                         self._add_email_tracking(recipient)
 
@@ -645,7 +663,6 @@ class CampaignCreateSerializer(serializers.Serializer):
                         logger.warning(f"Failed to create recipient for customer {recipient_data.customer.id}: {str(e)}")
                         continue
 
-        logger.info(f"Successfully created {recipients_created} recipients for campaign {campaign.id if campaign else 'test'}")
         return recipients_created
 
     def _add_email_tracking(self, recipient):
@@ -655,14 +672,9 @@ class CampaignCreateSerializer(serializers.Serializer):
 
         try:
             from django.conf import settings
-
             base_url = getattr(settings, 'BASE_URL', 'http://localhost:8000')
-
             tracking_pixel_url = f"{base_url}/api/campaigns/track-open/?t={recipient.tracking_id}"
-
             tracking_pixel = f'<img src="{tracking_pixel_url}" width="1" height="1" style="display:none;" alt="" />'
-
-            logger.debug(f"Added tracking pixel for recipient {recipient.id}: {tracking_pixel_url}")
 
         except Exception as e:
             logger.warning(f"Failed to add email tracking for recipient {recipient.id}: {str(e)}")
@@ -677,23 +689,10 @@ class CampaignCreateSerializer(serializers.Serializer):
         created_intervals = []
         
         for i, interval_data in enumerate(schedule_intervals, 1):
-            # Get template if provided
-            template = None
             if interval_data.get('template_id'):
                 try:
                     template = Template.objects.get(id=interval_data['template_id'])
                 except Template.DoesNotExist:
-                    pass  
-            
-            provider = None
-            if interval_data.get('communication_provider_id'):
-                try:
-                    provider = EmailProviderConfig.objects.get(
-                        id=interval_data['communication_provider_id'],
-                        is_deleted=False,
-                        is_active=True
-                    )
-                except EmailProviderConfig.DoesNotExist:
                     pass  
             
             base_time = campaign.scheduled_at or campaign.started_at or timezone.now()
@@ -703,11 +702,9 @@ class CampaignCreateSerializer(serializers.Serializer):
                 interval_data['delay_unit']
             )
             
-            # Create the schedule interval
             schedule_interval = CampaignScheduleInterval.objects.create(
                 campaign=campaign,
                 template=template,
-                communication_provider=provider,
                 sequence_order=i,
                 channel=interval_data['channel'],
                 delay_value=interval_data['delay_value'],
@@ -715,7 +712,7 @@ class CampaignCreateSerializer(serializers.Serializer):
                 trigger_conditions=interval_data.get('trigger_conditions', ['always']),
                 is_active=interval_data.get('is_active', True),
                 scheduled_at=scheduled_time,
-                created_by=self.context['request'].user
+                created_by=self.context['request'].user if 'request' in self.context else SimpleLazyObject(lambda: get_user_model().objects.first())
             )
             
             created_intervals.append(schedule_interval)
@@ -741,23 +738,24 @@ class CampaignScheduleIntervalSerializer(serializers.ModelSerializer):
     
     campaign_name = serializers.CharField(source='campaign.name', read_only=True)
     template_name = serializers.CharField(source='template.name', read_only=True)
-    provider_name = serializers.CharField(source='communication_provider.name', read_only=True)
     channel_display = serializers.CharField(source='get_channel_display', read_only=True)
     delay_description = serializers.CharField(source='get_delay_description', read_only=True)
     created_by_name = serializers.CharField(source='created_by.full_name', read_only=True)
     
+    # FIXED: Removed provider_name
+    
     class Meta:
         model = CampaignScheduleInterval
-        fields = [
+        fields = [ 
             'id', 'campaign', 'campaign_name', 'template', 'template_name',
-            'communication_provider', 'provider_name', 'sequence_order',
+            'sequence_order',
             'channel', 'channel_display', 'delay_value', 'delay_unit',
             'delay_description', 'trigger_conditions', 'is_active', 'is_sent',
             'scheduled_at', 'sent_at', 'created_by', 'created_by_name', 
             'created_at', 'updated_at'
         ]
         read_only_fields = [
-            'id', 'campaign_name', 'template_name', 'provider_name',
+            'id', 'campaign_name', 'template_name', 
             'channel_display', 'delay_description', 'created_by_name',
             'is_sent', 'sent_at', 'created_at', 'updated_at'
         ]
@@ -768,31 +766,22 @@ class CampaignScheduleIntervalCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CampaignScheduleInterval
         fields = [
-            'campaign', 'template', 'communication_provider', 'sequence_order',
+            'campaign', 'template', 'sequence_order', 
             'channel', 'delay_value', 'delay_unit', 'trigger_conditions',
             'is_active', 'scheduled_at'
         ]
     
     def validate_campaign(self, value):
-        """Validate that the campaign exists and is not deleted"""
         if value.is_deleted:
             raise serializers.ValidationError("Cannot create interval for deleted campaign")
         return value
     
     def validate_template(self, value):
-        """Validate that the template exists and is active"""
         if value and not value.is_active:
             raise serializers.ValidationError("Cannot use inactive template")
         return value
     
-    def validate_communication_provider(self, value):
-        """Validate that the communication provider exists and is active"""
-        if value and (value.is_deleted or not value.is_active):
-            raise serializers.ValidationError("Communication provider must be active and not deleted")
-        return value
-    
     def validate_sequence_order(self, value):
-        """Validate sequence order is unique for the campaign"""
         campaign = self.initial_data.get('campaign')
         if campaign and value:
             existing = CampaignScheduleInterval.objects.filter(
@@ -808,7 +797,6 @@ class CampaignScheduleIntervalCreateSerializer(serializers.ModelSerializer):
         return value
     
     def validate_trigger_conditions(self, value):
-        """Validate trigger conditions"""
         if not isinstance(value, list):
             raise serializers.ValidationError("Trigger conditions must be a list")
         
@@ -821,8 +809,7 @@ class CampaignScheduleIntervalCreateSerializer(serializers.ModelSerializer):
         return value
     
     def create(self, validated_data):
-        """Create schedule interval with proper relationships"""
-        validated_data['created_by'] = self.context['request'].user
+        validated_data['created_by'] = self.context['request'].user if 'request' in self.context else SimpleLazyObject(lambda: get_user_model().objects.first())
         return super().create(validated_data)
 
 
@@ -831,25 +818,17 @@ class CampaignScheduleIntervalUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CampaignScheduleInterval
         fields = [
-            'template', 'communication_provider', 'sequence_order',
+            'template', 'sequence_order', 
             'channel', 'delay_value', 'delay_unit', 'trigger_conditions',
             'is_active', 'scheduled_at'
         ]
     
     def validate_template(self, value):
-        """Validate that the template exists and is active"""
         if value and not value.is_active:
             raise serializers.ValidationError("Cannot use inactive template")
         return value
     
-    def validate_communication_provider(self, value):
-        """Validate that the communication provider exists and is active"""
-        if value and (value.is_deleted or not value.is_active):
-            raise serializers.ValidationError("Communication provider must be active and not deleted")
-        return value
-    
     def validate_sequence_order(self, value):
-        """Validate sequence order is unique for the campaign"""
         if self.instance and value:
             existing = CampaignScheduleInterval.objects.filter(
                 campaign=self.instance.campaign,
@@ -864,7 +843,6 @@ class CampaignScheduleIntervalUpdateSerializer(serializers.ModelSerializer):
         return value
     
     def validate_trigger_conditions(self, value):
-        """Validate trigger conditions"""
         if not isinstance(value, list):
             raise serializers.ValidationError("Trigger conditions must be a list")
         
@@ -877,6 +855,5 @@ class CampaignScheduleIntervalUpdateSerializer(serializers.ModelSerializer):
         return value
     
     def update(self, instance, validated_data):
-        """Update schedule interval with proper relationships"""
-        validated_data['updated_by'] = self.context['request'].user
+        validated_data['updated_by'] = self.context['request'].user if 'request' in self.context else SimpleLazyObject(lambda: get_user_model().objects.first())
         return super().update(instance, validated_data)

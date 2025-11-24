@@ -5,6 +5,8 @@ from apps.templates.models import Template
 from django.utils import timezone
 from apps.whatsapp_provider.services import WhatsAppService, WhatsAppAPIError
 from apps.whatsapp_provider.models import WhatsAppMessageTemplate, WhatsAppProvider
+from apps.email_provider.services import EmailProviderService
+from apps.email_provider.models import EmailProviderConfig
 from apps.sms_provider.services import SmsService, SmsApiException
 import logging
 
@@ -162,6 +164,52 @@ class CampaignSerializer(serializers.ModelSerializer):
                     error_msg = "Contact has no phone number."
                 else:
                     error_msg = "Service or Template not initialized."
+
+            # --- [START] FIX FOR EMAIL ---
+            elif first_step.channel == 'email' and campaign.enable_email:
+                if contact.email:
+                    print(f"--- SYNCHRONOUS: Sending Email to {contact.email}... ---")
+                    
+                    # 1. Get Provider
+                    # First, check if the campaign has a specific provider selected
+                    provider = getattr(campaign, 'email_provider', None)
+                    
+                    if not provider:
+                        # If not, fetch the System Default (This will be SendGrid if set correctly)
+                        provider = EmailProviderConfig.objects.filter(is_default=True, is_active=True).first()
+                        
+                        # Save this choice to the campaign for tracking
+                        if provider:
+                            print(f"✅ DEBUG: Using Default Provider: {provider.name}")
+                            campaign.email_provider = provider
+                            campaign.save(update_fields=['email_provider'])
+                    
+                    # 2. Send
+                    if provider:
+                        try:
+                            # CRITICAL: Initialize service with the specific provider config
+                            email_service = EmailProviderService(config=provider)
+                            
+                            result = email_service.send_email(
+                                to_emails=[contact.email],
+                                subject=first_step.template.subject,
+                                html_content=first_step.template.content, # Add variable replacement if needed
+                                from_email=provider.from_email
+                            )
+                            success = result.get('success', False)
+                            if success:
+                                message_id = result.get('message_id', 'sent_via_api')
+                            else:
+                                error_msg = result.get('error')
+                        except Exception as e:
+                            print(f"🔥 EMAIL ERROR: {e}")
+                            error_msg = str(e)
+                    else:
+                        print("❌ ERROR: No Default Provider found in Database!")
+                        error_msg = "No Email Provider Configured"
+                else:
+                    error_msg = "Contact has no email"
+            # --- [END] FIX FOR EMAIL ---
 
             # --- 2. NEW SMS LOGIC (With Variable Replacement) ---
             elif first_step.channel == 'sms' and campaign.enable_sms:

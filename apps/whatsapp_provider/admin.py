@@ -1,6 +1,3 @@
-#
-# admin.py
-#
 from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
@@ -19,69 +16,28 @@ from .models import (
 
 @admin.register(WhatsAppProvider)
 class WhatsAppProviderAdmin(admin.ModelAdmin):
-    list_display = [
-        'name', 'provider_type', 'status', 'is_default', 'is_active', 
-        'messages_sent_today', 'health_status', 'created_at'
-    ]
-    list_filter = [
-        'provider_type', 'status', 'is_default', 'is_active', 'health_status',
-        'enable_auto_reply', 'use_knowledge_base', 'created_at'
-    ]
-    search_fields = ['name', 'provider_type', 'business_name']
-    readonly_fields = [
-        'messages_sent_today', 'messages_sent_this_month',
-        'last_reset_daily', 'last_reset_monthly', 'created_at', 'updated_at'
-    ]
+    list_display = ['name', 'provider_type', 'status', 'is_active', 'created_at']
+    list_filter = ['provider_type', 'status', 'is_active']
     
     fieldsets = (
-        ('Provider Information', {
-            'fields': ('name', 'provider_type')
+        ('General Info', {
+            'fields': ('name', 'provider_type', 'status', 'is_default', 'is_active')
         }),
-        ('Credentials (Warning: Edit via API/UI)', {
-            'fields': ('credentials',),
+        ('Credentials', {
+            'fields': ('access_token', 'account_id', 'phone_number_id', 'app_id'),
+            'description': 'Enter credentials corresponding to the selected provider type.'
+        }),
+        ('Advanced Config', {
+            'fields': ('api_version', 'api_url', 'webhook_verify_token'),
             'classes': ('collapse',)
         }),
         ('Business Profile', {
-            'fields': (
-                'business_name', 'business_description', 'business_email',
-                'business_vertical', 'business_address'
-            )
+            'fields': ('business_name', 'business_email', 'business_description')
         }),
-        ('Bot Configuration', {
-            'fields': (
-                'enable_auto_reply', 'use_knowledge_base', 'greeting_message',
-                'fallback_message', 'enable_business_hours', 'business_hours_start',
-                'business_hours_end', 'business_timezone'
-            )
-        }),
-        ('Status & Health', {
-            'fields': ('status', 'quality_rating', 'health_status', 'last_health_check')
-        }),
-        ('Rate Limiting', {
-            'fields': (
-                'daily_limit', 'monthly_limit', 'rate_limit_per_minute',
-                'messages_sent_today', 'messages_sent_this_month'
-            )
-        }),
-        ('Configuration', {
-            'fields': ('is_default', 'is_active', 'webhook_verify_token')
-        }),
-        ('Metadata', {
-            'fields': ('created_by', 'updated_by', 'created_at', 'updated_at', 'is_deleted'),
-            'classes': ('collapse',)
-        }),
+        ('Bot Config', {
+            'fields': ('enable_auto_reply', 'greeting_message')
+        })
     )
-    
-    def get_queryset(self, request):
-        return super().get_queryset(request).select_related('created_by', 'updated_by')
-    
-    def save_model(self, request, obj, form, change):
-        if not change:
-            obj.created_by = request.user
-        obj.updated_by = request.user
-        super().save_model(request, obj, form, change)
-
-
 @admin.register(WhatsAppPhoneNumber)
 class WhatsAppPhoneNumberAdmin(admin.ModelAdmin):
     list_display = [

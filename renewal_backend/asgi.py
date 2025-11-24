@@ -17,8 +17,11 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'renewal_backend.settings.develo
 
 django_asgi_app = get_asgi_application()
 
-# Import routing after Django is set up
-from apps.notifications.routing import websocket_urlpatterns
+# Import routing after Django is set up to avoid AppRegistryNotReady
+import apps.email_inbox.routing
+import apps.notifications.routing
+
+websocket_urlpatterns = apps.notifications.routing.websocket_urlpatterns + apps.email_inbox.routing.websocket_urlpatterns
 
 application = ProtocolTypeRouter({
     "http": django_asgi_app,

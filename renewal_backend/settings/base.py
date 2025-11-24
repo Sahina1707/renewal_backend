@@ -51,7 +51,7 @@ LOCAL_APPS = [
     'apps.policy_data',
     'apps.files_upload',
     'apps.renewals',
-    'apps.communication_provider', 
+    # 'apps.communication_provider', 
     'apps.channels',
     'apps.distribution_channel',
     'apps.hierarchy',

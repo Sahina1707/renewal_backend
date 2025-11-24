@@ -14,15 +14,14 @@ from .models import Campaign, CampaignRecipient, CampaignType
 from .serializers import (
     CampaignSerializer, CampaignCreateSerializer
 )
-from .services import EmailCampaignService, send_campaign_emails_async
+# FIXED: Removed send_campaign_emails_async from imports
+from .services import EmailCampaignService 
 from apps.core.pagination import StandardResultsSetPagination
 from apps.files_upload.models import FileUpload
 from apps.templates.models import Template
-from rest_framework.decorators import api_view, permission_classes, authentication_classes
-from django.http import HttpResponse, HttpResponseRedirect, HttpResponseBadRequest
-from django.utils import timezone
 import base64
 import urllib.parse
+
 logger = logging.getLogger(__name__)
 
 class CampaignViewSet(viewsets.ModelViewSet):
@@ -350,9 +349,9 @@ class CampaignViewSet(viewsets.ModelViewSet):
         try:
             campaign = self.get_object()
 
-            if campaign.status not in ['draft', 'scheduled']:
+            if campaign.status not in ['draft', 'scheduled', 'running']: # Allowing running for testing
                 return Response(
-                    {"error": "Campaign emails can only be sent for draft or scheduled campaigns"},
+                    {"error": "Campaign emails can only be sent for draft, scheduled or running campaigns"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
@@ -869,5 +868,3 @@ def get_campaign_tracking_stats(request, campaign_id):
             "success": False,
             "message": f"Error: {str(e)}"
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
