@@ -222,15 +222,5 @@ class EmailReplyStatusUpdateSerializer(serializers.ModelSerializer):
 class StartedReplyMailSerializer(serializers.ModelSerializer):
     class Meta:
         model = StartedReplyMail
-        fields = [
-            "id",
-            "original_email_manager",
-            "original_inbox_email",
-            "to_email",
-            "from_email",
-            "subject",
-            "message",
-            "html_message",
-            "sent_at",
-            "created_by",
-        ]
+        fields = "__all__"
+        read_only_fields = ["id", "created_by", "created_at", "updated_at"]

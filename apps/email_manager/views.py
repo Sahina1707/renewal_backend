@@ -21,6 +21,10 @@ from .ai_utils import analyze_email_sentiment_and_intent
 from django.db.models import Count, Avg, F, ExpressionWrapper, DurationField
 from .ai_utils import analyze_email_sentiment_and_intent
 from django.template import Template as DjangoTemplate, Context
+from email.utils import make_msgid
+from django.core.mail import EmailMultiAlternatives
+from django.utils import timezone
+from django.utils.html import strip_tags
 
 class EmailManagerViewSet(viewsets.ModelViewSet):
     
@@ -592,50 +596,253 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                 "message": f"Error fetching details: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
-        
+   
+
+    # @action(detail=True, methods=['post'], url_path='reply')
+    # def reply_to_started_email(self, request, pk=None):
+    #     try:
+    #         data = request.data
+
+    #         message = data.get("message")
+    #         html_message = data.get("html_message")
+    #         cc = data.get("cc")
+    #         bcc = data.get("bcc")
+    #         attachments = data.get("attachments")
+    #         priority = data.get("priority", "Normal")
+    #         track_opens = data.get("track_opens", False)
+    #         track_clicks = data.get("track_clicks", False)
+    #         schedule_send = data.get("schedule_send", False)
+    #         schedule_date_time = data.get("schedule_date_time")
+    #         template_id = data.get("template_id") or data.get("template")
+
+    #         original_email = None
+    #         inbox_email = None
+
+    #         try:
+    #             original_email = EmailManager.objects.get(id=pk, started=True, is_deleted=False)
+    #             to_email = original_email.to
+    #             subject = f"Re: {original_email.subject}"
+    #             in_reply_to = original_email.message_id
+    #         except EmailManager.DoesNotExist:
+    #             inbox_email = EmailManagerInbox.objects.get(id=pk, started=True, is_deleted=False)
+    #             to_email = inbox_email.from_email
+    #             subject = f"Re: {inbox_email.subject}"
+    #             in_reply_to = inbox_email.message_id
+    #         if template_id:
+    #             try:
+    #                 tpl = Template.objects.get(id=template_id)
+
+    #                 if tpl.subject:
+    #                     subject = tpl.subject
+
+    #                 if tpl.content:
+    #                     message = tpl.content
+    #                     html_message = tpl.content
+
+    #             except Template.DoesNotExist:
+    #                 return Response({
+    #                     "success": False,
+    #                     "message": f"Template with ID {template_id} does not exist."
+    #                 }, status=400)
+
+    #         if not message and not html_message:
+    #             return Response({
+    #                 "success": False,
+    #                 "message": "Message or HTML message is required (or provide template_id)."
+    #             }, status=400)
+
+    #         new_msg_id = make_msgid(domain="nbinteli1001.welleazy.com").strip("<>")
+
+    #         email_obj = EmailMultiAlternatives(
+    #             subject=subject,
+    #             body=message,
+    #             from_email="renewals@intelipro.in",
+    #             to=[to_email],
+    #             cc=cc.split(",") if cc else None,
+    #             bcc=bcc.split(",") if bcc else None,
+    #             headers={
+    #                 "Message-ID": new_msg_id,
+    #                 "In-Reply-To": in_reply_to,
+    #                 "References": in_reply_to,
+    #             }
+    #         )
+
+    #         if html_message:
+    #             email_obj.attach_alternative(html_message, "text/html")
+
+    #         email_obj.send()
+
+    #         reply_record = StartedReplyMail.objects.create(
+    #             original_email_manager=original_email,
+    #             original_inbox_email=inbox_email,
+    #             to_email=to_email,
+    #             from_email="renewals@intelipro.in",
+    #             cc=cc,
+    #             bcc=bcc,
+    #             subject=subject,
+    #             message=message,
+    #             html_message=html_message,
+    #             attachments=attachments,
+    #             priority=priority,
+    #             track_opens=track_opens,
+    #             track_clicks=track_clicks,
+    #             schedule_send=schedule_send,
+    #             schedule_date_time=schedule_date_time,
+    #             message_id=new_msg_id,
+    #             in_reply_to=in_reply_to,
+    #             references=in_reply_to,
+    #             template_id=template_id,
+    #             status="sent",
+    #             sent_at=timezone.now(),
+    #             created_by=request.user
+    #         )
+
+    #         return Response({
+    #             "success": True,
+    #             "message": "Reply sent successfully",
+    #             "reply_id": reply_record.id
+    #         })
+
+    #     except Exception as e:
+    #         return Response({
+    #             "success": False,
+    #             "message": str(e)
+    #         }, status=500)
+
+
     @action(detail=True, methods=['post'], url_path='reply')
     def reply_to_started_email(self, request, pk=None):
         try:
-            message = request.data.get("message")
-            html_message = request.data.get("html_message")
+            data = request.data
 
-            if not message:
-                return Response({
-                    "success": False,
-                    "message": "Message is required"
-                }, status=400)
+            template_id = data.get("template_id")
+            cc = data.get("cc")
+            bcc = data.get("bcc")
+            attachments = data.get("attachments")
+            priority = data.get("priority", "Normal")
+            track_opens = data.get("track_opens", False)
+            track_clicks = data.get("track_clicks", False)
+            schedule_send = data.get("schedule_send", False)
+            schedule_date_time = data.get("schedule_date_time")
 
+            # ----------------------------------------------------
+            # 1️⃣ Identify original email (Manager or Inbox)
+            # ----------------------------------------------------
             original_email = None
             inbox_email = None
+
             try:
                 original_email = EmailManager.objects.get(id=pk, started=True, is_deleted=False)
                 to_email = original_email.to
                 subject = f"Re: {original_email.subject}"
+                in_reply_to = original_email.message_id
             except EmailManager.DoesNotExist:
+                inbox_email = EmailManagerInbox.objects.get(id=pk, started=True, is_deleted=False)
+                to_email = inbox_email.from_email
+                subject = f"Re: {inbox_email.subject}"
+                in_reply_to = inbox_email.message_id
+
+            # ----------------------------------------------------
+            # 2️⃣ Prepare Template Rendering Context
+            # ----------------------------------------------------
+            context_data = {}
+
+            # From EmailManager (sent email)
+            if original_email:
+                context_data = {
+                    "first_name": original_email.customer_name or "",
+                    "policy_number": original_email.policy_number or "",
+                    "expiry_date": original_email.renewal_date or "",
+                    "premium_amount": original_email.premium_amount or "",
+                }
+
+            # From Inbox (received mail with related email)
+            if inbox_email and inbox_email.related_email:
+                related = inbox_email.related_email
+                context_data = {
+                    "first_name": related.customer_name or "",
+                    "policy_number": related.policy_number or "",
+                    "expiry_date": related.renewal_date or "",
+                    "premium_amount": related.premium_amount or "",
+                }
+
+            # ----------------------------------------------------
+            # 3️⃣ Template handling
+            # ----------------------------------------------------
+            message = data.get("message")
+            html_message = data.get("html_message")
+
+            if template_id:
                 try:
-                    inbox_email = EmailManagerInbox.objects.get(id=pk, started=True, is_deleted=False)
-                    to_email = inbox_email.from_email
-                    subject = f"Re: {inbox_email.subject}"
-                except EmailManagerInbox.DoesNotExist:
+                    template = Template.objects.get(id=template_id)
+
+                    # Render subject with variables
+                    if template.subject:
+                        subject_template = DjangoTemplate(template.subject)
+                        subject = subject_template.render(Context(context_data))
+
+                    # Render message with variables
+                    content_template = DjangoTemplate(template.content)
+                    rendered_message = content_template.render(Context(context_data))
+
+                    message = strip_tags(rendered_message)
+                    html_message = rendered_message
+
+                except Template.DoesNotExist:
                     return Response({
                         "success": False,
-                        "message": f"No started email found with ID {pk}"
-                    }, status=404)
+                        "message": f"Template with id {template_id} not found"
+                    }, status=400)
 
-            EmailManagerService.send_reply_smtp(
-                to_email=to_email,
+            # ----------------------------------------------------
+            # 4️⃣ Send the email
+            # ----------------------------------------------------
+            new_msg_id = make_msgid(domain="nbinteli1001.welleazy.com").strip("<>")
+
+            email_obj = EmailMultiAlternatives(
                 subject=subject,
-                message=message,
-                html_message=html_message
+                body=message,
+                from_email="renewals@intelipro.in",
+                to=[to_email],
+                cc=cc.split(",") if cc else None,
+                bcc=bcc.split(",") if bcc else None,
+                headers={
+                    "Message-ID": new_msg_id,
+                    "In-Reply-To": in_reply_to,
+                    "References": in_reply_to,
+                }
             )
 
+            if html_message:
+                email_obj.attach_alternative(html_message, "text/html")
+
+            email_obj.send()
+
+            # ----------------------------------------------------
+            # 5️⃣ Save reply record
+            # ----------------------------------------------------
             reply_record = StartedReplyMail.objects.create(
                 original_email_manager=original_email,
                 original_inbox_email=inbox_email,
                 to_email=to_email,
+                from_email="renewals@intelipro.in",
+                cc=cc,
+                bcc=bcc,
                 subject=subject,
                 message=message,
                 html_message=html_message,
+                attachments=attachments,
+                priority=priority,
+                track_opens=track_opens,
+                track_clicks=track_clicks,
+                schedule_send=schedule_send,
+                schedule_date_time=schedule_date_time,
+                message_id=new_msg_id,
+                in_reply_to=in_reply_to,
+                references=in_reply_to,
+                template_id=template_id,
+                status="sent",
+                sent_at=timezone.now(),
                 created_by=request.user
             )
 
@@ -643,13 +850,14 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                 "success": True,
                 "message": "Reply sent successfully",
                 "reply_id": reply_record.id
-            }, status=200)
+            })
 
         except Exception as e:
             return Response({
                 "success": False,
                 "message": str(e)
-            }, status=500)    
+            }, status=500)
+
 
 class EmailManagerInboxViewSet(viewsets.ModelViewSet):
     queryset = EmailManagerInbox.objects.all()
