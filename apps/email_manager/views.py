@@ -398,31 +398,24 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                 'error': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], url_path='send_scheduled')
     def send_scheduled(self, request):
-        try:
-            result = EmailManagerService.send_scheduled_emails()
-            
-            if result['success']:
-                return Response({
-                    'success': True,
-                    'message': result['message'],
-                    'sent_count': result.get('sent', 0),
-                    'failed_count': result.get('failed', 0)
-                }, status=status.HTTP_200_OK)
-            else:
-                return Response({
-                    'success': False,
-                    'message': result['message'],
-                    'error': result.get('error')
-                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-                
-        except Exception as e:
-            return Response({
-                'success': False,
-                'message': f'Error processing scheduled emails: {str(e)}',
-                'error': str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        serializer = EmailManagerCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email_obj = serializer.save(
+            email_status='scheduled'
+        )
+
+        return Response({
+            "success": True,
+            "message": "Email scheduled and saved successfully",
+            "email_id": email_obj.id,
+            "schedule_time": email_obj.schedule_date_time,
+            "email_status": email_obj.email_status
+        })
+
 
     @action(detail=False, methods=['get'])
     def sent_emails(self, request):

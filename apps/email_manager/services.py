@@ -30,10 +30,7 @@ class EmailManagerService:
         try:
             if email_manager.schedule_send and email_manager.schedule_date_time:
                 if timezone.now() < email_manager.schedule_date_time:
-                    # Do NOT return here — just skip sending
                     return {'success': False, 'message': 'Not time yet'}
-
-\
             subject = str(email_manager.subject)
             message = str(email_manager.message)
 

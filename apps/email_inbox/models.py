@@ -18,7 +18,40 @@ class EmailFolder(models.Model):
         ('archive', 'Archive'),
         ('custom', 'Custom'),
     ]
-    
+    CUSTOMER_TYPE_CHOICES = [
+        ('normal', 'Normal'),
+        ('hni', 'HNI (High Net Worth)'),
+        ('super_hni', 'Super HNI'),
+        ('vip', 'VIP'),
+    ]
+    customer_type = models.CharField(
+        max_length=20,
+        choices=CUSTOMER_TYPE_CHOICES,
+        default='normal',
+        help_text="Customer categorization for support tiers"
+    )
+
+    ESCALATION_PRIORITY_CHOICES = [
+        ('high', 'High Priority'),
+        ('urgent', 'Urgent Priority'),
+        ('critical', 'Critical Priority'),
+    ]
+    is_escalated = models.BooleanField(default=False)
+    escalation_reason = models.TextField(blank=True, null=True)
+    escalation_priority = models.CharField(
+        max_length=20,
+        choices=ESCALATION_PRIORITY_CHOICES,
+        blank=True,
+        null=True
+    )
+    escalated_at = models.DateTimeField(blank=True, null=True)
+    escalated_by = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        related_name='escalated_emails'
+    )
+    due_date = models.DateTimeField(null=True, blank=True)
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100)
     folder_type = models.CharField(max_length=20, choices=FOLDER_TYPES, default='custom')
@@ -393,3 +426,12 @@ class EmailSearchQuery(models.Model):
         self.deleted_at = timezone.now()
         self.is_active = False
         self.save(update_fields=['is_deleted', 'deleted_at', 'is_active'])
+class EmailAuditLog(models.Model):
+    email_message = models.ForeignKey(EmailInboxMessage, on_delete=models.CASCADE, related_name='audit_logs')
+    action = models.CharField(max_length=50, help_text="e.g., 'Viewed', 'Escalated', 'Category Changed'")
+    details = models.TextField(blank=True, null=True, help_text="Extra info like 'Changed from Normal to VIP'")
+    performed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-timestamp']
