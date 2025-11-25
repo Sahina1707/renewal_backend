@@ -338,3 +338,60 @@ class StartedReplyMail(BaseModel):
 
     class Meta:
         db_table = "emailmanager_startedreply_mails"
+
+class EmailManagerForwardMail(BaseModel):
+    original_inbox_email = models.ForeignKey(
+        'EmailManagerInbox',
+        on_delete=models.CASCADE,
+        related_name="forwarded_mails",
+        null=True, blank=True
+    )
+
+    forward_to = models.EmailField()
+    cc = models.TextField(null=True, blank=True)
+    bcc = models.TextField(null=True, blank=True)
+
+    from_email = models.CharField(max_length=255, default="renewals@intelipro.in")
+
+    subject = models.CharField(max_length=255)
+    message = models.TextField(null=True, blank=True)
+    html_message = models.TextField(null=True, blank=True)
+
+    attachments = models.JSONField(null=True, blank=True)
+
+    template = models.ForeignKey(
+        Template,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+    original_email_manager = models.ForeignKey(
+        EmailManager,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="forwarded_from_manager"
+    )
+
+
+    message_id = models.CharField(max_length=255, null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ("pending", "Pending"),
+            ("sent", "Sent"),
+            ("failed", "Failed"),
+        ],
+        default="pending"
+    )
+
+    error_message = models.TextField(null=True, blank=True)
+
+    class Meta:
+        db_table = "emailmanager_forward_mails"
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Forward to {self.forward_to} | {self.subject}"

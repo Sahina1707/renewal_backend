@@ -13,7 +13,6 @@ from .models import (
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-# --- Helper function for encryption ---
 def _encrypt_value(value):
     encryption_key = getattr(settings, 'WHATSAPP_ENCRYPTION_KEY', None)
     if not encryption_key or not value:
@@ -25,7 +24,6 @@ def _encrypt_value(value):
         logger.error(f"Encryption failed: {e}")
         return value
 
-# --- Helper function for decryption ---
 def _decrypt_value(value):
     encryption_key = getattr(settings, 'WHATSAPP_ENCRYPTION_KEY', None)
     if not encryption_key or not value:
@@ -35,15 +33,7 @@ def _decrypt_value(value):
         return fernet.decrypt(value.encode()).decode()
     except Exception:
         return value
-
-# --------------------------------------
-# PROVIDER SERIALIZERS
-# --------------------------------------
-
 class WhatsAppProviderSerializer(serializers.ModelSerializer):
-    """
-    Serializer for DISPLAYING providers.
-    """
     phone_numbers = serializers.StringRelatedField(many=True, read_only=True)
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
     
@@ -58,25 +48,25 @@ class WhatsAppProviderSerializer(serializers.ModelSerializer):
         ]
 
 class WhatsAppProviderCreateUpdateSerializer(serializers.ModelSerializer):
-    """
-    Serializer for CREATING/UPDATING providers.
-    """
+    credentials = serializers.JSONField(required=False)
+
     class Meta:
         model = WhatsAppProvider
         fields = '__all__'
         read_only_fields = ['id', 'webhook_verify_token', 'created_by', 'updated_by']
         extra_kwargs = {
-            'access_token': {'write_only': True}, # Hide token in responses
+            'credentials': {'required': False},
         }
 
     def validate(self, data):
-        # Encrypt the access_token if it exists
-        if 'access_token' in data and data['access_token']:
-            data['access_token'] = _encrypt_value(data['access_token'])
-                
+        if 'credentials' in data:
+            for key in ['auth_token', 'access_token']:
+                if key in data['credentials']:
+                    data['credentials'][key] = _encrypt_value(data['credentials'][key])
+
         if not data.get('webhook_verify_token') and not self.instance:
             data['webhook_verify_token'] = str(uuid.uuid4())
-            
+
         return data
 
     def create(self, validated_data):
@@ -89,13 +79,8 @@ class WhatsAppProviderCreateUpdateSerializer(serializers.ModelSerializer):
             WhatsAppProvider.objects.filter(is_default=True).exclude(pk=instance.pk).update(is_default=False)
         return super().update(instance, validated_data)
 
-# --------------------------------------
-# PHONE NUMBER SERIALIZER (Was Missing)
-# --------------------------------------
-
 class WhatsAppPhoneNumberSerializer(serializers.ModelSerializer):
     provider_name = serializers.CharField(source='provider.name', read_only=True)
-    
     class Meta:
         model = WhatsAppPhoneNumber
         fields = [
@@ -108,10 +93,6 @@ class WhatsAppPhoneNumberSerializer(serializers.ModelSerializer):
             'messages_sent_today', 'messages_sent_this_month', 
             'created_at', 'updated_at', 'verified_at'
         ]
-
-# --------------------------------------
-# TEMPLATE SERIALIZER (Was Missing)
-# --------------------------------------
 
 class WhatsAppMessageTemplateSerializer(serializers.ModelSerializer):
     provider_name = serializers.CharField(source='provider.name', read_only=True)
@@ -131,9 +112,7 @@ class WhatsAppMessageTemplateSerializer(serializers.ModelSerializer):
         ]
 
 class TemplateProviderLinkSerializer(serializers.Serializer):
-    """
-    Serializer to validate the provider_id for linking.
-    """
+   
     provider_id = serializers.IntegerField(required=True)
 
     def validate_provider_id(self, value):
@@ -143,14 +122,7 @@ class TemplateProviderLinkSerializer(serializers.Serializer):
             raise serializers.ValidationError("A provider with this ID does not exist.")
         return value
 
-# --------------------------------------
-# MESSAGE SENDING SERIALIZER
-# --------------------------------------
-
 class MessageSendSerializer(serializers.Serializer):
-    """
-    Serializer for the 'send_message' ViewSet action.
-    """
     to_phone_number = serializers.CharField(max_length=20, required=True)
     message_type = serializers.ChoiceField(choices=[
         ('text', 'Text Message'),
@@ -158,10 +130,8 @@ class MessageSendSerializer(serializers.Serializer):
         ('interactive', 'Interactive Message'),
     ], default='text')
     
-    # For text messages
     text_content = serializers.CharField(required=False, allow_blank=True)
     
-    # For template messages
     template_id = serializers.IntegerField(required=False)
     template_params = serializers.ListField(
         child=serializers.CharField(),
@@ -169,19 +139,15 @@ class MessageSendSerializer(serializers.Serializer):
         default=[]
     )
     
-    # For interactive messages
     flow_id = serializers.IntegerField(required=False)
     flow_token = serializers.CharField(required=False, allow_blank=True)
     
-    # Additional options
     customer_id = serializers.IntegerField(required=False, allow_null=True)
     campaign_id = serializers.IntegerField(required=False, allow_null=True)
     
     def validate_to_phone_number(self, value):
-        # Basic validation, clean up spaces/dashes
         value = value.replace(" ", "").replace("-", "")
         if not value.startswith('+'):
-            # You might want to enforce + or add it automatically in the service
             pass 
         return value
 
@@ -201,13 +167,7 @@ class MessageSendSerializer(serializers.Serializer):
                 raise serializers.ValidationError({'flow_id': 'This field is required for interactive messages.'})
         
         return data
-
-# --------------------------------------
-# MESSAGE LOG SERIALIZER
-# --------------------------------------
-
 class WhatsAppMessageSerializer(serializers.ModelSerializer):
-    """Serializer for WhatsApp messages"""
     provider_name = serializers.CharField(source='provider.name', read_only=True)
     phone_number_display = serializers.CharField(source='phone_number.display_phone_number', read_only=True)
     template_name = serializers.CharField(source='template.name', read_only=True)
@@ -231,10 +191,6 @@ class WhatsAppMessageSerializer(serializers.ModelSerializer):
         if obj.customer:
             return f"{obj.customer.first_name} {obj.customer.last_name}".strip()
         return None
-
-# --------------------------------------
-# WEBHOOK & LOGGING SERIALIZERS
-# --------------------------------------
 
 class WhatsAppWebhookEventSerializer(serializers.ModelSerializer):
     provider_name = serializers.CharField(source='provider.name', read_only=True)
