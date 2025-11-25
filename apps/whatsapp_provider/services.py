@@ -1,6 +1,3 @@
-#
-# services.py
-#
 import logging
 import time
 import requests
@@ -23,90 +20,62 @@ from .models import (
     WhatsAppAccountUsageLog,
 )
 
-# Import for type hinting if you have a separate Template model, otherwise use WhatsAppMessageTemplate
-# from apps.templates.models import Template 
-
 logger = logging.getLogger(__name__)
 
 class WhatsAppAPIError(Exception):
     """Custom exception for WhatsApp API errors"""
     pass
-
-# -----------------------------------------------------------------
-# BASE SERVICE
-# -----------------------------------------------------------------
-
 class BaseWhatsAppService:
-    """
-    Abstract base class defining the interface for all WhatsApp providers.
-    """
+   
     def __init__(self, provider_model: WhatsAppProvider):
         self.provider = provider_model
         self.encryption_key = getattr(settings, 'WHATSAPP_ENCRYPTION_KEY', None)
         
     def _decrypt(self, value: str) -> str:
-        """
-        Helper to decrypt credentials.
-        Returns the raw value if encryption key is missing or decryption fails.
-        """
+        
         if not self.encryption_key or not value:
             return value
         try:
             fernet = Fernet(self.encryption_key.encode())
             return fernet.decrypt(value.encode()).decode()
         except Exception:
-            # logger.warning(f"Decryption failed for value, returning raw.")
             return value
 
     def _format_phone(self, phone_number: str) -> str:
-        """
-        Default phone formatter (removes spaces, dashes, pluses).
-        Subclasses can override this if they need specific formats (e.g. Meta needs '+').
-        """
+       
         return str(phone_number).replace(" ", "").replace("-", "").replace("+", "")
 
     def send_text_message(self, to_phone: str, text_content: str, **kwargs) -> Dict:
-        """Send a simple text message."""
         raise NotImplementedError("This method must be implemented by a subclass")
         
     def send_template_message(self, to_phone: str, template: WhatsAppMessageTemplate, template_params: List[str], **kwargs) -> Dict:
-        """Send a template message."""
         raise NotImplementedError("This method must be implemented by a subclass")
 
     def send_interactive_message(self, to_phone: str, flow: WhatsAppFlow, flow_token: str = None, **kwargs) -> Dict:
-        """Send an interactive message (WhatsApp Flow)."""
         raise NotImplementedError("This method must be implemented by a subclass")
 
     def handle_webhook(self, request_data: Dict) -> Any:
-        """Process an incoming webhook event."""
         raise NotImplementedError("This method must be implemented by a subclass")
 
     def health_check(self) -> Dict[str, Any]:
-        """Perform a health check on the provider's API."""
         raise NotImplementedError("This method must be implemented by a subclass")
         
     def _update_usage_counters(self, phone_number: Optional[WhatsAppPhoneNumber] = None):
-        """
-        Atomically update usage counters for the provider and phone number.
-        """
+        
         now = timezone.now()
         today = now.date()
 
         with transaction.atomic():
-            # Lock the provider row
             provider_to_update = WhatsAppProvider.objects.select_for_update().get(pk=self.provider.pk)
 
-            # Reset daily counter if it's a new day
             if provider_to_update.last_reset_daily != today:
                 provider_to_update.messages_sent_today = 0
                 provider_to_update.last_reset_daily = today
 
-            # Reset monthly counter if it's a new month
             if provider_to_update.last_reset_monthly.month != today.month:
                 provider_to_update.messages_sent_this_month = 0
                 provider_to_update.last_reset_monthly = today
 
-            # Increment counters
             provider_to_update.messages_sent_today = F('messages_sent_today') + 1
             provider_to_update.messages_sent_this_month = F('messages_sent_this_month') + 1
             provider_to_update.save(update_fields=[
@@ -114,7 +83,6 @@ class BaseWhatsAppService:
                 'last_reset_daily', 'last_reset_monthly'
             ])
 
-            # Update Phone Number counters if provided
             if phone_number:
                 phone_to_update = WhatsAppPhoneNumber.objects.select_for_update().get(pk=phone_number.pk)
                 phone_to_update.messages_sent_today = F('messages_sent_today') + 1
@@ -124,7 +92,6 @@ class BaseWhatsAppService:
                     'messages_sent_today', 'messages_sent_this_month', 'last_message_sent'
                 ])
 
-        # Update daily usage log
         usage_log, _ = WhatsAppAccountUsageLog.objects.get_or_create(
             provider=self.provider,
             date=today,
@@ -132,18 +99,10 @@ class BaseWhatsAppService:
         usage_log.messages_sent = F('messages_sent') + 1
         usage_log.save(update_fields=['messages_sent'])
 
-
-# -----------------------------------------------------------------
-# META (FACEBOOK) PROVIDER
-# -----------------------------------------------------------------
-
 class MetaProviderService(BaseWhatsAppService):
-    """
-    Service for managing Meta (Facebook) Business API.
-    """
+    
     def __init__(self, provider_model: WhatsAppProvider):
         super().__init__(provider_model)
-        # Map generic fields to Meta requirements
         self.api_version = provider_model.api_version or "v18.0"
         self.api_base_url = f"https://graph.facebook.com/{self.api_version}"
         
@@ -154,7 +113,7 @@ class MetaProviderService(BaseWhatsAppService):
     def _format_phone(self, phone_number: str) -> str:
         clean_num = super()._format_phone(phone_number)
         if len(clean_num) == 10:
-            return f"+91{clean_num}" # Defaulting to 91 for 10 digits, adjust logic as needed
+            return f"+91{clean_num}"
         if not clean_num.startswith('+'):
             return f"+{clean_num}"
         return clean_num
@@ -300,34 +259,21 @@ class MetaProviderService(BaseWhatsAppService):
             return {'status': 'unhealthy', 'error': str(e)}
 
     def handle_webhook(self, event_data: Dict[str, Any]) -> Any:
-        # Implementation matches your original logic, omitted for brevity
         pass
 
 
-# -----------------------------------------------------------------
-# TWILIO PROVIDER
-# -----------------------------------------------------------------
-
 class TwilioProviderService(BaseWhatsAppService):
-    """
-    Service for managing Twilio WhatsApp API.
-    """
+
     def __init__(self, provider_model: WhatsAppProvider):
         super().__init__(provider_model)
-        # Map generic fields to Twilio requirements
         self.account_sid = provider_model.account_id
         self.auth_token = self._decrypt(provider_model.access_token)
         self.from_number = provider_model.phone_number_id
         
-        # Initialize Twilio Client (Requires 'twilio' package)
-        # from twilio.rest import Client
-        # self.client = Client(self.account_sid, self.auth_token)
 
     def send_text_message(self, to_phone: str, text_content: str, **kwargs) -> Dict:
-        # Mock implementation
         logger.info(f"Sending Twilio message from {self.from_number} to {to_phone}")
         try:
-            # message = self.client.messages.create(...)
             message_sid = f"tw_{int(time.time())}" 
             
             WhatsAppMessage.objects.create(
@@ -355,18 +301,9 @@ class TwilioProviderService(BaseWhatsAppService):
     def health_check(self) -> Dict[str, Any]:
         return {'status': 'healthy', 'details': 'Mock check passed'}
 
-
-# -----------------------------------------------------------------
-# GUPSHUP PROVIDER
-# -----------------------------------------------------------------
-
 class GupshupProviderService(BaseWhatsAppService):
-    """
-    Service for managing Gupshup WhatsApp API.
-    """
     def __init__(self, provider_model: WhatsAppProvider):
         super().__init__(provider_model)
-        # Map generic fields to Gupshup requirements
         self.api_key = self._decrypt(provider_model.access_token)
         self.app_name = provider_model.app_id
         self.source_number = provider_model.phone_number_id
@@ -438,14 +375,8 @@ class GupshupProviderService(BaseWhatsAppService):
             return {'status': 'unhealthy', 'error': str(e)}
 
 
-# -----------------------------------------------------------------
-# 360DIALOG PROVIDER
-# -----------------------------------------------------------------
-
 class Dialog360ProviderService(BaseWhatsAppService):
-    """
-    Service for managing 360Dialog WhatsApp API.
-    """
+    
     def __init__(self, provider_model: WhatsAppProvider):
         super().__init__(provider_model)
         # Map generic fields to 360Dialog requirements
@@ -513,16 +444,8 @@ class Dialog360ProviderService(BaseWhatsAppService):
             self.provider.save(update_fields=['health_status'])
             return {'status': 'unhealthy', 'error': str(e)}
 
-
-# -----------------------------------------------------------------
-# FACTORY CLASS
-# -----------------------------------------------------------------
-
 class WhatsAppService:
-    """
-    Factory class to get the correct provider service.
-    """
-    
+   
     PROVIDER_MAP: Dict[str, Type[BaseWhatsAppService]] = {
         'meta': MetaProviderService,
         'twilio': TwilioProviderService,

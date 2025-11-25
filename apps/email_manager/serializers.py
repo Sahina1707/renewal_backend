@@ -6,7 +6,8 @@ from apps.templates.models import Template
 from apps.customer_payment_schedule.models import PaymentSchedule
 from .models import EmailManagerInbox
 from django.utils.html import strip_tags
-from .models import EmailReply, StartedReplyMail
+from .models import EmailReply, StartedReplyMail, EmailManagerForwardMail
+
 
 class EmailManagerSerializer(serializers.ModelSerializer):
     
@@ -82,6 +83,15 @@ class EmailManagerCreateSerializer(serializers.ModelSerializer):
                 'schedule_date_time': 'Schedule date and time is required when schedule_send is True.'
             })
         return data
+    def create(self, validated_data):
+        instance = super().create(validated_data)
+
+        if instance.schedule_send:
+            instance.email_status = "scheduled"
+            instance.save(update_fields=["email_status"])
+
+        return instance
+
 
 
 class EmailManagerUpdateSerializer(serializers.ModelSerializer):
@@ -125,6 +135,14 @@ class EmailManagerUpdateSerializer(serializers.ModelSerializer):
                 'schedule_date_time': 'Schedule date and time is required when schedule_send is True.'
             })
         return data
+    def update(self, instance, validated_data):
+        instance = super().update(instance, validated_data)
+
+        if instance.schedule_send:
+            instance.email_status = "scheduled"
+            instance.save(update_fields=["email_status"])
+
+        return instance
 
 class SentEmailListSerializer(serializers.ModelSerializer):
     due_date = serializers.SerializerMethodField()
@@ -222,15 +240,18 @@ class EmailReplyStatusUpdateSerializer(serializers.ModelSerializer):
 class StartedReplyMailSerializer(serializers.ModelSerializer):
     class Meta:
         model = StartedReplyMail
-        fields = [
-            "id",
-            "original_email_manager",
-            "original_inbox_email",
-            "to_email",
-            "from_email",
-            "subject",
-            "message",
-            "html_message",
-            "sent_at",
-            "created_by",
-        ]
+        fields = "__all__"
+        read_only_fields = ["id", "created_by", "created_at", "updated_at"]
+
+class EmailForwardSerializer(serializers.Serializer):
+    forward_to = serializers.EmailField(required=True)
+    cc = serializers.CharField(required=False, allow_blank=True)
+    bcc = serializers.CharField(required=False, allow_blank=True)
+    additional_message = serializers.CharField(required=False, allow_blank=True)
+    template_id = serializers.IntegerField(required=False, allow_null=True)
+
+class EmailManagerForwardMailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmailManagerForwardMail
+        fields = "__all__"
+        read_only_fields = ["id", "sent_at", "created_at", "updated_at", "status"]

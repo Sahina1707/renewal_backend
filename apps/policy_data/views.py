@@ -1,6 +1,7 @@
 import pandas as pd
 import hashlib
 import os
+import io
 from datetime import datetime, date, timedelta
 from decimal import Decimal
 from rest_framework import viewsets, status
@@ -547,49 +548,30 @@ class FileUploadViewSet(viewsets.ModelViewSet):
         except Exception as e:
             raise e
 
-    def _read_file_data(self, file_path, file_name):
-        """Read file data based on file extension (Excel or CSV)"""
-        file_extension = os.path.splitext(file_name)[1].lower()
-        
-        if file_extension == '.csv':
-            
-            try:
-              
-                df = pd.read_csv(file_path, encoding='utf-8')
-            except UnicodeDecodeError:
-                try:
-                   
-                    df = pd.read_csv(file_path, encoding='latin-1')
-                except UnicodeDecodeError:
-                    try:
-                       
-                        df = pd.read_csv(file_path, encoding='cp1252')
-                    except UnicodeDecodeError:
-                        try:
-                           
-                            df = pd.read_csv(file_path, encoding='utf-8-sig')
-                        except UnicodeDecodeError:
-                            df = pd.read_csv(file_path, encoding='utf-8', errors='replace')
-        elif file_extension in ['.xlsx', '.xls']:
-          
-            df = pd.read_excel(file_path)
+    def _read_file_data(self, file_obj, file_name):
+        file_obj.open()
+        file_bytes = file_obj.read()
+        ext = os.path.splitext(file_name)[1].lower()
+
+        if ext == ".csv":
+            return pd.read_csv(io.BytesIO(file_bytes))
         else:
-            raise ValueError(f"Unsupported file format: {file_extension}")
-        
-        df = df.dropna(how='all')  
-        df = df[~(df.astype(str).eq('').all(axis=1))]
-        
-        # Remove 'id' column if it exists to prevent primary key conflicts
-        # Users should not provide ID as it's auto-generated
-        if 'id' in df.columns:
-            df = df.drop(columns=['id'])
-        
-        return df
+            return pd.read_excel(io.BytesIO(file_bytes))
+
 
     def _process_uploaded_excel_file(self, uploads_record, user, file_upload_record=None):
         """Process Excel/CSV file directly from uploads_record"""
         try:
-            df = self._read_file_data(uploads_record.file.path, uploads_record.original_name)
+            # df = self._read_file_data(uploads_record.file.path, uploads_record.original_name)
+            uploaded_file = uploads_record.file
+            uploaded_file.open()
+            file_bytes = uploaded_file.read()
+            ext = uploads_record.original_name.lower().split(".")[-1]
+            if uploads_record.original_name.lower().endswith(".csv"):
+                df = pd.read_csv(io.BytesIO(file_bytes))
+            else:
+                df = pd.read_excel(io.BytesIO(file_bytes))
+
 
             validation_result = self._validate_excel_structure_flexible(df)
             if not validation_result['valid']:
@@ -736,7 +718,16 @@ class FileUploadViewSet(viewsets.ModelViewSet):
     def _process_excel_file(self, file_upload_record, uploads_record, user):
         """Process Excel/CSV file and extract data"""
         try:
-            df = self._read_file_data(file_upload_record.uploaded_file.path, file_upload_record.original_filename)
+            # df = self._read_file_data(file_upload_record.uploaded_file.path, file_upload_record.original_filename)
+            uploaded_file = file_upload_record.uploaded_file
+            uploaded_file.open()
+            file_bytes = uploaded_file.read()
+            ext = file_upload_record.original_filename.lower().split(".")[-1]
+
+            if ext == "csv":
+                df = pd.read_csv(io.BytesIO(file_bytes))
+            else:
+                df = pd.read_excel(io.BytesIO(file_bytes))
 
             validation_result = self._validate_excel_structure(df)
             if not validation_result['valid']:

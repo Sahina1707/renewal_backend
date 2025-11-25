@@ -1,6 +1,3 @@
-#
-# models.py
-#
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -9,16 +6,10 @@ import uuid
 import json
 
 User = get_user_model()
-
+def today_date():
+    return timezone.now().date()
 
 class WhatsAppProvider(models.Model):
-    """
-    Refactored model to store configuration for ANY WhatsApp provider
-    (Meta, Twilio, Gupshup, 360Dialog, etc.)
-    This replaces the old 'WhatsAppBusinessAccount' model.
-    """
-    
-    # --- Provider Type ---
     PROVIDER_CHOICES = [
         ('meta', 'Meta Business API'),
         ('twilio', 'Twilio WhatsApp'),
@@ -26,10 +17,9 @@ class WhatsAppProvider(models.Model):
         ('360dialog', '360Dialog'),
     ]
     
-    # --- Status Choices (from old model) ---
     STATUS_CHOICES = [
         ('pending', 'Pending'),
-        ('verified', 'Verified'), # You can map 'connected' to this
+        ('verified', 'Verified'), 
         ('connected', 'Connected'),
         ('disconnected', 'Disconnected'),
         ('suspended', 'Suspended'),
@@ -51,24 +41,17 @@ class WhatsAppProvider(models.Model):
         choices=PROVIDER_CHOICES, 
         default='meta'
     )
-    
-    # This JSON field will store ALL provider-specific credentials,
-    # which will be encrypted by the service/serializer before saving.
     credentials = models.JSONField(
         default=dict, 
         help_text="Encrypted API credentials for the provider"
     )
     
-    # --- Common Fields (Kept from old model) ---
-    
-    # Business Profile Information
     business_name = models.CharField(max_length=255, blank=True, null=True)
     business_description = models.TextField(blank=True, null=True)
     business_email = models.EmailField(blank=True, null=True)
     business_vertical = models.CharField(max_length=100, blank=True, null=True)
     business_address = models.TextField(blank=True, null=True)
     
-    # Bot Configuration
     enable_auto_reply = models.BooleanField(default=True, help_text="Enable automatic replies")
     use_knowledge_base = models.BooleanField(default=True, help_text="Use RAG knowledge base for responses")
     greeting_message = models.TextField(
@@ -84,7 +67,6 @@ class WhatsAppProvider(models.Model):
     business_hours_end = models.TimeField(default="17:00:00", help_text="Business hours end time")
     business_timezone = models.CharField(max_length=50, default="UTC", help_text="Business timezone")
     
-    # Account Status and Health
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     quality_rating = models.CharField(max_length=10, choices=QUALITY_RATING_CHOICES, default='unknown')
     last_health_check = models.DateTimeField(blank=True, null=True)
@@ -94,21 +76,19 @@ class WhatsAppProvider(models.Model):
         ('unknown', 'Unknown'),
     ])
     
-    # Rate Limiting and Usage
     daily_limit = models.PositiveIntegerField(default=1000, help_text="Daily message limit")
     monthly_limit = models.PositiveIntegerField(default=30000, help_text="Monthly message limit")
     rate_limit_per_minute = models.PositiveIntegerField(default=10, help_text="Rate limit per minute")
     messages_sent_today = models.PositiveIntegerField(default=0)
     messages_sent_this_month = models.PositiveIntegerField(default=0)
-    last_reset_daily = models.DateField(default=timezone.now)
-    last_reset_monthly = models.DateField(default=timezone.now)
+    last_reset_daily = models.DateField(default=today_date)
+    last_reset_monthly = models.DateField(default=today_date)
+
+
     
-    # Configuration
     is_default = models.BooleanField(default=False, help_text="Use this provider by default")
     is_active = models.BooleanField(default=True, help_text="Activate this provider")
     
-    # Webhook Configuration (This is common)
-    # This token is used to verify incoming webhooks are from the provider
     webhook_verify_token = models.CharField(
         max_length=255, 
         help_text="A unique token to verify incoming webhooks",
@@ -116,7 +96,6 @@ class WhatsAppProvider(models.Model):
         null=True
     )
     
-    # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_whatsapp_provider')
@@ -133,35 +112,25 @@ class WhatsAppProvider(models.Model):
         return f"{self.name} ({self.get_provider_type_display()})"
     
     def can_send_message(self) -> bool:
-        """Check if account can send messages"""
         if not self.is_active or self.status not in ['verified', 'connected']:
             return False
         
-        # Check daily limits
         if self.messages_sent_today >= self.daily_limit:
             return False
         
-        # Check monthly limits
         if self.messages_sent_this_month >= self.monthly_limit:
             return False
         
         return True
     
     def get_primary_phone_number(self):
-        """Get the primary phone number for this provider"""
         return self.phone_numbers.filter(is_primary=True, is_active=True).first()
     
     def get_active_phone_numbers(self):
-        """Get all active phone numbers for this provider"""
         return self.phone_numbers.filter(is_active=True, status='verified')
 
 
 class WhatsAppPhoneNumber(models.Model):
-    """
-    Phone numbers associated with WhatsApp Providers.
-    (This model is kept almost exactly as-is)
-    """
-    
     STATUS_CHOICES = [
         ('pending', 'Pending Verification'),
         ('verified', 'Verified'),
@@ -170,7 +139,6 @@ class WhatsAppPhoneNumber(models.Model):
     ]
     
     id = models.BigAutoField(primary_key=True)
-    # *** UPDATED FOREIGN KEY ***
     provider = models.ForeignKey(
         WhatsAppProvider, 
         on_delete=models.CASCADE, 
@@ -179,17 +147,14 @@ class WhatsAppPhoneNumber(models.Model):
         blank=True
     )
     
-    # Phone Number Details
     phone_number_id = models.CharField(max_length=50, help_text="Phone Number ID from Meta")
     phone_number = models.CharField(max_length=20, help_text="Phone number with country code")
     display_phone_number = models.CharField(max_length=20, blank=True, null=True, help_text="Formatted display number")
     
-    # Status and Configuration
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     is_primary = models.BooleanField(default=False, help_text="Primary phone number for this WABA")
     is_active = models.BooleanField(default=True)
     
-    # Quality and Performance
     quality_rating = models.CharField(max_length=10, choices=[
         ('high', 'High'),
         ('medium', 'Medium'),
@@ -197,19 +162,17 @@ class WhatsAppPhoneNumber(models.Model):
         ('unknown', 'Unknown'),
     ], default='unknown')
     
-    # Usage Tracking
     messages_sent_today = models.PositiveIntegerField(default=0)
     messages_sent_this_month = models.PositiveIntegerField(default=0)
     last_message_sent = models.DateTimeField(blank=True, null=True)
     
-    # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     verified_at = models.DateTimeField(blank=True, null=True)
     
     class Meta:
         db_table = 'whatsapp_phone_numbers'
-        unique_together = ['provider', 'phone_number_id'] # Updated
+        unique_together = ['provider', 'phone_number_id'] 
         ordering = ['-is_primary', '-created_at']
         verbose_name = 'WhatsApp Phone Number'
         verbose_name_plural = 'WhatsApp Phone Numbers'
@@ -219,11 +182,6 @@ class WhatsAppPhoneNumber(models.Model):
 
 
 class WhatsAppMessageTemplate(models.Model):
-    """
-    Approved message templates for WhatsApp Business API.
-    (This model is kept almost exactly as-is)
-    """
-    
     STATUS_CHOICES = [
         ('pending', 'Pending Approval'),
         ('approved', 'Approved'),
@@ -253,7 +211,6 @@ class WhatsAppMessageTemplate(models.Model):
     ]
     
     id = models.BigAutoField(primary_key=True)
-    # *** UPDATED FOREIGN KEY ***
     provider = models.ForeignKey(
         WhatsAppProvider, 
         on_delete=models.CASCADE, 
@@ -262,29 +219,23 @@ class WhatsAppMessageTemplate(models.Model):
         blank=True
     )
     
-    # Template Details
     name = models.CharField(max_length=100, help_text="Template name")
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
     language = models.CharField(max_length=10, choices=LANGUAGE_CHOICES, default='en')
     
-    # Template Content
     header_text = models.TextField(blank=True, null=True, help_text="Header text (optional)")
     body_text = models.TextField(help_text="Main message body")
     footer_text = models.TextField(blank=True, null=True, help_text="Footer text (optional)")
     
-    # Template Components (JSON for complex templates)
     components = models.JSONField(default=list, help_text="Template components (buttons, media, etc.)")
     
-    # Approval Status
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     meta_template_id = models.CharField(max_length=100, blank=True, null=True, help_text="Template ID from Meta")
     rejection_reason = models.TextField(blank=True, null=True, help_text="Reason for rejection if applicable")
     
-    # Usage Tracking
     usage_count = models.PositiveIntegerField(default=0)
     last_used = models.DateTimeField(blank=True, null=True)
     
-    # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     approved_at = models.DateTimeField(blank=True, null=True)
@@ -292,7 +243,7 @@ class WhatsAppMessageTemplate(models.Model):
     
     class Meta:
         db_table = 'whatsapp_message_templates'
-        unique_together = ['provider', 'name', 'language'] # Updated
+        unique_together = ['provider', 'name', 'language']
         ordering = ['-created_at']
         verbose_name = 'WhatsApp Message Template'
         verbose_name_plural = 'WhatsApp Message Templates'
@@ -305,11 +256,6 @@ class WhatsAppMessageTemplate(models.Model):
 
 
 class WhatsAppMessage(models.Model):
-    """
-    Individual WhatsApp messages sent and received.
-    (This model is kept almost exactly as-is)
-    """
-    
     MESSAGE_TYPE_CHOICES = [
         ('text', 'Text Message'),
         ('template', 'Template Message'),
@@ -333,7 +279,6 @@ class WhatsAppMessage(models.Model):
     ]
     
     id = models.BigAutoField(primary_key=True)
-    # *** UPDATED FOREIGN KEY ***
     provider = models.ForeignKey(
         WhatsAppProvider, 
         on_delete=models.CASCADE, 
@@ -343,22 +288,19 @@ class WhatsAppMessage(models.Model):
     )
     phone_number = models.ForeignKey(
         WhatsAppPhoneNumber, 
-        on_delete=models.SET_NULL, # Changed from CASCADE
+        on_delete=models.SET_NULL, 
         null=True,
         blank=True,
         related_name='messages'
     )
     
-    # Message Details
     message_id = models.CharField(max_length=100, unique=True, help_text="WhatsApp message ID")
     direction = models.CharField(max_length=10, choices=DIRECTION_CHOICES)
     message_type = models.CharField(max_length=20, choices=MESSAGE_TYPE_CHOICES)
     
-    # Recipient/Sender Information
     to_phone_number = models.CharField(max_length=20, help_text="Recipient phone number")
     from_phone_number = models.CharField(max_length=20, help_text="Sender phone number")
     
-    # Message Content
     content = models.JSONField(default=dict, help_text="Message content (text, media, etc.)")
     template = models.ForeignKey(
         WhatsAppMessageTemplate, 
@@ -368,18 +310,15 @@ class WhatsAppMessage(models.Model):
         related_name='messages'
     )
     
-    # Status and Delivery
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='queued')
     error_code = models.CharField(max_length=50, blank=True, null=True)
     error_message = models.TextField(blank=True, null=True)
     
-    # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     sent_at = models.DateTimeField(blank=True, null=True)
     delivered_at = models.DateTimeField(blank=True, null=True)
     read_at = models.DateTimeField(blank=True, null=True)
     
-    # Context (Assuming you have 'campaigns' and 'customers' apps)
     campaign = models.ForeignKey(
         'campaigns.Campaign', 
         on_delete=models.SET_NULL, 
@@ -395,7 +334,6 @@ class WhatsAppMessage(models.Model):
         related_name='whatsapp_messages'
     )
     
-    # Metadata
     metadata = models.JSONField(default=dict, help_text="Additional message metadata")
     
     class Meta:
@@ -409,11 +347,6 @@ class WhatsAppMessage(models.Model):
 
 
 class WhatsAppWebhookEvent(models.Model):
-    """
-    Webhook events received from WhatsApp Business API.
-    (This model is kept almost exactly as-is)
-    """
-    
     EVENT_TYPE_CHOICES = [
         ('message', 'Message Received'),
         ('message_status', 'Message Status Update'),
@@ -424,7 +357,6 @@ class WhatsAppWebhookEvent(models.Model):
     ]
     
     id = models.BigAutoField(primary_key=True)
-    # *** UPDATED FOREIGN KEY ***
     provider = models.ForeignKey(
         WhatsAppProvider, 
         on_delete=models.CASCADE, 
@@ -433,15 +365,12 @@ class WhatsAppWebhookEvent(models.Model):
         blank=True
     )
     
-    # Event Details
     event_type = models.CharField(max_length=50, choices=EVENT_TYPE_CHOICES)
     raw_data = models.JSONField(default=dict, help_text="Raw webhook payload")
     
-    # Processing Status
     processed = models.BooleanField(default=False)
     processing_error = models.TextField(blank=True, null=True)
     
-    # Related Objects
     message = models.ForeignKey(
         WhatsAppMessage, 
         on_delete=models.SET_NULL, 
@@ -450,7 +379,6 @@ class WhatsAppWebhookEvent(models.Model):
         related_name='webhook_events'
     )
     
-    # Timestamps
     received_at = models.DateTimeField(auto_now_add=True)
     processed_at = models.DateTimeField(blank=True, null=True)
     
@@ -465,10 +393,6 @@ class WhatsAppWebhookEvent(models.Model):
 
 
 class WhatsAppFlow(models.Model):
-    """
-    WhatsApp Flows for interactive messages.
-    (This model is kept almost exactly as-is)
-    """
     
     STATUS_CHOICES = [
         ('draft', 'Draft'),
@@ -477,7 +401,6 @@ class WhatsAppFlow(models.Model):
     ]
     
     id = models.BigAutoField(primary_key=True)
-    # *** UPDATED FOREIGN KEY ***
     provider = models.ForeignKey(
         WhatsAppProvider, 
         on_delete=models.CASCADE, 
@@ -486,20 +409,16 @@ class WhatsAppFlow(models.Model):
         blank=True
     )
     
-    # Flow Details
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
     flow_json = models.JSONField(help_text="Flow definition in JSON format")
     
-    # Status and Configuration
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     is_active = models.BooleanField(default=True)
     
-    # Usage Tracking
     usage_count = models.PositiveIntegerField(default=0)
     last_used = models.DateTimeField(blank=True, null=True)
     
-    # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
@@ -515,13 +434,7 @@ class WhatsAppFlow(models.Model):
 
 
 class WhatsAppAccountHealthLog(models.Model):
-    """
-    Health check logs for WhatsApp accounts.
-    (This model is kept almost exactly as-is)
-    """
-    
     id = models.BigAutoField(primary_key=True)
-    # *** UPDATED FOREIGN KEY ***
     provider = models.ForeignKey(
         WhatsAppProvider, 
         on_delete=models.CASCADE, 
@@ -530,7 +443,6 @@ class WhatsAppAccountHealthLog(models.Model):
         blank=True
     )
     
-    # Health Check Results
     health_status = models.CharField(max_length=20, choices=[
         ('healthy', 'Healthy'),
         ('unhealthy', 'Unhealthy'),
@@ -539,7 +451,6 @@ class WhatsAppAccountHealthLog(models.Model):
     check_details = models.JSONField(default=dict, help_text="Detailed health check results")
     error_message = models.TextField(blank=True, null=True)
     
-    # Timestamps
     checked_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
@@ -553,13 +464,7 @@ class WhatsAppAccountHealthLog(models.Model):
 
 
 class WhatsAppAccountUsageLog(models.Model):
-    """
-    Usage tracking logs for WhatsApp accounts.
-    (This model is kept almost exactly as-is)
-    """
-    
     id = models.BigAutoField(primary_key=True)
-    # *** UPDATED FOREIGN KEY ***
     provider = models.ForeignKey(
         WhatsAppProvider, 
         on_delete=models.CASCADE, 
@@ -568,19 +473,17 @@ class WhatsAppAccountUsageLog(models.Model):
         blank=True
     )
     
-    # Usage Metrics
     messages_sent = models.PositiveIntegerField(default=0)
     messages_delivered = models.PositiveIntegerField(default=0)
     messages_failed = models.PositiveIntegerField(default=0)
     messages_read = models.PositiveIntegerField(default=0)
-    
-    # Timestamps
-    date = models.DateField(default=timezone.now)
+    date = models.DateField(default=today_date)
+
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
         db_table = 'whatsapp_account_usage_logs'
-        unique_together = ['provider', 'date'] # Updated
+        unique_together = ['provider', 'date'] 
         ordering = ['-date']
         verbose_name = 'WhatsApp Account Usage Log'
         verbose_name_plural = 'WhatsApp Account Usage Logs'

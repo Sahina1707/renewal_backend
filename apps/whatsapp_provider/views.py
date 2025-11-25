@@ -35,7 +35,6 @@ from .serializers import (
     WhatsAppAccountUsageLogSerializer,
     TemplateProviderLinkSerializer
 )
-# REMOVED _encrypt_value from this import as it does not exist in services.py
 from .services import WhatsAppService, WhatsAppAPIError
 
 User = get_user_model()
@@ -50,13 +49,11 @@ class WhatsAppProviderViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     
     def get_serializer_class(self):
-        """Return different serializers for read vs. write actions."""
         if self.action in ['create', 'update', 'partial_update']:
             return WhatsAppProviderCreateUpdateSerializer
         return WhatsAppProviderSerializer
     
     def get_queryset(self):
-        """Filter accounts based on user permissions"""
         queryset = super().get_queryset()
         if not self.request.user.is_staff:
             queryset = queryset.filter(created_by=self.request.user)
@@ -65,25 +62,20 @@ class WhatsAppProviderViewSet(viewsets.ModelViewSet):
         )
     
     def perform_create(self, serializer):
-        """Handle the creation of a new provider."""
         serializer.save(created_by=self.request.user)
     
     def perform_update(self, serializer):
-        """Handle updating a provider."""
         serializer.save(updated_by=self.request.user)
 
     
     @action(detail=True, methods=['post'], url_path='health-check')
     def health_check(self, request, pk=None):
-        """Perform health check on this provider."""
         provider_model = self.get_object()
         
         try:
             service_factory = WhatsAppService()
-            # Get the specific service instance for this provider
             provider_service = service_factory.get_service_instance(provider_id=provider_model.id)
             
-            # Call the provider-specific health_check method
             result = provider_service.health_check()
             
             return Response(result, status=status.HTTP_200_OK)
@@ -96,7 +88,6 @@ class WhatsAppProviderViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['get'], url_path='analytics')
     def analytics(self, request, pk=None):
-        """Get analytics for this specific provider."""
         provider = self.get_object()
         
         start_date = request.query_params.get('start_date')
@@ -114,7 +105,6 @@ class WhatsAppProviderViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'], url_path='send-message')
     def send_message(self, request, pk=None):
-        """Send a message via this specific provider."""
         provider_model = self.get_object()
         
         serializer = MessageSendSerializer(data=request.data)
@@ -124,23 +114,18 @@ class WhatsAppProviderViewSet(viewsets.ModelViewSet):
         validated_data = serializer.validated_data
         
         try:
-            # 1. Get the main service factory
             service_factory = WhatsAppService()
             
-            # 2. Get the *specific* service instance for this provider
             provider_service = service_factory.get_service_instance(provider_id=provider_model.id)
             
-            # 3. Get data from serializer
             message_type = validated_data['message_type']
             to_phone = validated_data['to_phone_number']
             
-            # Build kwargs for customer/campaign
             kwargs = {
                 'customer_id': validated_data.get('customer_id'),
                 'campaign_id': validated_data.get('campaign_id'),
             }
 
-            # 4. Call the correct method on the service instance
             response = {}
             if message_type == 'text':
                 response = provider_service.send_text_message(
@@ -193,7 +178,6 @@ class WhatsAppProviderViewSet(viewsets.ModelViewSet):
 
 
 class WhatsAppPhoneNumberViewSet(viewsets.ModelViewSet):
-    """ViewSet for managing WhatsApp phone numbers"""
     queryset = WhatsAppPhoneNumber.objects.all()
     serializer_class = WhatsAppPhoneNumberSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -213,7 +197,6 @@ class WhatsAppPhoneNumberViewSet(viewsets.ModelViewSet):
 
 
 class WhatsAppMessageTemplateViewSet(viewsets.ModelViewSet):
-    """ViewSet for managing WhatsApp message templates"""
     queryset = WhatsAppMessageTemplate.objects.all()
     serializer_class = WhatsAppMessageTemplateSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -237,7 +220,6 @@ class WhatsAppMessageTemplateViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'], url_path='submit-for-approval')
     def submit_for_approval(self, request, pk=None):
-        """Submit template for Meta approval (Meta-specific)"""
         template = self.get_object()
         if template.provider.provider_type != 'meta':
             return Response(
@@ -252,7 +234,6 @@ class WhatsAppMessageTemplateViewSet(viewsets.ModelViewSet):
 
 
 class WhatsAppMessageViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet for viewing WhatsApp messages (read-only)"""
     queryset = WhatsAppMessage.objects.all()
     serializer_class = WhatsAppMessageSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -271,7 +252,6 @@ class WhatsAppMessageViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class WhatsAppWebhookEventViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet for viewing WhatsApp webhook events (read-only)"""
     queryset = WhatsAppWebhookEvent.objects.all()
     serializer_class = WhatsAppWebhookEventSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -286,7 +266,6 @@ class WhatsAppWebhookEventViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class WhatsAppFlowViewSet(viewsets.ModelViewSet):
-    """ViewSet for managing WhatsApp Flows"""
     queryset = WhatsAppFlow.objects.all()
     serializer_class = WhatsAppFlowSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -308,25 +287,18 @@ class WhatsAppFlowViewSet(viewsets.ModelViewSet):
 
 
 class WhatsAppWebhookView(viewsets.ViewSet):
-    """
-    Handles incoming webhooks from all providers.
-    The URL must identify the provider, e.g., /api/webhook/<provider_id>/
-    """
-    permission_classes = []  # Webhooks are public
+    permission_classes = []  
     parser_classes = [JSONParser]
     
     @action(detail=False, methods=['get'], url_path='(?P<provider_id>[0-9]+)')
     def verify_webhook(self, request, provider_id=None):
-        """Handles webhook verification (e.g., Meta's GET request)."""
         logger.info(f"Webhook verification attempt for provider ID: {provider_id}")
         
         try:
             service_factory = WhatsAppService()
-            # Find provider by ID first
             provider_service = service_factory.get_service_instance_for_webhook(provider_id=provider_id)
             provider = provider_service.provider
 
-            # Meta-specific verification
             if provider.provider_type == 'meta':
                 hub_mode = request.GET.get('hub.mode')
                 hub_challenge = request.GET.get('hub.challenge')
@@ -341,7 +313,6 @@ class WhatsAppWebhookView(viewsets.ViewSet):
                     logger.warning(f"Webhook verification FAILED for Meta provider: {provider.name}. Token mismatch.")
                     return Response('Invalid token', status=status.HTTP_403_FORBIDDEN)
             
-            # ... (Add verification logic for other providers if needed) ...
             
             logger.warning(f"GET request received for non-Meta provider {provider.name}, not supported.")
             return Response('Provider not configured for GET webhook', status=status.HTTP_400_BAD_REQUEST)
@@ -354,13 +325,11 @@ class WhatsAppWebhookView(viewsets.ViewSet):
 
     @action(detail=False, methods=['post'], url_path='(?P<provider_id>[0-9]+)')
     def handle_webhook(self, request, provider_id=None):
-        """Handles incoming webhook events (POST request)."""
         logger.info(f"Received webhook POST for provider ID: {provider_id}")
         try:
             service_factory = WhatsAppService()
             provider_service = service_factory.get_service_instance_for_webhook(provider_id=provider_id)
             
-            # Pass data to the provider-specific handler
             provider_service.handle_webhook(request.data)
             
             return Response({'status': 'success'}, status=status.HTTP_200_OK)
@@ -373,7 +342,6 @@ class WhatsAppWebhookView(viewsets.ViewSet):
 
 
 class WhatsAppAnalyticsViewSet(viewsets.ViewSet):
-    """ViewSet for WhatsApp analytics and reporting (Dashboard)"""
     permission_classes = [permissions.IsAuthenticated]
     
     @action(detail=False, methods=['get'], url_path='dashboard')

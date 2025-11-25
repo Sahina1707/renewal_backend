@@ -17,7 +17,6 @@ from django.core.mail import EmailMessage
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 class EmailManagerService:
-    
     @staticmethod
     def parse_email_list(email_string: str) -> List[str]:
         if not email_string:
@@ -31,18 +30,7 @@ class EmailManagerService:
         try:
             if email_manager.schedule_send and email_manager.schedule_date_time:
                 if timezone.now() < email_manager.schedule_date_time:
-                    EmailManager.objects.filter(id=email_manager.id).update(
-                        email_status='scheduled'
-                    )
-                    email_manager.refresh_from_db()
-                    schedule_dt = email_manager.schedule_date_time
-                    scheduled_at_str = schedule_dt.isoformat() if schedule_dt else None
-                    return {
-                        'success': True,
-                        'message': 'Email scheduled for sending',
-                        'scheduled_at': scheduled_at_str
-                    }
-
+                    return {'success': False, 'message': 'Not time yet'}
             subject = str(email_manager.subject)
             message = str(email_manager.message)
 
@@ -140,8 +128,9 @@ class EmailManagerService:
             scheduled_emails = EmailManager.objects.filter(
                 schedule_send=True,
                 schedule_date_time__lte=now,
-                email_status__in=['pending', 'scheduled'],
                 is_deleted=False
+            ).filter(
+                Q(email_status="pending") | Q(email_status="scheduled")
             )
             
             sent_count = 0
