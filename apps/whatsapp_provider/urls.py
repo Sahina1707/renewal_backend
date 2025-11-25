@@ -11,7 +11,6 @@ from .views import (
     WhatsAppAnalyticsViewSet,
 )
 
-# Create router for API endpoints
 router = DefaultRouter()
 router.register(r'providers', WhatsAppProviderViewSet, basename='whatsapp-provider')
 router.register(r'phone-numbers', WhatsAppPhoneNumberViewSet, basename='whatsapp-phone-numbers')

@@ -20,11 +20,11 @@ app.conf.beat_schedule = {
     # --- YOUR EXISTING TASKS (UNCHANGED) ---
     'fetch-incoming-emails': {
         'task': 'apps.email_manager.tasks.fetch_and_process_incoming_emails',
-        'schedule': 300.0,  
+        'schedule': 30.0,  
     },
     'process-scheduled-emails': {
         'task': 'apps.email_manager.tasks.process_scheduled_emails',
-        'schedule': 300.0,  
+        'schedule': 30.0,  
     },
     'process-renewal-reminders': {
         'task': 'apps.policies.tasks.process_renewal_reminders',

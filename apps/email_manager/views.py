@@ -2,13 +2,14 @@ from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Q
-from .models import EmailManager, EmailReply, StartedReplyMail
+from .models import EmailManager, EmailReply, StartedReplyMail,EmailManagerForwardMail
 from .serializers import (
     EmailManagerSerializer,
     EmailManagerCreateSerializer,
     EmailManagerUpdateSerializer,
     SentEmailListSerializer,
-    EmailReplySerializer
+    EmailReplySerializer,
+    EmailForwardSerializer
 )
 from .services import EmailManagerService
 from apps.templates.models import Template
@@ -25,6 +26,7 @@ from email.utils import make_msgid
 from django.core.mail import EmailMultiAlternatives
 from django.utils import timezone
 from django.utils.html import strip_tags
+from apps.policies.models import Policy
 
 class EmailManagerViewSet(viewsets.ModelViewSet):
     
@@ -454,7 +456,6 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
             renewal_info = {}
             if email.policy_number:
                 try:
-                    from apps.policies.models import Policy
                     policy = Policy.objects.get(policy_number=email.policy_number)
                     renewal_info = {
                         "policy_number": policy.policy_number,
@@ -595,120 +596,6 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                 "success": False,
                 "message": f"Error fetching details: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-   
-
-    # @action(detail=True, methods=['post'], url_path='reply')
-    # def reply_to_started_email(self, request, pk=None):
-    #     try:
-    #         data = request.data
-
-    #         message = data.get("message")
-    #         html_message = data.get("html_message")
-    #         cc = data.get("cc")
-    #         bcc = data.get("bcc")
-    #         attachments = data.get("attachments")
-    #         priority = data.get("priority", "Normal")
-    #         track_opens = data.get("track_opens", False)
-    #         track_clicks = data.get("track_clicks", False)
-    #         schedule_send = data.get("schedule_send", False)
-    #         schedule_date_time = data.get("schedule_date_time")
-    #         template_id = data.get("template_id") or data.get("template")
-
-    #         original_email = None
-    #         inbox_email = None
-
-    #         try:
-    #             original_email = EmailManager.objects.get(id=pk, started=True, is_deleted=False)
-    #             to_email = original_email.to
-    #             subject = f"Re: {original_email.subject}"
-    #             in_reply_to = original_email.message_id
-    #         except EmailManager.DoesNotExist:
-    #             inbox_email = EmailManagerInbox.objects.get(id=pk, started=True, is_deleted=False)
-    #             to_email = inbox_email.from_email
-    #             subject = f"Re: {inbox_email.subject}"
-    #             in_reply_to = inbox_email.message_id
-    #         if template_id:
-    #             try:
-    #                 tpl = Template.objects.get(id=template_id)
-
-    #                 if tpl.subject:
-    #                     subject = tpl.subject
-
-    #                 if tpl.content:
-    #                     message = tpl.content
-    #                     html_message = tpl.content
-
-    #             except Template.DoesNotExist:
-    #                 return Response({
-    #                     "success": False,
-    #                     "message": f"Template with ID {template_id} does not exist."
-    #                 }, status=400)
-
-    #         if not message and not html_message:
-    #             return Response({
-    #                 "success": False,
-    #                 "message": "Message or HTML message is required (or provide template_id)."
-    #             }, status=400)
-
-    #         new_msg_id = make_msgid(domain="nbinteli1001.welleazy.com").strip("<>")
-
-    #         email_obj = EmailMultiAlternatives(
-    #             subject=subject,
-    #             body=message,
-    #             from_email="renewals@intelipro.in",
-    #             to=[to_email],
-    #             cc=cc.split(",") if cc else None,
-    #             bcc=bcc.split(",") if bcc else None,
-    #             headers={
-    #                 "Message-ID": new_msg_id,
-    #                 "In-Reply-To": in_reply_to,
-    #                 "References": in_reply_to,
-    #             }
-    #         )
-
-    #         if html_message:
-    #             email_obj.attach_alternative(html_message, "text/html")
-
-    #         email_obj.send()
-
-    #         reply_record = StartedReplyMail.objects.create(
-    #             original_email_manager=original_email,
-    #             original_inbox_email=inbox_email,
-    #             to_email=to_email,
-    #             from_email="renewals@intelipro.in",
-    #             cc=cc,
-    #             bcc=bcc,
-    #             subject=subject,
-    #             message=message,
-    #             html_message=html_message,
-    #             attachments=attachments,
-    #             priority=priority,
-    #             track_opens=track_opens,
-    #             track_clicks=track_clicks,
-    #             schedule_send=schedule_send,
-    #             schedule_date_time=schedule_date_time,
-    #             message_id=new_msg_id,
-    #             in_reply_to=in_reply_to,
-    #             references=in_reply_to,
-    #             template_id=template_id,
-    #             status="sent",
-    #             sent_at=timezone.now(),
-    #             created_by=request.user
-    #         )
-
-    #         return Response({
-    #             "success": True,
-    #             "message": "Reply sent successfully",
-    #             "reply_id": reply_record.id
-    #         })
-
-    #     except Exception as e:
-    #         return Response({
-    #             "success": False,
-    #             "message": str(e)
-    #         }, status=500)
-
 
     @action(detail=True, methods=['post'], url_path='reply')
     def reply_to_started_email(self, request, pk=None):
@@ -725,9 +612,6 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
             schedule_send = data.get("schedule_send", False)
             schedule_date_time = data.get("schedule_date_time")
 
-            # ----------------------------------------------------
-            # 1️⃣ Identify original email (Manager or Inbox)
-            # ----------------------------------------------------
             original_email = None
             inbox_email = None
 
@@ -741,13 +625,8 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                 to_email = inbox_email.from_email
                 subject = f"Re: {inbox_email.subject}"
                 in_reply_to = inbox_email.message_id
-
-            # ----------------------------------------------------
-            # 2️⃣ Prepare Template Rendering Context
-            # ----------------------------------------------------
             context_data = {}
 
-            # From EmailManager (sent email)
             if original_email:
                 context_data = {
                     "first_name": original_email.customer_name or "",
@@ -756,7 +635,6 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                     "premium_amount": original_email.premium_amount or "",
                 }
 
-            # From Inbox (received mail with related email)
             if inbox_email and inbox_email.related_email:
                 related = inbox_email.related_email
                 context_data = {
@@ -765,10 +643,6 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                     "expiry_date": related.renewal_date or "",
                     "premium_amount": related.premium_amount or "",
                 }
-
-            # ----------------------------------------------------
-            # 3️⃣ Template handling
-            # ----------------------------------------------------
             message = data.get("message")
             html_message = data.get("html_message")
 
@@ -776,12 +650,10 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                 try:
                     template = Template.objects.get(id=template_id)
 
-                    # Render subject with variables
                     if template.subject:
                         subject_template = DjangoTemplate(template.subject)
                         subject = subject_template.render(Context(context_data))
 
-                    # Render message with variables
                     content_template = DjangoTemplate(template.content)
                     rendered_message = content_template.render(Context(context_data))
 
@@ -794,9 +666,6 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                         "message": f"Template with id {template_id} not found"
                     }, status=400)
 
-            # ----------------------------------------------------
-            # 4️⃣ Send the email
-            # ----------------------------------------------------
             new_msg_id = make_msgid(domain="nbinteli1001.welleazy.com").strip("<>")
 
             email_obj = EmailMultiAlternatives(
@@ -818,9 +687,6 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
 
             email_obj.send()
 
-            # ----------------------------------------------------
-            # 5️⃣ Save reply record
-            # ----------------------------------------------------
             reply_record = StartedReplyMail.objects.create(
                 original_email_manager=original_email,
                 original_inbox_email=inbox_email,
@@ -857,7 +723,187 @@ class EmailManagerViewSet(viewsets.ModelViewSet):
                 "success": False,
                 "message": str(e)
             }, status=500)
+        
+    @action(detail=True, methods=['post'], url_path='forward')
+    def forward_sent_email(self, request, pk=None):
+        try:
+            original_email = self.get_object()   
 
+            serializer = EmailForwardSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            data = serializer.validated_data
+
+            forward_to = data["forward_to"]
+            cc = data.get("cc")
+            bcc = data.get("bcc")
+            additional_message = data.get("additional_message", "")
+            template_id = data.get("template_id")
+
+            subject = f"Fwd: {original_email.subject}"
+
+            if template_id:
+                try:
+                    tpl = Template.objects.get(id=template_id)
+
+                    context_data = {
+                        "first_name": original_email.customer_name or "",
+                        "policy_number": original_email.policy_number or "",
+                        "expiry_date": original_email.renewal_date or "",
+                        "premium_amount": original_email.premium_amount or "",
+                    }
+
+                    html_body = DjangoTemplate(tpl.content).render(Context(context_data))
+                    text_body = strip_tags(html_body)
+
+                except Template.DoesNotExist:
+                    return Response({
+                        "success": False,
+                        "message": "Template not found"
+                    }, status=400)
+
+            else:
+                html_body = f"""
+                    <p>{additional_message}</p><br>
+                    <hr>
+                    <h4>Forwarded Email</h4>
+                    <b>From:</b> {original_email.from_email}<br>
+                    <b>Subject:</b> {original_email.subject}<br>
+                    <b>Date:</b> {original_email.sent_at}<br><br>
+                    {original_email.message}
+                """
+
+                text_body = strip_tags(html_body)
+
+            email_obj = EmailMultiAlternatives(
+                subject=subject,
+                body=text_body,
+                from_email="renewals@intelipro.in",
+                to=[forward_to],
+                cc=cc.split(",") if cc else None,
+                bcc=bcc.split(",") if bcc else None
+            )
+
+            email_obj.attach_alternative(html_body, "text/html")
+            email_obj.send()
+
+            forward_record = EmailManagerForwardMail.objects.create(
+                original_email_manager=original_email,
+                forward_to=forward_to,
+                cc=cc,
+                bcc=bcc,
+                subject=subject,
+                message=text_body,
+                html_message=html_body,
+                template_id=template_id,
+                status="sent",
+                sent_at=timezone.now()
+            )
+
+            return Response({
+                "success": True,
+                "message": "Email forwarded successfully",
+                "forward_id": forward_record.id
+            }, status=200)
+
+        except Exception as e:
+            return Response({
+                "success": False,
+                "message": f"Error forwarding email: {str(e)}"
+            }, status=500)
+
+    @action(detail=True, methods=['post'], url_path='forward-started')
+    def forward_started_email(self, request, pk=None):
+        try:
+            try:
+                original_email = EmailManager.objects.get(
+                    id=pk, started=True, is_deleted=False
+                )
+            except EmailManager.DoesNotExist:
+                return Response({
+                    "success": False,
+                    "message": f"Started email with ID {pk} not found"
+                }, status=404)
+
+            serializer = EmailForwardSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            data = serializer.validated_data
+
+            forward_to = data["forward_to"]
+            cc = data.get("cc")
+            bcc = data.get("bcc")
+            additional_message = data.get("additional_message", "")
+            template_id = data.get("template_id")
+
+            subject = f"Fwd: {original_email.subject}"
+
+            if template_id:
+                try:
+                    tpl = Template.objects.get(id=template_id)
+
+                    context_data = {
+                        "first_name": original_email.customer_name or "",
+                        "policy_number": original_email.policy_number or "",
+                        "expiry_date": original_email.renewal_date or "",
+                        "premium_amount": original_email.premium_amount or "",
+                    }
+
+                    html_body = DjangoTemplate(tpl.content).render(Context(context_data))
+                    text_body = strip_tags(html_body)
+
+                except Template.DoesNotExist:
+                    return Response({
+                        "success": False,
+                        "message": "Template not found"
+                    }, status=400)
+
+            else:
+                html_body = f"""
+                    <p>{additional_message}</p><br>
+                    <hr>
+                    <h4>Forwarded Email</h4>
+                    <b>From:</b> {original_email.from_email}<br>
+                    <b>Subject:</b> {original_email.subject}<br>
+                    <b>Date:</b> {original_email.sent_at}<br><br>
+                    {original_email.message}
+                """
+                text_body = strip_tags(html_body)
+
+            email_obj = EmailMultiAlternatives(
+                subject=subject,
+                body=text_body,
+                from_email="renewals@intelipro.in",
+                to=[forward_to],
+                cc=cc.split(",") if cc else None,
+                bcc=bcc.split(",") if bcc else None
+            )
+
+            email_obj.attach_alternative(html_body, "text/html")
+            email_obj.send()
+
+            forward_record = EmailManagerForwardMail.objects.create(
+                original_email_manager=original_email,
+                forward_to=forward_to,
+                cc=cc,
+                bcc=bcc,
+                subject=subject,
+                message=text_body,
+                html_message=html_body,
+                template_id=template_id,
+                status="sent",
+                sent_at=timezone.now()
+            )
+
+            return Response({
+                "success": True,
+                "message": "Started email forwarded successfully",
+                "forward_id": forward_record.id
+            }, status=200)
+
+        except Exception as e:
+            return Response({
+                "success": False,
+                "message": f"Error forwarding started email: {str(e)}"
+            }, status=500)
 
 class EmailManagerInboxViewSet(viewsets.ModelViewSet):
     queryset = EmailManagerInbox.objects.all()
@@ -909,7 +955,6 @@ class EmailManagerInboxViewSet(viewsets.ModelViewSet):
                 is_deleted=False
             )
 
-            # Optional filters
             related_email_id = request.query_params.get('related_email_id')
             if related_email_id:
                 queryset = queryset.filter(related_email_id=related_email_id)
@@ -1220,7 +1265,94 @@ class EmailManagerInboxViewSet(viewsets.ModelViewSet):
                 "success": False,
                 "message": f"Error updating started status: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
+        
+    @action(detail=True, methods=['post'], url_path='forward')
+    def forward_email(self, request, pk=None):
+        try:
+            inbox_email = self.get_object()
+
+            serializer = EmailForwardSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            data = serializer.validated_data
+
+            forward_to = data["forward_to"]
+            cc = data.get("cc")
+            bcc = data.get("bcc")
+            additional_message = data.get("additional_message", "")
+            template_id = data.get("template_id")
+
+            subject = f"Fwd: {inbox_email.subject}"
+
+            if template_id:
+                try:
+                    tpl = Template.objects.get(id=template_id)
+
+                    context_data = {}
+                    if inbox_email.related_email:
+                        related = inbox_email.related_email
+                        context_data = {
+                            "first_name": related.customer_name or "",
+                            "policy_number": related.policy_number or "",
+                            "expiry_date": related.renewal_date or "",
+                            "premium_amount": related.premium_amount or "",
+                        }
+
+                    # Render template
+                    html_body = DjangoTemplate(tpl.content).render(Context(context_data))
+                    text_body = strip_tags(html_body)
+
+                except Template.DoesNotExist:
+                    return Response({"success": False, "message": "Template not found"}, status=400)
+
+            else:
+                html_body = f"""
+                    <p>{additional_message}</p><br>
+                    <hr>
+                    <h4>Forwarded Email</h4>
+                    <b>From:</b> {inbox_email.from_email}<br>
+                    <b>Subject:</b> {inbox_email.subject}<br>
+                    <b>Date:</b> {inbox_email.received_at}<br><br>
+                    {inbox_email.html_message or inbox_email.message}
+                """
+
+                text_body = strip_tags(html_body)
+
+            email_obj = EmailMultiAlternatives(
+                subject=subject,
+                body=text_body,
+                from_email="renewals@intelipro.in",
+                to=[forward_to],
+                cc=cc.split(",") if cc else None,
+                bcc=bcc.split(",") if bcc else None
+            )
+
+            email_obj.attach_alternative(html_body, "text/html")
+            email_obj.send()
+
+            forward_record = EmailManagerForwardMail.objects.create(
+                original_inbox_email=inbox_email,
+                forward_to=forward_to,
+                cc=cc,
+                bcc=bcc,
+                subject=subject,
+                message=text_body,
+                html_message=html_body,
+                template_id=template_id,
+                status="sent",
+                sent_at=timezone.now()
+            )
+
+            return Response({
+                "success": True,
+                "message": "Email forwarded successfully",
+                "forward_id": forward_record.id
+            }, status=200)
+
+        except Exception as e:
+            return Response({
+                "success": False,
+                "message": f"Error forwarding email: {str(e)}"
+            }, status=500)
 
 
 class SyncEmailsView(APIView):
