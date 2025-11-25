@@ -2,6 +2,7 @@ from rest_framework import serializers
 from .models import (
     EmailInboxMessage, EmailFolder, EmailConversation, EmailFilter,
     EmailAttachment, EmailSearchQuery
+    
 )
 
 
@@ -18,7 +19,8 @@ class EmailFolderSerializer(serializers.ModelSerializer):
         model = EmailFolder
         fields = [
             'id', 'name', 'folder_type', 'folder_type_display', 'description',
-            'color', 'is_system', 'is_active', 'parent', 'sort_order',
+            'color', 'is_system', 'is_active'
+            , 'sort_order',
             'message_count', 'unread_count', 'created_at', 'updated_at',
             'created_by', 'created_by_name', 'updated_by', 'updated_by_name',
             'is_deleted', 'deleted_at', 'deleted_by'
@@ -86,28 +88,36 @@ class EmailInboxMessageSerializer(serializers.ModelSerializer):
     attachments = EmailAttachmentSerializer(many=True, read_only=True)
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
     updated_by_name = serializers.CharField(source='updated_by.get_full_name', read_only=True)
-    
+    escalated_by_name = serializers.CharField(source='escalated_by.get_full_name', read_only=True)
+
     class Meta:
         model = EmailInboxMessage
         fields = [
-            'id', 'message_id', 'from_email', 'from_name', 'to_email',
+            'id', 'message_id', 'from_email', 'from_name', 'to_emails',
             'cc_emails', 'bcc_emails', 'reply_to', 'subject', 'html_content',
             'text_content', 'category', 'category_display', 'priority',
             'priority_display', 'sentiment', 'sentiment_display', 'status',
             'status_display', 'folder', 'folder_name', 'is_starred',
-            'is_important', 'tags', 'thread_id', 'parent_message',
+            'is_important', 'tags', 'thread_id',
+            #   'parent',
             'is_processed', 'processing_notes', 'assigned_to', 'assigned_to_name',
             'received_at', 'read_at', 'replied_at', 'forwarded_at',
             'raw_headers', 'raw_body', 'attachments', 'created_at', 'updated_at',
             'created_by', 'created_by_name', 'updated_by', 'updated_by_name',
-            'is_deleted', 'deleted_at', 'deleted_by'
+            'is_deleted', 'deleted_at', 'deleted_by',
+            'escalation_reason',
+            'escalation_priority',
+            'escalated_at',
+            'escalated_by_name',
+            'due_date',
+            'is_escalated',
+            'customer_type',
         ]
         read_only_fields = [
             'id', 'message_id', 'received_at', 'read_at', 'replied_at',
-            'forwarded_at', 'created_at', 'updated_at', 'created_by',
+            'forwarded_at', 'created_at', 'updatedparent_at', 'created_by',
             'updated_by', 'is_deleted', 'deleted_at', 'deleted_by'
         ]
-
 
 class EmailInboxMessageCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating EmailInboxMessage"""
@@ -115,11 +125,14 @@ class EmailInboxMessageCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmailInboxMessage
         fields = [
-            'from_email', 'from_name', 'to_email', 'cc_emails', 'bcc_emails',
+            'from_email', 'from_name', 'to_emails', 'cc_emails', 'bcc_emails',
             'reply_to', 'subject', 'html_content', 'text_content', 'category',
             'priority', 'sentiment', 'folder', 'is_starred', 'is_important',
-            'tags', 'thread_id', 'parent_message', 'assigned_to', 'raw_headers',
-            'raw_body'
+            'tags', 'thread_id', 
+            #   'parent',
+            #  'assigned_to',
+            #    'raw_headers',
+            # 'raw_body'
         ]
     
     def create(self, validated_data):
@@ -127,7 +140,12 @@ class EmailInboxMessageCreateSerializer(serializers.ModelSerializer):
         import uuid
         validated_data['message_id'] = str(uuid.uuid4())
         validated_data['created_by'] = self.context['request'].user
+        validated_data['in_reply_to'] = validated_data.get('in_reply_to', '') or ''
+        validated_data['references'] = validated_data.get('references', '') or ''
+        validated_data['subcategory'] = validated_data.get('subcategory', '') or ''
+        validated_data['source_message_id'] = validated_data.get('source_message_id', '') or ''
         return super().create(validated_data)
+        
 
 
 class EmailInboxMessageUpdateSerializer(serializers.ModelSerializer):
@@ -138,7 +156,8 @@ class EmailInboxMessageUpdateSerializer(serializers.ModelSerializer):
         fields = [
             'category', 'priority', 'sentiment', 'status', 'folder',
             'is_starred', 'is_important', 'tags', 'is_processed',
-            'processing_notes', 'assigned_to'
+            'processing_notes',
+            #   'assigned_to'
         ]
     
     def update(self, instance, validated_data):
@@ -337,7 +356,7 @@ class EmailSearchSerializer(serializers.Serializer):
         required=False
     )
     from_email = serializers.EmailField(required=False, allow_blank=True)
-    to_email = serializers.EmailField(required=False, allow_blank=True)
+    to_emails = serializers.EmailField(required=False, allow_blank=True)
     assigned_to = serializers.UUIDField(required=False, allow_null=True)
     is_starred = serializers.BooleanField(required=False)
     is_important = serializers.BooleanField(required=False)
@@ -381,3 +400,11 @@ class EmailStatisticsSerializer(serializers.Serializer):
     recent_activity = serializers.ListField()
     top_senders = serializers.ListField()
     response_time_stats = serializers.DictField()
+class EmailComposeSerializer(serializers.Serializer):
+    """Serializer for composing and sending a new email"""
+    to_emails = serializers.ListField(child=serializers.EmailField())
+    cc_emails = serializers.ListField(child=serializers.EmailField(), required=False, default=list)
+    bcc_emails = serializers.ListField(child=serializers.EmailField(), required=False, default=list)
+    subject = serializers.CharField(max_length=500)
+    html_content = serializers.CharField(required=False, allow_blank=True)
+    text_content = serializers.CharField(required=False, allow_blank=True)
