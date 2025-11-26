@@ -11,12 +11,12 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('campaigns', '0002_initial'),
-        ('customers', '0006_rename_customers_cu_channel_123abc_idx_customers_c_channel_d1da5f_idx'),
+        ('customers', '0006_rename_customers...'),
         ('policies', '0009_claimtimelineevent'),
         ('templates', '0008_template_usage_count'),
-        ('whatsapp_provider', '0001_initial'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
+
 
     operations = [
         migrations.AddField(
