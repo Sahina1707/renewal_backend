@@ -38,16 +38,26 @@ def whatsapp_phone_number_pre_save(sender, instance, **kwargs):
         ).exclude(pk=instance.pk).update(is_primary=False)
 
 
-@receiver(post_save, sender=WhatsAppPhoneNumber)
-def whatsapp_phone_number_post_save(sender, instance, created, **kwargs):
+@receiver(post_save, sender=WhatsAppProvider)
+def whatsapp_provider_post_save(sender, instance, created, **kwargs):
     
     if created:
-        print(f"Added phone number {instance.display_phone_number or instance.phone_number} to Provider {instance.provider.name}")
+        print(f"Created new WhatsApp Provider: {instance.name} (Type: {instance.provider_type})")
         
-        if instance.status == 'verified' and not instance.verified_at:
-            instance.verified_at = timezone.now()
-            instance.save(update_fields=['verified_at'])
-
+        if instance.phone_number_id:
+            if not WhatsAppPhoneNumber.objects.filter(phone_number_id=instance.phone_number_id).exists():
+                display_num = instance.phone_number_id
+                
+                WhatsAppPhoneNumber.objects.create(
+                    provider=instance,  
+                    phone_number_id=instance.phone_number_id,
+                    phone_number=display_num, 
+                    display_phone_number=display_num, 
+                    status='verified', 
+                    is_primary=True,
+                    is_active=True
+                )
+                print(f" -> Auto-created Phone Number table entry for: {instance.phone_number_id}")
 
 @receiver(post_save, sender=WhatsAppMessage)
 def whatsapp_message_post_save(sender, instance, created, **kwargs):
