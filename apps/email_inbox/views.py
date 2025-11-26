@@ -4,17 +4,26 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db.models import Q, Count
 from django.utils import timezone
+from django.conf import settings
 
 from .models import (
     EmailInboxMessage, EmailFolder, EmailConversation, EmailFilter,
     EmailAttachment, EmailSearchQuery
 )
-from .serializers import (
-    EmailInboxMessageSerializer, EmailInboxMessageCreateSerializer, EmailInboxMessageUpdateSerializer,
-    EmailFolderSerializer, EmailConversationSerializer, EmailFilterSerializer,
-    EmailAttachmentSerializer, EmailSearchQuerySerializer, EmailReplySerializer,
-    EmailForwardSerializer, BulkEmailActionSerializer, EmailSearchSerializer,
-    EmailStatisticsSerializer
+from .serializers import (EmailInboxMessageSerializer, 
+    EmailInboxMessageCreateSerializer, 
+    EmailInboxMessageUpdateSerializer,
+    EmailFolderSerializer, 
+    EmailConversationSerializer, 
+    EmailFilterSerializer,
+    EmailAttachmentSerializer, 
+    EmailSearchQuerySerializer, 
+    EmailReplySerializer,
+    EmailForwardSerializer, 
+    BulkEmailActionSerializer, 
+    EmailSearchSerializer,
+    EmailStatisticsSerializer,
+    EmailComposeSerializer
 )
 from .services import EmailInboxService
 
@@ -368,7 +377,118 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
             return Response(stats, status=status.HTTP_400_BAD_REQUEST)
         
         return Response(stats)
+    @action(detail=True, methods=['post'])
+    def escalate(self, request, pk=None):
+        email = self.get_object()
+        
+        # 1. Get data from the Modal
+        reason = request.data.get('reason')
+        priority = request.data.get('priority')
+        
+        if not reason or not priority:
+            return Response(
+                {'error': 'Reason and Priority are required.'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
+        # 2. Update the Email
+        email.is_escalated = True
+        email.escalation_reason = reason
+        email.escalation_priority = priority
+        email.escalated_at = timezone.now()
+        email.escalated_by = request.user
+        email.save()
+        
+        # 3. Log to Audit Trail
+        EmailAuditLog.objects.create(
+            email_message=email,
+            action="Escalated",
+            details=f"Priority: {priority} | Reason: {reason}",
+            performed_by=request.user
+        )
+
+        return Response({'message': 'Email escalated successfully'})
+
+    # --- Feature: Set Customer Category (Matches Image 1 Menu) ---
+    @action(detail=True, methods=['post'])
+    def set_category(self, request, pk=None):
+        email = self.get_object()
+        new_category = request.data.get('category')
+        
+        valid_choices = dict(EmailInboxMessage.CUSTOMER_TYPE_CHOICES).keys()
+        if new_category not in valid_choices:
+            return Response({'error': 'Invalid category'}, status=status.HTTP_400_BAD_REQUEST)
+
+        old_category = email.customer_type
+        email.customer_type = new_category
+        email.save()
+        
+        # Log to Audit Trail
+        EmailAuditLog.objects.create(
+            email_message=email,
+            action="Category Changed",
+            details=f"Changed from {old_category} to {new_category}",
+            performed_by=request.user
+        )
+
+        return Response({'message': f'Category updated to {new_category}'})
+
+    # --- Feature: View Audit Trail (Matches Image 1 Menu) ---
+    @action(detail=True, methods=['get'])
+    def audit_trail(self, request, pk=None):
+        email = self.get_object()
+        logs = email.audit_logs.all()
+        
+        # Simple inline serialization for the logs
+        data = [{
+            'action': log.action,
+            'details': log.details,
+            'performed_by': log.performed_by.get_full_name() if log.performed_by else 'System',
+            'timestamp': log.timestamp
+        } for log in logs]
+        
+        return Response(data)
+    @action(detail=False, methods=['post'])
+    def send_new(self, request):
+        """
+        Endpoint to Compose & Send a brand new email.
+        URL: POST /api/email-inbox/messages/send_new/
+        """
+        serializer = EmailComposeSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+        data = serializer.validated_data
+        
+        # 1. Create the Email Object in DB (Folder = Sent)
+        import uuid
+        email_message = EmailInboxMessage.objects.create(
+            from_email=settings.DEFAULT_FROM_EMAIL, # Your system email
+            to_emails=data['to_emails'],
+            cc_emails=data['cc_emails'],
+            bcc_emails=data['bcc_emails'],
+            subject=data['subject'],
+            html_content=data.get('html_content', ''),
+            text_content=data.get('text_content', ''),
+            folder=EmailFolder.objects.filter(folder_type='sent').first(), # Save to 'Sent' folder
+            status='read', # Outgoing emails are read by definition
+            message_id=str(uuid.uuid4()),
+            created_by=request.user
+        )
+
+        # 2. Actually Send it via SMTP
+        service = EmailInboxService()
+        success, error_msg = service.send_outbound_email(email_message)
+
+        if success:
+            return Response({
+                'message': 'Email sent successfully',
+                'id': email_message.id
+            }, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                'message': f'Failed to send: {error_msg}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class EmailConversationViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for viewing email conversations"""

@@ -41,11 +41,43 @@ class WhatsAppProvider(models.Model):
         choices=PROVIDER_CHOICES, 
         default='meta'
     )
-    credentials = models.JSONField(
-        default=dict, 
-        help_text="Encrypted API credentials for the provider"
+    access_token = models.CharField(
+        max_length=500, 
+        blank=True, 
+        null=True, 
+        help_text="The secret key/token (Encrypted)"
     )
     
+    account_id = models.CharField(
+        max_length=100, 
+        blank=True, 
+        null=True, 
+        help_text="The account identifier"
+    )
+    
+    phone_number_id = models.CharField(
+        max_length=100, 
+        blank=True, 
+        null=True, 
+        help_text="The identifier for the phone number"
+    )
+    
+    # Maps to: App Name (Gupshup)
+    app_id = models.CharField(
+        max_length=100, 
+        blank=True, 
+        null=True, 
+        help_text="App ID or App Name"
+    )
+
+    api_url = models.CharField( 
+        max_length=255, 
+        blank=True, 
+        null=True, 
+        help_text="API Endpoint URL"
+    )
+    
+    api_version = models.CharField(max_length=10, default="v18.0", blank=True, null=True)
     business_name = models.CharField(max_length=255, blank=True, null=True)
     business_description = models.TextField(blank=True, null=True)
     business_email = models.EmailField(blank=True, null=True)

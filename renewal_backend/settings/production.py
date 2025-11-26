@@ -5,6 +5,7 @@ Production settings for Intelipro Insurance Policy Renewal System.
 from .base import *
 from decouple import config
 import sentry_sdk
+import os
 from sentry_sdk.integrations.django import DjangoIntegration
 from sentry_sdk.integrations.celery import CeleryIntegration
 
@@ -153,4 +154,22 @@ print("🔒 Running in PRODUCTION mode")
 print(f"🛡️  Security features enabled")
 print(f"📊 Sentry monitoring: {'✅' if SENTRY_DSN else '❌'}")
 print(f"💾 File storage: AWS S3")
-print(f"🔐 SSL redirect: {SECURE_SSL_REDIRECT}") 
+print(f"🔐 SSL redirect: {SECURE_SSL_REDIRECT}")
+ 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = config("OPENAI_MODEL", default="gpt-4")
+OPENAI_MAX_TOKENS = config("OPENAI_MAX_TOKENS", default=150, cast=int)
+OPENAI_TEMPERATURE = config("OPENAI_TEMPERATURE", default=0.7, cast=float)
+
+print("🤖 OpenAI Key Loaded:", "YES" if OPENAI_API_KEY else "NO")
+
+# AWS S3 Storage
+DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+
+AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
+AWS_STORAGE_BUCKET_NAME = "renewal-backend-bucket"
+AWS_S3_REGION_NAME = "ap-south-1"
+AWS_S3_SIGNATURE_VERSION = "s3v4"
+AWS_S3_FILE_OVERWRITE = False
+AWS_DEFAULT_ACL = None
