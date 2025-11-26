@@ -115,7 +115,7 @@ class WhatsAppProvider(models.Model):
     messages_sent_this_month = models.PositiveIntegerField(default=0)
     last_reset_daily = models.DateField(default=today_date)
     last_reset_monthly = models.DateField(default=today_date)
-
+    
 
     
     is_default = models.BooleanField(default=False, help_text="Use this provider by default")
