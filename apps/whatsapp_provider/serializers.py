@@ -48,27 +48,23 @@ class WhatsAppProviderSerializer(serializers.ModelSerializer):
         ]
 
 class WhatsAppProviderCreateUpdateSerializer(serializers.ModelSerializer):
-    credentials = serializers.JSONField(required=False)
-
     class Meta:
         model = WhatsAppProvider
         fields = '__all__'
         read_only_fields = ['id', 'webhook_verify_token', 'created_by', 'updated_by']
-        extra_kwargs = {
-            'credentials': {'required': False},
-        }
 
     def validate(self, data):
-        if 'credentials' in data:
-            for key in ['auth_token', 'access_token']:
-                if key in data['credentials']:
-                    data['credentials'][key] = _encrypt_value(data['credentials'][key])
+        # 1. Encrypt the access_token if provided
+        if 'access_token' in data and data['access_token']:
+            data['access_token'] = _encrypt_value(data['access_token'])
 
+        # 2. Generate a webhook token if missing
         if not data.get('webhook_verify_token') and not self.instance:
             data['webhook_verify_token'] = str(uuid.uuid4())
 
         return data
-
+    
+    # (Keep your create and update methods from before for handling is_default logic)
     def create(self, validated_data):
         if validated_data.get('is_default', False):
             WhatsAppProvider.objects.filter(is_default=True).update(is_default=False)
@@ -78,7 +74,7 @@ class WhatsAppProviderCreateUpdateSerializer(serializers.ModelSerializer):
         if validated_data.get('is_default', False) and not instance.is_default:
             WhatsAppProvider.objects.filter(is_default=True).exclude(pk=instance.pk).update(is_default=False)
         return super().update(instance, validated_data)
-
+    
 class WhatsAppPhoneNumberSerializer(serializers.ModelSerializer):
     provider_name = serializers.CharField(source='provider.name', read_only=True)
     class Meta:
@@ -148,7 +144,7 @@ class MessageSendSerializer(serializers.Serializer):
     def validate_to_phone_number(self, value):
         value = value.replace(" ", "").replace("-", "")
         if not value.startswith('+'):
-            pass 
+            value = f"+{value}"        
         return value
 
     def validate(self, data):
