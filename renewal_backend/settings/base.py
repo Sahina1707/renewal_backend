@@ -315,7 +315,7 @@ SIMPLE_JWT = {
 # CORS Configuration
 CORS_ALLOWED_ORIGINS = config(
     'CORS_ALLOWED_ORIGINS',
-    default='http://localhost:3000,http://127.0.0.1:3000,http://13.233.6.207:8000',
+    default='http://localhost:3001,http://127.0.0.1:3000,http://13.233.6.207:8000',
     cast=lambda v: [s.strip() for s in v.split(',')]
 )
 
@@ -509,3 +509,9 @@ CELERY_BEAT_SCHEDULE = {
     },
 
 }
+
+
+# GOOGLE_GMAIL_PROJECT_ID = "intelipro-email"
+# GOOGLE_GMAIL_PUBSUB_TOPIC = "projects/intelipro-email/topics/gmail-notifications"
+# GOOGLE_GMAIL_SERVICE_ACCOUNT_FILE
+
