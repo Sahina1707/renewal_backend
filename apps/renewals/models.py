@@ -12,7 +12,7 @@ class Competitor(BaseModel):
     """Model to store information about competitors."""
     name = models.CharField(max_length=255, unique=True, help_text="The unique name of the competitor.") 
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='competitors_created')
-    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='competitors_updated')
+    # updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='competitors_updated')
 
     class Meta:
         db_table = 'competitors'
@@ -64,6 +64,7 @@ class RenewalCase(BaseModel):
         ('better_coverage', 'Better Coverage Elsewhere'),
         ('financial_constraints', 'Financial Constraints'),
         ('other', 'Other'),
+        ('changed_insurance_provider', 'Changed Insurance Provider'),
     ]
 
     NOT_INTERESTED_REASON_CHOICES = [

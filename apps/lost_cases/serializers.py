@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from apps.renewals.models import RenewalCase
+from apps.renewals.models import Competitor
 
 class LostCaseListSerializer(serializers.ModelSerializer):
     case_id = serializers.CharField(source='case_number', read_only=True)
@@ -17,7 +18,7 @@ class LostCaseListSerializer(serializers.ModelSerializer):
             'case_id', 
             'customer', 
             'policy_number', 
-            'product',   # Now contains name and amount
+            'product',   
             'lost_reason', 
             'competitor', 
             'lost_date', 
@@ -33,9 +34,6 @@ class LostCaseListSerializer(serializers.ModelSerializer):
         }
 
     def get_product(self, obj):
-        """
-        Returns product details including the name and the renewal amount.
-        """
         product_name = getattr(obj.policy, 'product_name', 'General Insurance') 
         
         return {
@@ -47,3 +45,17 @@ class LostCaseListSerializer(serializers.ModelSerializer):
         if obj.assigned_to:
             return obj.assigned_to.get_full_name() or obj.assigned_to.username
         return "Unassigned"
+    
+class LostCaseUpdateSerializer(serializers.Serializer):
+    lost_reason = serializers.ChoiceField(
+        choices=RenewalCase.LOST_REASON_CHOICES,
+        required=True
+    )
+    lost_date = serializers.DateField(required=True)
+    competitor_id = serializers.IntegerField(required=False, allow_null=True)
+
+    def validate_competitor_id(self, value):
+        if value is not None:
+            if not Competitor.objects.filter(id=value).exists():
+                raise serializers.ValidationError("Invalid competitor_id")
+        return value

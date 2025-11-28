@@ -1,7 +1,6 @@
 from rest_framework import serializers
 from apps.renewals.models import RenewalCase
 
-# --- 1. Serializer for the "Archive" and "Unarchive" Actions ---
 class ArchiveCaseActionSerializer(serializers.ModelSerializer):
     case_ids = serializers.ListField(child=serializers.CharField(), write_only=True)
 
@@ -13,21 +12,16 @@ class ArchiveCaseActionSerializer(serializers.ModelSerializer):
             'archived_date': {'required': False},
         }
 
-# --- 2. Serializer for the List (Dashboard) ---
 class ArchivedCaseListSerializer(serializers.ModelSerializer):
     case_id = serializers.CharField(source='case_number', read_only=True)
 
-    # Customer Group
     customer = serializers.SerializerMethodField()
 
-    # Policy Group
     policy_number = serializers.CharField(source='policy.policy_number', read_only=True)
     product = serializers.SerializerMethodField()
 
-    # Status Columns
     final_status = serializers.CharField(source='get_status_display', read_only=True)
 
-    # Agent
     agent = serializers.SerializerMethodField()
 
     class Meta:
@@ -52,3 +46,21 @@ class ArchivedCaseListSerializer(serializers.ModelSerializer):
 
     def get_agent(self, obj):
         return obj.assigned_to.get_full_name() if obj.assigned_to else "Unassigned"
+    
+
+class ArchiveSingleCaseSerializer(serializers.Serializer):
+    is_archived = serializers.BooleanField(required=True)
+    archived_reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True
+    )
+    archived_date = serializers.DateField(required=False)
+
+    def validate(self, attrs):
+        is_archived = attrs.get("is_archived")
+
+        if is_archived and not attrs.get("archived_reason"):
+            pass
+
+        return attrs
