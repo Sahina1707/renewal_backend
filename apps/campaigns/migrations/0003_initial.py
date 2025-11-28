@@ -11,7 +11,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('campaigns', '0002_initial'),
-        ('customers', '0006_rename_customers...'),
+        ('customers', '0006_rename_customers_cu_channel_123abc_idx_customers_c_channel_d1da5f_idx'),
         ('policies', '0009_claimtimelineevent'),
         ('templates', '0008_template_usage_count'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
