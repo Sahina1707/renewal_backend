@@ -522,3 +522,11 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(minute='*'),
     },
 }
+
+
+EMAIL_CREDENTIAL_KEY ="TRtZIlF8VlpLAIBcRiWsemXH3f_uUvY5hfg458YAhfY="
+ 
+# GOOGLE_GMAIL_PROJECT_ID = "intelipro-email"
+# GOOGLE_GMAIL_PUBSUB_TOPIC = "projects/intelipro-email/topics/gmail-notifications"
+# GOOGLE_GMAIL_SERVICE_ACCOUNT_FILE
+
