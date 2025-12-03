@@ -5,7 +5,7 @@ from celery.schedules import crontab
 
 os.environ.setdefault(
     'DJANGO_SETTINGS_MODULE',
-    os.environ.get('DJANGO_SETTINGS_MODULE', 'renewal_backend.settings.production')
+    os.environ.get('DJANGO_SETTINGS_MODULE', 'renewal_backend.settings.development')
 )
 
 app = Celery('renewal_backend')

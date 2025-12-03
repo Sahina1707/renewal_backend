@@ -1,155 +1,246 @@
-import email
 import imaplib
+import smtplib
+import email
 import logging
-import os
+import uuid
 from email.header import decode_header
-from django.core.files.storage import default_storage
-from django.core.files.base import ContentFile
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
+
 from django.conf import settings
+from django.utils import timezone
+from django.template import Template, Context
 from celery import shared_task
 
+# Imports from your other apps
+from apps.email_settings.models import EmailAccount, EmailModuleSettings
+from apps.email_settings.utils import decrypt_credential
+from .models import BulkEmailCampaign, EmailInboxMessage, EmailFolder
 from .services import EmailInboxService
 
 logger = logging.getLogger(__name__)
 
+# --- Helper Functions ---
+
+def generate_pdf_from_html(html_content, context_data):
+    try:
+        import weasyprint
+        return weasyprint.HTML(string=html_content).write_pdf()
+    except ImportError:
+        return f"Document Content:\n\n{html_content}".encode('utf-8')
+
 def decode_email_header(header):
-    """Decodes email headers to a readable string."""
-    if not header:
-        return ""
+    if not header: return ""
     decoded_parts = decode_header(header)
     header_parts = []
     for part, charset in decoded_parts:
         if isinstance(part, bytes):
             try:
                 header_parts.append(part.decode(charset or 'utf-8', errors='ignore'))
-            except (LookupError, TypeError):
+            except:
                 header_parts.append(part.decode('utf-8', errors='ignore'))
         else:
             header_parts.append(str(part))
     return "".join(header_parts)
 
+def extract_body(msg, content_type_pref):
+    content = ""
+    if msg.is_multipart():
+        for part in msg.walk():
+            if part.get_content_type() == f"text/{content_type_pref}" and "attachment" not in str(part.get("Content-Disposition")):
+                charset = part.get_content_charset() or 'utf-8'
+                try:
+                    content = part.get_payload(decode=True).decode(charset, errors='ignore')
+                    break
+                except: pass
+    else:
+        if msg.get_content_type() == f"text/{content_type_pref}":
+            charset = msg.get_content_charset() or 'utf-8'
+            try:
+                content = msg.get_payload(decode=True).decode(charset, errors='ignore')
+            except: pass
+    return content
 
-@shared_task(name="email_inbox.fetch_new_emails")
-def fetch_new_emails():
-    """
-    Fetches new emails via IMAP and passes them to the Service.
-    """
-    if not all([settings.IMAP_HOST, settings.IMAP_USER, settings.IMAP_PASSWORD]):
-        logger.warning("IMAP settings are not configured. Skipping.")
-        return "Skipped: Missing credentials."
-
-    mail = None
+def send_via_account_smtp(account, to_email, subject, html_body, attachments):
     try:
-        # 1. Connect to IMAP
-        mail = imaplib.IMAP4_SSL(settings.IMAP_HOST, settings.IMAP_PORT)
-        mail.login(settings.IMAP_USER, settings.IMAP_PASSWORD)
-        mail.select("inbox")
+        credential = decrypt_credential(account.access_credential)
+        
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From'] = account.email_address
+        msg['To'] = to_email
+        
+        msg.attach(MIMEText(html_body, 'html'))
+        
+        for att in attachments:
+            part = MIMEApplication(att['content'], Name=att['name'])
+            part['Content-Disposition'] = f'attachment; filename="{att["name"]}"'
+            msg.attach(part)
 
-        # 2. Search for Unread Emails
-        status, messages = mail.search(None, "UNSEEN")
-        if status != "OK":
-            return "Failed to search for emails."
+        server = smtplib.SMTP(account.smtp_server, account.smtp_port)
+        server.starttls()
+        server.login(account.email_address, credential)
+        server.sendmail(account.email_address, to_email, msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        logger.error(f"SMTP Error: {e}")
+        return False
+
+def process_imap_folder(mail, folder_name, is_incoming, account, service):
+    try:
+        mail.select(folder_name)
+        status, messages = mail.search(None, 'UNSEEN')
+        if status != "OK" or not messages[0]: return 0
 
         email_ids = messages[0].split()
-        if not email_ids:
-            return "No new emails found."
-            
-        logger.info(f"Found {len(email_ids)} new emails.")
-
-        service = EmailInboxService()
-        processed_count = 0
+        count = 0
 
         for email_id in email_ids:
             try:
-                # 3. Fetch the Raw Email
-                status, msg_data = mail.fetch(email_id, "(RFC822)")
-                if status != "OK":
-                    continue
+                _, msg_data = mail.fetch(email_id, "(RFC822)")
+                raw_email = msg_data[0][1]
+                msg = email.message_from_bytes(raw_email)
 
-                raw_email_bytes = msg_data[0][1]
-                msg = email.message_from_bytes(raw_email_bytes)
-
-                # 4. Parse Headers
                 subject = decode_email_header(msg.get("Subject", "(No Subject)"))
                 from_header = decode_email_header(msg.get("From", ""))
                 from_name, from_email_addr = email.utils.parseaddr(from_header)
                 
-                # Parse To/CC safely
-                to_header = decode_email_header(msg.get("To", ""))
-                cc_header = decode_email_header(msg.get("Cc", ""))
-                to_emails = [addr[1] for addr in email.utils.getaddresses([to_header]) if addr[1]]
-                cc_emails = [addr[1] for addr in email.utils.getaddresses([cc_header]) if addr[1]]
-
-                # 5. Extract Content & Attachments
-                text_content = ""
-                html_content = ""
-                attachments_data = []
-
-                for part in msg.walk():
-                    content_type = part.get_content_type()
-                    content_disposition = str(part.get("Content-Disposition"))
-
-                    # A. Extract Text/HTML Body
-                    if content_type == "text/plain" and "attachment" not in content_disposition:
-                        charset = part.get_content_charset() or 'utf-8'
-                        text_content += part.get_payload(decode=True).decode(charset, errors='ignore')
-                    
-                    elif content_type == "text/html" and "attachment" not in content_disposition:
-                        charset = part.get_content_charset() or 'utf-8'
-                        html_content += part.get_payload(decode=True).decode(charset, errors='ignore')
-                    
-                    # B. Extract Attachments
-                    elif "attachment" in content_disposition or part.get_filename():
-                        filename = part.get_filename()
-                        if filename:
-                            filename = decode_email_header(filename)
-                            file_data = part.get_payload(decode=True)
-                            
-                            # Save to Media Storage (so Service can link it)
-                            # We use a temp folder structure: email_attachments/YYYY/MM/uuid/file
-                            file_path = f"email_attachments/incoming/{filename}"
-                            saved_path = default_storage.save(file_path, ContentFile(file_data))
-                            
-                            attachments_data.append({
-                                "filename": filename,
-                                "content_type": content_type,
-                                "file_size": len(file_data),
-                                "file_path": saved_path,
-                                "is_safe": True # Assume safe or add virus scanning logic here
-                            })
-
-                # 6. Pass to Service
                 service.receive_email(
                     from_email=from_email_addr,
                     from_name=from_name,
-                    to_email=to_emails[0] if to_emails else settings.IMAP_USER,
-                    cc_emails=cc_emails,
+                    to_email=account.email_address,
                     subject=subject,
-                    html_content=html_content,
-                    text_content=text_content,
-                    attachments=attachments_data, # Now passing real data
-                    raw_headers=dict(msg.items()),
-                    raw_body=raw_email_bytes.decode('utf-8', errors='ignore')
+                    html_content=extract_body(msg, 'html'),
+                    text_content=extract_body(msg, 'plain'),
+                    folder_type_override='inbox' if is_incoming else 'sent'
                 )
-                processed_count += 1
-
-                # 7. Mark as Seen (CRITICAL: Prevents infinite loop)
-                # Only mark as seen if processing succeeded
-                mail.store(email_id, '+FLAGS', '\\Seen')
-
+                count += 1
             except Exception as e:
-                logger.error(f"Error processing email ID {email_id}: {e}", exc_info=True)
-
+                logger.error(f"Error parsing email {email_id}: {e}")
+        return count
     except Exception as e:
-        logger.error(f"IMAP connection failed: {e}", exc_info=True)
-    finally:
-        # 8. Close Safely
-        if mail:
-            try:
-                if mail.state == 'SELECTED':
-                    mail.close()
-                mail.logout()
-            except:
-                pass
+        return 0
 
-    return f"Processed {processed_count} emails."
+# ==========================================
+# TASKS (UPDATED NAMES TO MATCH SETTINGS)
+# ==========================================
+
+@shared_task(name="apps.email_inbox.tasks.fetch_new_emails")
+def fetch_new_emails():
+    """Loops through ALL defined accounts and fetches emails."""
+    accounts = EmailAccount.objects.filter(is_deleted=False, auto_sync_enabled=True)
+    total_synced = 0
+    service = EmailInboxService()
+
+    for account in accounts:
+        try:
+            password = decrypt_credential(account.access_credential)
+            if not password: continue
+
+            mail = imaplib.IMAP4_SSL(account.imap_server, account.imap_port)
+            mail.login(account.email_address, password)
+            
+            count = process_imap_folder(mail, "INBOX", is_incoming=True, account=account, service=service)
+            total_synced += count
+            mail.logout()
+            
+            account.last_sync_at = timezone.now()
+            account.connection_status = True
+            account.save(update_fields=['last_sync_at', 'connection_status'])
+        except Exception as e:
+            account.connection_status = False
+            account.last_sync_log = str(e)
+            account.save(update_fields=['connection_status', 'last_sync_log'])
+
+    return f"Synced {total_synced} emails."
+
+@shared_task(name="apps.email_inbox.tasks.send_campaign_emails")
+def send_campaign_emails(campaign_id):
+    """Sends emails for a campaign."""
+    try:
+        campaign = BulkEmailCampaign.objects.get(id=campaign_id)
+        if campaign.status in ['processing', 'completed']: return "Already processed"
+
+        campaign.status = 'processing'
+        campaign.save(update_fields=['status'])
+        
+        sender_account = EmailAccount.objects.filter(user=campaign.created_by, is_deleted=False).first()
+        if not sender_account:
+            campaign.status = 'failed'
+            campaign.save()
+            return "No sending account found."
+
+        module_settings = EmailModuleSettings.objects.filter(user=campaign.created_by).first()
+        auto_gen_docs = module_settings.auto_generate_documents if module_settings else False
+        attach_docs = module_settings.attach_to_emails if module_settings else False
+
+        success_count = 0
+        fail_count = 0
+        
+        base_subject = campaign.custom_subject if campaign.custom_subject else campaign.subject_template
+        base_body = campaign.body_html_template
+
+        for recipient in campaign.recipients_data:
+            try:
+                # Fix mismatch: if 'name' exists but 'customer_name' is missing, copy it
+                if 'name' in recipient and 'customer_name' not in recipient:
+                    recipient['customer_name'] = recipient['name']
+                if 'company_name' not in recipient:
+                    recipient['company_name'] = "RenewIQ"
+
+                ctx = Context(recipient)
+                final_subject = Template(base_subject).render(ctx)
+                body_content = Template(base_body).render(ctx)
+                
+                attachments = []
+                if auto_gen_docs and attach_docs:
+                    pdf_bytes = generate_pdf_from_html(body_content, recipient)
+                    doc_name = f"Policy_{recipient.get('policy_number', 'Doc')}.pdf"
+                    attachments.append({'name': doc_name, 'content': pdf_bytes, 'content_type': 'application/pdf'})
+
+                # Save Sent Email
+                EmailInboxMessage.objects.create(
+                    from_email=sender_account.email_address,
+                    to_emails=[recipient.get('email')],
+                    subject=final_subject,
+                    html_content=body_content,
+                    text_content=body_content, 
+                    folder=EmailFolder.objects.get_or_create(folder_type='sent', defaults={'name':'Sent', 'is_system':True})[0],
+                    status='read',
+                    message_id=str(uuid.uuid4()),
+                    category='marketing',
+                    created_by=campaign.created_by
+                )
+
+                if send_via_account_smtp(sender_account, recipient.get('email'), final_subject, body_content, attachments):
+                    success_count += 1
+                else:
+                    fail_count += 1
+            except Exception as e:
+                fail_count += 1
+                continue
+
+        campaign.status = 'completed'
+        campaign.successful_sends = success_count
+        campaign.failed_sends = fail_count
+        campaign.sent_at = timezone.now()
+        campaign.save()
+    except BulkEmailCampaign.DoesNotExist:
+        pass
+@shared_task(name="apps.email_inbox.tasks.process_scheduled_campaigns")
+def process_scheduled_campaigns():
+    """Checks for campaigns that are scheduled for now or the past."""
+    now = timezone.now()
+    due_campaigns = BulkEmailCampaign.objects.filter(
+        status='scheduled',
+        scheduled_at__lte=now
+    )
+    
+    count = 0
+    for campaign in due_campaigns:
+        send_campaign_emails.delay(campaign.id)
+        count += 1
+        
+    return f"Triggered {count} campaigns"

@@ -49,7 +49,7 @@ class Role(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
-        db_table = 'roles'
+        db_table = 'user_role'
         ordering = ['name']
         
     def __str__(self):

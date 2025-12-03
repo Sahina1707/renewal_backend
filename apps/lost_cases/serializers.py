@@ -17,7 +17,7 @@ class LostCaseListSerializer(serializers.ModelSerializer):
             'case_id', 
             'customer', 
             'policy_number', 
-            'product',   # Now contains name and amount
+            'product',   
             'lost_reason', 
             'competitor', 
             'lost_date', 

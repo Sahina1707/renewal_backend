@@ -30,6 +30,9 @@ api_patterns = [
     # User management
     path('users/', include('apps.users.urls')),
 
+    # Customer Verification endpoints
+    path('verification/', include('apps.verification.urls')),
+
     # Core business endpoints
     path('customers/', include('apps.customers.urls')),
     path('policies/', include('apps.policies.urls')),
@@ -74,6 +77,7 @@ api_patterns = [
     path('policy-exclusions/', include('apps.policy_exclusions.urls')),
     path('policy-conditions/', include('apps.policy_conditions.urls')),
     path("teams/", include("apps.teams.urls")),
+    path("email-settings/", include("apps.email_settings.urls")),
 
     # Email Integration endpoints
     path('email-provider/', include('apps.email_provider.urls')),
@@ -93,9 +97,6 @@ api_patterns = [
     path('closed-case-chatbot/', include('apps.closed_case_chatbot.urls')),
     path('policy-timeline-chatbot/', include('apps.policytimeline_chatbot.urls')),
     path('case-logs-chatbot/', include('apps.case_logs_chatbot.urls')),
-    
-    # Customer Verification endpoints
-    path('verification/', include('apps.verification.urls')),
 
     # API Documentation
     path('schema/', PublicSchemaView.as_view(), name='schema'),

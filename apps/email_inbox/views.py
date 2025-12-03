@@ -5,11 +5,16 @@ from rest_framework.permissions import IsAuthenticated
 from django.db.models import Q, Count
 from django.utils import timezone
 from django.conf import settings
-
+from .tasks import send_campaign_emails,process_scheduled_campaigns
+import csv
+from django.http import HttpResponse
+import uuid
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from django.template import Template, Context
 from .models import (
     EmailInboxMessage, EmailFolder, EmailConversation, EmailFilter,
-    EmailAttachment, EmailSearchQuery
-)
+    EmailAttachment, EmailSearchQuery,EmailInternalNote,
+    EmailAuditLog,BulkEmailCampaign)
 from .serializers import (EmailInboxMessageSerializer, 
     EmailInboxMessageCreateSerializer, 
     EmailInboxMessageUpdateSerializer,
@@ -23,10 +28,17 @@ from .serializers import (EmailInboxMessageSerializer,
     BulkEmailActionSerializer, 
     EmailSearchSerializer,
     EmailStatisticsSerializer,
-    EmailComposeSerializer
+    EmailInboxListSerializer,
+    EmailAttachmentSerializer,
+    EmailInboxDetailSerializer,
+    BulkEmailCampaignSerializer,
+    EmailComposeSerializer,
+    EmailInternalNoteSerializer,
+    EmailAuditLogSerializer,
+    EmailConversationSerializer,
+    RecipientImportSerializer,
 )
 from .services import EmailInboxService
-
 
 class EmailFolderViewSet(viewsets.ModelViewSet):
     """ViewSet for managing email folders"""
@@ -105,57 +117,71 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_serializer_class(self):
-        if self.action == 'create':
-            return EmailInboxMessageCreateSerializer
-        elif self.action in ['update', 'partial_update']:
-            return EmailInboxMessageUpdateSerializer
-        return EmailInboxMessageSerializer
+        """
+        Dynamically select serializer based on the action
+        """
+        if self.action == 'list':
+            return EmailInboxListSerializer
+        elif self.action == 'retrieve':
+            return EmailInboxDetailSerializer
+        return EmailInboxDetailSerializer
     
     def get_queryset(self):
         """Filter email messages based on query parameters"""
         queryset = super().get_queryset()
-        
-        # Filter by status
+
+        # --- 1. Basic Filters (Apply once) ---
         status_filter = self.request.query_params.get('status')
         if status_filter:
             queryset = queryset.filter(status=status_filter)
         
-        # Filter by category
         category = self.request.query_params.get('category')
         if category:
             queryset = queryset.filter(category=category)
         
-        # Filter by priority
         priority = self.request.query_params.get('priority')
         if priority:
             queryset = queryset.filter(priority=priority)
         
-        # Filter by sentiment
         sentiment = self.request.query_params.get('sentiment')
         if sentiment:
             queryset = queryset.filter(sentiment=sentiment)
-        
-        # Filter by folder
+
+        # --- 2. Folder Logic (Consolidated) ---
+        folder_type = self.request.query_params.get('folder_type')
         folder_id = self.request.query_params.get('folder_id')
+
+        # Handle Trash vs Normal Folders
+        if folder_type == 'trash':
+            # Specific case: Show deleted items
+            queryset = EmailInboxMessage.objects.filter(is_deleted=True)
+        else:
+            # Default: Hide deleted items
+            queryset = EmailInboxMessage.objects.filter(is_deleted=False)
+            # Apply folder type filter if not trash
+            if folder_type:
+                queryset = queryset.filter(folder__folder_type=folder_type)
+
         if folder_id:
             queryset = queryset.filter(folder_id=folder_id)
         
-        # Filter by assigned user
         assigned_to = self.request.query_params.get('assigned_to')
         if assigned_to:
             queryset = queryset.filter(assigned_to_id=assigned_to)
-        
-        # Filter by starred status
+
+        thread_id = self.request.query_params.get('thread_id')
+        if thread_id:
+            queryset = queryset.filter(thread_id=thread_id)
+
         is_starred = self.request.query_params.get('is_starred')
         if is_starred is not None:
             queryset = queryset.filter(is_starred=is_starred.lower() == 'true')
         
-        # Filter by important status
         is_important = self.request.query_params.get('is_important')
         if is_important is not None:
             queryset = queryset.filter(is_important=is_important.lower() == 'true')
         
-        # Filter by has attachments
+        # --- 6. Attachment Filter ---
         has_attachments = self.request.query_params.get('has_attachments')
         if has_attachments is not None:
             if has_attachments.lower() == 'true':
@@ -163,7 +189,7 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
             else:
                 queryset = queryset.filter(attachments__isnull=True)
         
-        # Filter by date range
+        # --- 7. Date Range ---
         start_date = self.request.query_params.get('start_date')
         end_date = self.request.query_params.get('end_date')
         
@@ -172,7 +198,7 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
         if end_date:
             queryset = queryset.filter(received_at__lte=end_date)
         
-        # Search by subject, from, or content
+        # --- 8. Text Search ---
         search = self.request.query_params.get('search')
         if search:
             queryset = queryset.filter(
@@ -251,14 +277,38 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def archive(self, request, pk=None):
-        """Archive an email"""
+        """Archive an email (FIXED: Removed duplicate logic)"""
         email_message = self.get_object()
+        
+        archive_folder = EmailFolder.objects.filter(folder_type='archive').first()
+        if archive_folder:
+            email_message.folder = archive_folder
+        
         email_message.status = 'archived'
         email_message.updated_by = request.user
-        email_message.save(update_fields=['status', 'updated_by'])
         
-        return Response({'message': 'Email archived successfully'})
+        # Saves folder and status update once
+        email_message.save(update_fields=['status', 'folder', 'updated_by'])  
+        
+        return Response({'message': 'Email moved to Archive successfully'})
     
+    @action(detail=False, methods=['post'])
+    def send_new(self, request):
+        """
+        Endpoint to Compose & Send a brand new email. (FIXED: Added created_by)
+        """
+        # ... (Serializer validation remains the same) ...
+        
+        email_message = EmailInboxMessage(
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to_emails=data['to_emails'],
+            # ... (other fields) ...
+            folder=sent_folder, 
+            status='read', 
+            message_id=new_uuid,
+            thread_id=new_uuid,
+            created_by=request.user 
+        )
     @action(detail=True, methods=['post'])
     def mark_read(self, request, pk=None):
         """Mark email as read"""
@@ -277,69 +327,6 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
         email_message.save(update_fields=['status', 'read_at', 'updated_by'])
         
         return Response({'message': 'Email marked as unread'})
-    
-    @action(detail=False, methods=['post'])
-    def bulk_action(self, request):
-        """Perform bulk action on multiple emails"""
-        serializer = BulkEmailActionSerializer(data=request.data)
-        
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        email_ids = serializer.validated_data['email_ids']
-        action = serializer.validated_data['action']
-        action_value = serializer.validated_data.get('action_value')
-        
-        emails = EmailInboxMessage.objects.filter(id__in=email_ids, is_deleted=False)
-        updated_count = 0
-        
-        for email in emails:
-            try:
-                if action == 'mark_read':
-                    email.mark_as_read()
-                elif action == 'mark_unread':
-                    email.status = 'unread'
-                    email.read_at = None
-                elif action == 'star':
-                    email.is_starred = True
-                elif action == 'unstar':
-                    email.is_starred = False
-                elif action == 'mark_important':
-                    email.is_important = True
-                elif action == 'unmark_important':
-                    email.is_important = False
-                elif action == 'move_to_folder':
-                    if action_value:
-                        folder = EmailFolder.objects.get(id=action_value)
-                        email.folder = folder
-                elif action == 'delete':
-                    email.soft_delete()
-                elif action == 'archive':
-                    email.status = 'archived'
-                elif action == 'assign_to':
-                    if action_value:
-                        from django.contrib.auth import get_user_model
-                        User = get_user_model()
-                        user = User.objects.get(id=action_value)
-                        email.assigned_to = user
-                elif action == 'add_tag':
-                    if action_value and action_value not in email.tags:
-                        email.tags.append(action_value)
-                elif action == 'remove_tag':
-                    if action_value and action_value in email.tags:
-                        email.tags.remove(action_value)
-                
-                email.updated_by = request.user
-                email.save()
-                updated_count += 1
-                
-            except Exception as e:
-                continue
-        
-        return Response({
-            'message': f'Bulk action completed. {updated_count} emails updated.',
-            'updated_count': updated_count
-        })
     
     @action(detail=False, methods=['get'])
     def search(self, request):
@@ -363,6 +350,7 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
             })
         else:
             return Response(result, status=status.HTTP_400_BAD_REQUEST)
+        
     
     @action(detail=False, methods=['get'])
     def statistics(self, request):
@@ -432,63 +420,348 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
         )
 
         return Response({'message': f'Category updated to {new_category}'})
+    @action(detail=True, methods=['get'])
+    def related_emails(self, request, pk=None):
+        """Finds other emails from the same sender"""
+        current_email = self.get_object()
+        
+        # Find emails with the same sender, excluding the current one
+        related = EmailInboxMessage.objects.filter(
+            from_email=current_email.from_email,
+            is_deleted=False
+        ).exclude(id=current_email.id).order_by('-received_at')[:10]  # Limit to 10
+        
+        serializer = self.get_serializer(related, many=True)
+        return Response(serializer.data)
 
-    # --- Feature: View Audit Trail (Matches Image 1 Menu) ---
+    # --- Feature: Mark as Junk (Matches Image Menu) ---
+    @action(detail=True, methods=['post'])
+    def mark_junk(self, request, pk=None):
+        email = self.get_object()
+        # Find the 'Junk Email' folder (type='spam' usually, or custom)
+        junk_folder = EmailFolder.objects.filter(name__icontains="Junk").first()
+        
+        # Fallback if not found
+        if not junk_folder:
+             junk_folder, _ = EmailFolder.objects.get_or_create(
+                name="Junk Email", 
+                defaults={'folder_type': 'spam', 'is_system': True}
+            )
+            
+        email.folder = junk_folder
+        email.save(update_fields=['folder'])
+        return Response({'message': 'Moved to Junk Email'})
+
+    # --- Feature: Mark as Spam (Matches Image Menu) ---
+    @action(detail=True, methods=['post'])
+    def mark_spam(self, request, pk=None):
+        email = self.get_object()
+        # Find the 'Spam' folder
+        spam_folder = EmailFolder.objects.filter(name__iexact="Spam").first()
+        
+        if not spam_folder:
+             spam_folder, _ = EmailFolder.objects.get_or_create(
+                name="Spam", 
+                defaults={'folder_type': 'spam', 'is_system': True}
+            )
+            
+        email.folder = spam_folder
+        email.is_spam = True  # Also flag the boolean
+        email.save(update_fields=['folder', 'is_spam'])
+        return Response({'message': 'Marked as Spam'})
+    # In views.py -> EmailInboxMessageViewSet
+
+    @action(detail=True, methods=['post'])
+    def unmark_spam(self, request, pk=None):
+        """
+        Moves an email from Spam back to Inbox (Not Junk).
+        URL: POST /api/email-inbox/messages/{id}/unmark_spam/
+        """
+        email = self.get_object()
+        
+        # 1. Find the System Inbox Folder
+        inbox_folder = EmailFolder.objects.filter(folder_type='inbox').first()
+        if not inbox_folder:
+             # Fallback just in case
+             inbox_folder, _ = EmailFolder.objects.get_or_create(
+                name="Inbox", 
+                defaults={'folder_type': 'inbox', 'is_system': True}
+            )
+
+        # 2. Update the Email
+        email.folder = inbox_folder
+        email.is_spam = False       
+        email.status = 'read'
+        
+        email.updated_by = request.user
+        email.save(update_fields=['folder', 'is_spam', 'status', 'updated_by'])
+        
+        return Response({'message': 'Email moved back to Inbox'})
+
     @action(detail=True, methods=['get'])
     def audit_trail(self, request, pk=None):
+        """
+        Returns the history of actions performed on this email.
+        """
         email = self.get_object()
-        logs = email.audit_logs.all()
+        logs = email.audit_logs.all().order_by('-timestamp')
+        serializer = EmailAuditLogSerializer(logs, many=True)
         
-        # Simple inline serialization for the logs
-        data = [{
-            'action': log.action,
-            'details': log.details,
-            'performed_by': log.performed_by.get_full_name() if log.performed_by else 'System',
-            'timestamp': log.timestamp
-        } for log in logs]
-        
-        return Response(data)
-    @action(detail=False, methods=['post'])
-    def send_new(self, request):
-        """
-        Endpoint to Compose & Send a brand new email.
-        URL: POST /api/email-inbox/messages/send_new/
-        """
-        serializer = EmailComposeSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-        data = serializer.validated_data
-        
-        # 1. Create the Email Object in DB (Folder = Sent)
-        import uuid
-        email_message = EmailInboxMessage.objects.create(
-            from_email=settings.DEFAULT_FROM_EMAIL, # Your system email
-            to_emails=data['to_emails'],
-            cc_emails=data['cc_emails'],
-            bcc_emails=data['bcc_emails'],
-            subject=data['subject'],
-            html_content=data.get('html_content', ''),
-            text_content=data.get('text_content', ''),
-            folder=EmailFolder.objects.filter(folder_type='sent').first(), # Save to 'Sent' folder
-            status='read', # Outgoing emails are read by definition
-            message_id=str(uuid.uuid4()),
-            created_by=request.user
-        )
+        return Response(serializer.data)
+    @action(detail=True, methods=['post'])
+    def send_draft(self, request, pk=None):
 
-        # 2. Actually Send it via SMTP
+        draft = self.get_object()
+        
+        serializer = EmailComposeSerializer(data=request.data, partial=True)
+        
+        if serializer.is_valid():
+            data = serializer.validated_data
+            # Update fields only if they are provided in the request
+            if 'to_emails' in data: draft.to_emails = data['to_emails']
+            if 'cc_emails' in data: draft.cc_emails = data['cc_emails']
+            if 'bcc_emails' in data: draft.bcc_emails = data['bcc_emails']
+            if 'subject' in data: draft.subject = data['subject']
+            if 'html_content' in data: draft.html_content = data['html_content']
+            if 'text_content' in data: draft.text_content = data['text_content']
+            draft.save()
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # 2. Send the email using the existing Service
         service = EmailInboxService()
-        success, error_msg = service.send_outbound_email(email_message)
+        # Note: send_outbound_email is defined in your services.py
+        success, error_msg = service.send_outbound_email(draft)
 
         if success:
-            return Response({
-                'message': 'Email sent successfully',
-                'id': email_message.id
-            }, status=status.HTTP_201_CREATED)
+            # 3. If sent successfully, move it to the 'Sent' folder
+            sent_folder, _ = EmailFolder.objects.get_or_create(
+                folder_type='sent',
+                defaults={'name': 'Sent', 'is_system': True}
+            )
+            
+            draft.folder = sent_folder
+            draft.status = 'read'  # Outgoing emails are considered 'read'
+            draft.sent_at = timezone.now() 
+            draft.save()
+            
+            return Response({'message': 'Draft sent successfully'})
         else:
+            return Response({'message': f'Failed to send: {error_msg}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    @action(detail=False, methods=['post'])
+    def bulk_action(self, request):
+        """
+        Unified Bulk Action Endpoint
+        """
+        serializer = BulkEmailActionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        email_ids = serializer.validated_data['email_ids']
+        action = serializer.validated_data['action']
+        action_value = serializer.validated_data.get('action_value')
+        
+        emails = EmailInboxMessage.objects.filter(id__in=email_ids)
+        updated_count = 0
+        
+        try:
+            if action == 'mark_read':
+                updated_count = emails.update(status='read', read_at=timezone.now(), updated_by=request.user)
+            elif action == 'mark_unread':
+                updated_count = emails.update(status='unread', read_at=None, updated_by=request.user)
+            elif action == 'star' or action == 'flag': # Handle both names
+                updated_count = emails.update(is_starred=True, updated_by=request.user)
+            elif action == 'unstar' or action == 'unflag':
+                updated_count = emails.update(is_starred=False, updated_by=request.user)
+            elif action == 'mark_important':
+                updated_count = emails.update(is_important=True, updated_by=request.user)
+            elif action == 'mark_resolved':
+                updated_count = emails.update(status='resolved', updated_by=request.user)
+            elif action == 'delete':
+                # Soft delete individually to trigger signals if needed, or use bulk update for speed
+                updated_count = emails.update(is_deleted=True, deleted_at=timezone.now(), deleted_by=request.user)
+            elif action == 'archive':
+                updated_count = emails.update(status='archived', updated_by=request.user)
+            
+            # Actions requiring values
+            elif action == 'move_to_folder' and action_value:
+                folder = EmailFolder.objects.get(id=action_value)
+                updated_count = emails.update(folder=folder, updated_by=request.user)
+            
+            elif action == 'assign_to' and action_value:
+                from django.contrib.auth import get_user_model
+                User = get_user_model()
+                user = User.objects.get(id=action_value)
+                updated_count = emails.update(assigned_to=user, updated_by=request.user)
+                
+            elif action == 'add_tag' and action_value:
+                # JSONField appending is database specific, looping is safer for generic DBs
+                for email in emails:
+                    if action_value not in email.tags:
+                        email.tags.append(action_value)
+                        email.save()
+                        updated_count += 1
+                        
+            elif action == 'remove_tag' and action_value:
+                for email in emails:
+                    if action_value in email.tags:
+                        email.tags.remove(action_value)
+                        email.save()
+                        updated_count += 1
+
             return Response({
-                'message': f'Failed to send: {error_msg}'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                'message': f'Bulk action {action} completed.',
+                'updated_count': updated_count
+            })
+
+        except Exception as e:
+            return Response({'error': str(e)}, status=400)
+    @action(detail=False, methods=['post'])
+    def export_selected(self, request):
+        """
+        API for "Export Selected" button. Returns a CSV file.
+        URL: POST /api/email-inbox/messages/export_selected/
+        """
+        email_ids = request.data.get('email_ids', [])
+        
+        if not email_ids:
+            return Response({'error': 'No emails selected'}, status=400)
+
+        emails = EmailInboxMessage.objects.filter(id__in=email_ids)
+        
+        # Create the CSV response
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="emails_export.csv"'
+        
+        writer = csv.writer(response)
+        
+        # 1. Write Header Row
+        writer.writerow([
+            'Date Received', 
+            'From', 
+            'Subject', 
+            'Status', 
+            'Customer Type', 
+            'Priority', 
+            'Assigned To'
+        ])
+        
+        # 2. Write Data Rows
+        for email in emails:
+            writer.writerow([
+                email.received_at.strftime("%Y-%m-%d %H:%M") if email.received_at else "",
+                email.from_email,
+                email.subject,
+                email.get_status_display(),
+                email.customer_type,  # From your new field
+                email.priority,
+                email.assigned_to.get_full_name() if email.assigned_to else "Unassigned"
+            ])
+            
+        return response
+    @action(detail=True, methods=['post'])
+    def mark_junk(self, request, pk=None):
+        email = self.get_object()
+        
+        # Find or Create 'Junk' folder
+        junk_folder, _ = EmailFolder.objects.get_or_create(
+            folder_type='junk',  # <--- Uses the new type
+            defaults={'name': 'Junk Email', 'is_system': True}
+        )
+            
+        email.folder = junk_folder
+        email.status = 'read' # Optional: mark as read when moving to junk
+        email.save(update_fields=['folder', 'status'])
+        
+        return Response({'message': 'Moved to Junk Email'})
+
+    # --- ACTION 2: MARK AS SPAM (Red Folder) ---
+    @action(detail=True, methods=['post'])
+    def mark_spam(self, request, pk=None):
+        email = self.get_object()
+        
+        # Find or Create 'Spam' folder
+        spam_folder, _ = EmailFolder.objects.get_or_create(
+            folder_type='spam', 
+            defaults={'name': 'Spam', 'is_system': True}
+        )
+            
+        email.folder = spam_folder
+        email.is_spam = True  
+        email.save(update_fields=['folder', 'is_spam'])
+        
+        return Response({'message': 'Marked as Spam'})
+    @action(detail=True, methods=['post'], url_path='add-note') # explicit url_path handles hyphens
+    def add_note(self, request, pk=None):
+        """
+        Adds an internal note to the specific email message.
+        """
+        email = self.get_object()
+        note_text = request.data.get('note')
+        
+        if not note_text:
+            return Response({'error': 'Note content is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create the note linked to this specific email
+        note = EmailInternalNote.objects.create(
+            email_message=email,
+            author=request.user,
+            note=note_text
+        )
+        
+        # Log to Audit Trail
+        EmailAuditLog.objects.create(
+            email_message=email,
+            action="Note Added",
+            details=f"Note ID: {note.id}",
+            performed_by=request.user
+        )
+
+        serializer = EmailInternalNoteSerializer(note)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    # --- FIX 2: ADD MISSING TAG ENDPOINTS ---
+    @action(detail=True, methods=['post'])
+    def add_tag(self, request, pk=None):
+        email = self.get_object()
+        tag = request.data.get('tag')
+        
+        if not tag:
+            return Response({'error': 'Tag is required'}, status=400)
+            
+        if tag not in email.tags:
+            email.tags.append(tag)
+            email.save(update_fields=['tags'])
+            
+        return Response({'message': 'Tag added', 'tags': email.tags})
+
+    @action(detail=True, methods=['post'])
+    def remove_tag(self, request, pk=None):
+        email = self.get_object()
+        tag = request.data.get('tag')
+        
+        if tag in email.tags:
+            email.tags.remove(tag)
+            email.save(update_fields=['tags'])
+            
+        return Response({'message': 'Tag removed', 'tags': email.tags})
+
+    # --- FIX 3: ADD MISSING MOVE FOLDER ENDPOINT ---
+    @action(detail=True, methods=['post'])
+    def move_to_folder(self, request, pk=None):
+        email = self.get_object()
+        folder_id = request.data.get('folder_id')
+        
+        if not folder_id:
+             return Response({'error': 'folder_id is required'}, status=400)
+             
+        try:
+            folder = EmailFolder.objects.get(id=folder_id)
+            email.folder = folder
+            email.save(update_fields=['folder'])
+            return Response({'message': f'Moved to {folder.name}'})
+        except EmailFolder.DoesNotExist:
+            return Response({'error': 'Folder not found'}, status=404)
 
 class EmailConversationViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for viewing email conversations"""
@@ -513,10 +786,50 @@ class EmailConversationViewSet(viewsets.ReadOnlyModelViewSet):
         
         return queryset.order_by('-last_message_at')
 
+    @action(detail=False, methods=['post'])
+    def save_draft(self, request):
+        """
+        Saves an email as a draft without sending it.
+        """
+        serializer = EmailComposeSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+        data = serializer.validated_data
+        import uuid
+
+        # Find or create the 'drafts' folder
+        draft_folder = EmailFolder.objects.filter(folder_type='drafts').first()
+        if not draft_folder:
+             # Fallback if folder doesn't exist yet
+            draft_folder = EmailFolder.objects.create(name="Drafts", folder_type="drafts", is_system=True)
+
+        email_message = EmailInboxMessage.objects.create(
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to_emails=data['to_emails'],
+            cc_emails=data['cc_emails'],
+            bcc_emails=data['bcc_emails'],
+            subject=data['subject'],
+            html_content=data.get('html_content', ''),
+            text_content=data.get('text_content', ''),
+            folder=draft_folder,      
+            status='draft',           
+            message_id=str(uuid.uuid4()),
+            created_by=request.user
+        )
+
+        return Response({
+            'message': 'Draft saved successfully',
+            'id': email_message.id
+        }, status=status.HTTP_201_CREATED)
+
+
+# In views.py
 
 class EmailFilterViewSet(viewsets.ModelViewSet):
-    """ViewSet for managing email filters"""
+    """ViewSet for managing email filters, including system and custom rules."""
     
+    # CRITICAL FIX: Explicitly define queryset for DRF/Celery initialization
     queryset = EmailFilter.objects.filter(is_deleted=False)
     serializer_class = EmailFilterSerializer
     permission_classes = [IsAuthenticated]
@@ -582,10 +895,10 @@ class EmailFilterViewSet(viewsets.ModelViewSet):
             received_at__gte=timezone.now() - timezone.timedelta(days=7)
         )[:100]
         
+        # NOTE: Full filter matching logic should ideally be called from EmailInboxService here.
         matches = []
         for email in recent_emails:
-            # This would use the same logic as in the service
-            # For now, just return a simple response
+            # Placeholder for actual matching logic
             matches.append({
                 'email_id': str(email.id),
                 'subject': email.subject,
@@ -598,7 +911,50 @@ class EmailFilterViewSet(viewsets.ModelViewSet):
             'matches': matches[:10]  # Return first 10 matches
         })
 
+    @action(detail=False, methods=['post'])
+    def toggle_rule(self, request):
+        """
+        API to toggle system rules like 'VIP Customer Auto-Star' and 'Spam Detection'.
+        URL: POST /api/email-inbox/filters/toggle_rule/
+        Payload: { "rule_type": "vip_auto_star", "enabled": true }
+        """
+        rule_type = request.data.get('rule_type')
+        enabled = request.data.get('enabled')
+        
+        # Map specific UI toggles to actual Filter definitions
+        if rule_type == 'vip_auto_star':
+            filter_obj, _ = EmailFilter.objects.get_or_create(
+                name="System: VIP Auto-Star",
+                defaults={
+                    'filter_type': 'body',
+                    'operator': 'contains',
+                    'value': 'VIP',
+                    'action': 'mark_as_important',
+                    'is_system': True,
+                    'priority': 100 # High priority for system rules
+                }
+            )
+            filter_obj.is_active = enabled
+            filter_obj.save()
+            return Response({'status': 'updated', 'rule': rule_type, 'active': enabled})
 
+        elif rule_type == 'spam_detection':
+            filter_obj, _ = EmailFilter.objects.get_or_create(
+                name="System: Spam Detection",
+                defaults={
+                    'filter_type': 'subject', 
+                    'operator': 'contains',
+                    'value': 'SPAM',
+                    'action': 'move_to_folder',
+                    'action_value': EmailFolder.objects.filter(folder_type='spam').first().id if EmailFolder.objects.filter(folder_type='spam').exists() else None,
+                    'is_system': True
+                }
+            )
+            filter_obj.is_active = enabled
+            filter_obj.save()
+            return Response({'status': 'updated', 'rule': rule_type, 'active': enabled})
+            
+        return Response({'error': 'Unknown rule type'}, status=400)
 class EmailAttachmentViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for viewing email attachments"""
     
@@ -691,3 +1047,84 @@ class EmailSearchQueryViewSet(viewsets.ModelViewSet):
             })
         else:
             return Response(result, status=status.HTTP_400_BAD_REQUEST)
+class BulkEmailCampaignViewSet(viewsets.ModelViewSet):
+    queryset = BulkEmailCampaign.objects.all()
+    serializer_class = BulkEmailCampaignSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        campaign = serializer.save(created_by=self.request.user)
+        
+        # If scheduled immediately (or null), trigger standard processing
+        # If scheduled for later, the Celery Beat task will pick it up
+        if not campaign.scheduled_at:
+            send_campaign_emails.delay(campaign.id)
+
+    @action(detail=False, methods=['post'])
+    def preview(self, request):
+        """
+        Generates a preview for Step 4 of the wizard.
+        Merges the template + custom message + recipient data.
+        """
+        serializer = CampaignPreviewSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+            
+        data = serializer.validated_data
+        recipient = data.get('sample_recipient', {})
+        
+        # 1. Get Base Content
+        subject = ""
+        body = ""
+        
+        if data.get('template_id'):
+            try:
+                EmailTemplate = apps.get_model('email_templates', 'EmailTemplate')
+                template = EmailTemplate.objects.get(id=data['template_id'])
+                subject = template.subject
+                body = getattr(template, 'body_html', getattr(template, 'html_content', ''))
+            except:
+                return Response({'error': 'Template not found'}, status=404)
+        
+        # 2. Apply Custom Overrides (Step 2 inputs)
+        if data.get('custom_subject'):
+            subject = data['custom_subject']
+            
+        try:
+            django_subject = Template(subject)
+            django_body = Template(body)
+            ctx = Context(recipient)
+            final_subject = django_subject.render(ctx)
+            final_body = django_body.render(ctx)
+            
+            # 4. Inject Additional Message if present
+            if data.get('additional_message'):
+                add_msg = data['additional_message']
+                # Simple injection: Append to top of body
+                final_body = f"<p>{add_msg}</p><hr>{final_body}"
+                
+            return Response({
+                'subject': final_subject,
+                'html_content': final_body
+            })
+            
+        except Exception as e:
+            return Response({'error': f"Merge error: {str(e)}"}, status=400)
+    @action(detail=False, methods=['get'], url_path='export-template')
+    def export_template(self, request):
+        """
+        Generates a CSV template for the 'Export Template' button in the UI.
+        """
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="recipient_template.csv"'
+
+        writer = csv.writer(response)
+        
+        # Matches the fields expected by your Import Logic
+        headers = ['email', 'name', 'company', 'policy_number', 'renewal_date', 'premium_amount']
+        writer.writerow(headers)
+        
+        # Add a sample row so users know what to type
+        writer.writerow(['example@domain.com', 'John Doe', 'Acme Corp', 'POL-12345', '2025-12-31', '1200.00'])
+        
+        return response
