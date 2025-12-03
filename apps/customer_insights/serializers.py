@@ -1,6 +1,6 @@
 """
 Serializers for Customer Insights API endpoints.
-Simplified design with single insights model and JSON storage.
+Updated to support nested Customer Profile structure from the video.
 """
 
 from rest_framework import serializers
@@ -8,10 +8,10 @@ from django.utils import timezone
 from .models import CustomerInsight
 from apps.customers.models import Customer
 
+# --- 1. Helper Serializers (Defined First) ---
 
 class CustomerBasicInfoSerializer(serializers.Serializer):
-    """Serializer for basic customer information - handles both Customer objects and dicts"""
-    
+    """Serializer for basic customer information"""
     id = serializers.IntegerField()
     customer_code = serializers.CharField()
     full_name = serializers.CharField()
@@ -24,46 +24,44 @@ class CustomerBasicInfoSerializer(serializers.Serializer):
     total_policies = serializers.IntegerField()
     total_premium = serializers.DecimalField(max_digits=12, decimal_places=2)
 
+class ProfilePaymentStatsSerializer(serializers.Serializer):
+    """Matches the 'Payment History' row inside Customer Profiling"""
+    on_time_percentage = serializers.IntegerField()
+    customer_tenure = serializers.CharField()
+    payment_rating = serializers.CharField()
+    total_paid_ytd = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+class PolicyInformationSerializer(serializers.Serializer):
+    """Matches the 'Policy Information' row inside Customer Profiling"""
+    active_policies = serializers.IntegerField()
+    family_policies = serializers.IntegerField()
+    expired_policies = serializers.IntegerField()
 
 class PaymentScheduleSerializer(serializers.Serializer):
     """Serializer for payment schedule data"""
-    
     amount = serializers.DecimalField(max_digits=12, decimal_places=2)
     due_date = serializers.DateField()
     policy = serializers.CharField()
     days_until_due = serializers.IntegerField()
     status = serializers.CharField()
 
-
-class PaymentHistorySerializer(serializers.Serializer):
-    """Serializer for payment history data"""
-    
+class PaymentHistoryCardSerializer(serializers.Serializer):
+    """Serializer for individual payment cards in history list"""
     amount = serializers.DecimalField(max_digits=12, decimal_places=2)
     date = serializers.DateTimeField()
     status = serializers.CharField()
     mode = serializers.CharField()
     policy = serializers.CharField()
 
-
 class YearlyPaymentSummarySerializer(serializers.Serializer):
-    """Serializer for yearly payment summary"""
-    
+    """Serializer for yearly payment grouping"""
     year = serializers.IntegerField()
     total = serializers.DecimalField(max_digits=15, decimal_places=2)
     payments_count = serializers.IntegerField()
-    payments = PaymentHistorySerializer(many=True)
-
-
-class PaymentHistoryResponseSerializer(serializers.Serializer):
-    """Serializer for payment history response"""
-    
-    yearly_breakdown = YearlyPaymentSummarySerializer(many=True)
-    summary = serializers.DictField()
-
+    payments = PaymentHistoryCardSerializer(many=True)
 
 class CommunicationHistorySerializer(serializers.Serializer):
     """Serializer for communication history"""
-    
     id = serializers.IntegerField()
     date = serializers.DateTimeField()
     channel = serializers.CharField()
@@ -71,11 +69,8 @@ class CommunicationHistorySerializer(serializers.Serializer):
     message_content = serializers.CharField()
     response_received = serializers.CharField(required=False)
     attachment_count = serializers.IntegerField(required=False)
-    # --- Timeline fields ---
     agent_name = serializers.CharField(required=False)
     timeline_event = serializers.CharField(required=False)
-    
-    # --- Fields from video ---
     contact_name = serializers.CharField(required=False)
     contact_details = serializers.CharField(required=False)
     communication_summary = serializers.CharField(required=False)
@@ -84,22 +79,10 @@ class CommunicationHistorySerializer(serializers.Serializer):
     priority = serializers.CharField(required=False)
     time = serializers.CharField(required=False)
     agent = serializers.CharField(required=False)
-    
-    # --- NEWLY ADDED FIELD ---
     duration = serializers.IntegerField(required=False, allow_null=True)
-
-
-class CommunicationHistoryResponseSerializer(serializers.Serializer):
-    """Serializer for communication history response"""
-    
-    total_communications = serializers.IntegerField()
-    by_channel = serializers.DictField()
-    all_communications = CommunicationHistorySerializer(many=True) 
-
 
 class ClaimHistorySerializer(serializers.Serializer):
     """Serializer for claim history"""
-    
     id = serializers.IntegerField()
     title = serializers.CharField()
     type = serializers.CharField()
@@ -110,45 +93,59 @@ class ClaimHistorySerializer(serializers.Serializer):
     claim_number = serializers.CharField()
     adjuster = serializers.CharField()
     rejection_reason = serializers.CharField(required=False)
-    
-    # This field is now a list of dictionaries, which ListField handles perfectly
     timeline_events = serializers.ListField(required=False) 
-    
     document_attachments = serializers.IntegerField(required=False) 
     priority = serializers.CharField(required=False)
 
 
+# --- 2. Response Serializers ---
+
+class PaymentHistoryResponseSerializer(serializers.Serializer):
+    """Serializer for payment history response"""
+    yearly_breakdown = YearlyPaymentSummarySerializer(many=True)
+    summary = serializers.DictField()
+
+class CommunicationHistoryResponseSerializer(serializers.Serializer):
+    """Serializer for communication history response"""
+    total_communications = serializers.IntegerField()
+    by_channel = serializers.DictField()
+    all_communications = CommunicationHistorySerializer(many=True) 
+
 class ClaimsHistoryResponseSerializer(serializers.Serializer):
     """Serializer for claims history response"""
-    
     claims = ClaimHistorySerializer(many=True)
     summary = serializers.DictField()
 
-
-class CustomerInsightsResponseSerializer(serializers.Serializer):
-    """Main serializer for customer insights response - simplified"""
-    
-    customer_info = CustomerBasicInfoSerializer()
-    payment_insights = serializers.DictField()
-    communication_insights = serializers.DictField()
-    claims_insights = serializers.DictField()
-    profile_insights = serializers.DictField()
-    payment_schedule = serializers.DictField()
-    payment_history = serializers.DictField()
-    calculated_at = serializers.DateTimeField()
-    is_cached = serializers.BooleanField()
-
-
 class PaymentScheduleResponseSerializer(serializers.Serializer):
     """Serializer for payment schedule response"""
-    
     upcoming_payments = PaymentScheduleSerializer(many=True)
     next_payment = PaymentScheduleSerializer(required=False)
 
 
-class CustomerInsightSerializer(serializers.ModelSerializer):
-    """Serializer for CustomerInsight model - simplified"""
+# --- 3. Main Insights Serializers ---
+
+class CustomerInsightsResponseSerializer(serializers.Serializer):
+    """Main serializer for customer insights response"""
+    customer_info = CustomerBasicInfoSerializer()
     
+    # Specific sections
+    payment_insights = serializers.DictField()
+    communication_insights = serializers.DictField()
+    claims_insights = serializers.DictField()
+    
+    # Profile can be a flexible Dict or use nested serializers if you strictly enforce structure
+    profile_insights = serializers.DictField() 
+    
+    # Detailed Data Lists
+    payment_schedule = serializers.DictField()
+    payment_history = serializers.DictField()
+    
+    # Meta
+    calculated_at = serializers.DateTimeField()
+    is_cached = serializers.BooleanField()
+
+class CustomerInsightSerializer(serializers.ModelSerializer):
+    """Serializer for CustomerInsight model"""
     customer = CustomerBasicInfoSerializer(read_only=True)
     
     class Meta:
@@ -160,10 +157,8 @@ class CustomerInsightSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'calculated_at']
 
-
 class CustomerInsightsSummarySerializer(serializers.Serializer):
-    """Serializer for customer insights summary"""
-    
+    """Serializer for dashboard summary"""
     customer_id = serializers.IntegerField()
     customer_name = serializers.CharField()
     customer_code = serializers.CharField()
@@ -177,10 +172,7 @@ class CustomerInsightsSummarySerializer(serializers.Serializer):
     customer_segment = serializers.CharField()
     last_updated = serializers.DateTimeField()
 
-
 class InsightsDashboardSerializer(serializers.Serializer):
-    """Serializer for insights dashboard data"""
-    
     total_customers = serializers.IntegerField()
     high_value_customers = serializers.IntegerField()
     customers_with_claims = serializers.IntegerField()
@@ -189,10 +181,7 @@ class InsightsDashboardSerializer(serializers.Serializer):
     payment_reliability_avg = serializers.FloatField()
     recent_insights = CustomerInsightsSummarySerializer(many=True)
 
-
 class CustomerInsightsFilterSerializer(serializers.Serializer):
-    """Serializer for filtering customer insights"""
-    
     customer_segment = serializers.CharField(required=False)
     risk_level = serializers.CharField(required=False)
     payment_reliability = serializers.CharField(required=False)
@@ -202,10 +191,7 @@ class CustomerInsightsFilterSerializer(serializers.Serializer):
     limit = serializers.IntegerField(default=50, max_value=100)
     offset = serializers.IntegerField(default=0, min_value=0)
 
-
 class CustomerInsightsBulkUpdateSerializer(serializers.Serializer):
-    """Serializer for bulk updating customer insights"""
-    
     customer_ids = serializers.ListField(
         child=serializers.IntegerField(),
         min_length=1,
@@ -213,10 +199,7 @@ class CustomerInsightsBulkUpdateSerializer(serializers.Serializer):
     )
     force_recalculate = serializers.BooleanField(default=False)
 
-
 class CustomerInsightsRecalculateSerializer(serializers.Serializer):
-    """Serializer for recalculating customer insights"""
-    
     force_recalculate = serializers.BooleanField(default=False)
     sections = serializers.ListField(
         child=serializers.ChoiceField(choices=['payment', 'communication', 'claims', 'profile']),

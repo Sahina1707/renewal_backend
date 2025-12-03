@@ -42,6 +42,7 @@ LOCAL_APPS = [
     'apps.core',
     'apps.users',
     'apps.authentication',
+    'apps.verification',
     'apps.customers',
     'apps.policies',
     'apps.uploads',
@@ -104,8 +105,9 @@ LOCAL_APPS = [
     'apps.closed_case_chatbot',
     'apps.policytimeline_chatbot',
     'apps.case_logs_chatbot',
-    'apps.verification',
-    'apps.teams'
+    'apps.teams',
+    'apps.email_settings',
+    
     # 'apps.communications',
     # 'apps.emails',
     # 'apps.surveys',
@@ -208,7 +210,7 @@ CHANNEL_LAYERS = {
     },
 }
 
-# Redis Channel Layers (uncomment when Redis is available)
+# Redis Channel Layers (uncomment when Redis is available).This is only for testing
 # CHANNEL_LAYERS = {
 #     'default': {
 #         'BACKEND': 'channels_redis.core.RedisChannelLayer',
@@ -357,7 +359,11 @@ EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='dfdr ihth gmbs ntxk
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='sahinayasin17@gmail.com')
 ADMIN_EMAIL = config('ADMIN_EMAIL', default='sahinayasin17@gmail.com')
 
-# File Storage Configuration
+# IMAP Settings (For Receiving Emails)
+IMAP_HOST = config('IMAP_HOST', default='imap.gmail.com')
+IMAP_PORT = config('IMAP_PORT', default=993, cast=int)
+IMAP_USER = config('EMAIL_HOST_USER', default='sahinayasin17@gmail.com') 
+IMAP_PASSWORD = config('IMAP_PASSWORD', default='dfdrihthgmbsntxk')
 if config('AWS_ACCESS_KEY_ID', default=None):
     # AWS S3 Configuration
     AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID')
@@ -379,14 +385,14 @@ MAX_UPLOAD_SIZE = config('MAX_UPLOAD_SIZE', default=10485760, cast=int)  # 10MB
 ALLOWED_FILE_TYPES = config('ALLOWED_FILE_TYPES', default='.xlsx,.csv,.pdf').split(',')
 MAX_FILES_PER_UPLOAD = config('MAX_FILES_PER_UPLOAD', default=5, cast=int)
 
-# # Celery Configuration
-# CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/1')
-# CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://localhost:6379/2')
-# CELERY_ACCEPT_CONTENT = ['json']
-# CELERY_TASK_SERIALIZER = 'json'
-# CELERY_RESULT_SERIALIZER = 'json'
-# CELERY_TIMEZONE = 'Asia/Kolkata'
-# CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+# Celery Configuration
+CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/1')
+CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://localhost:6379/2')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'Asia/Kolkata'
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 # Third-party API Configuration
 TWILIO_ACCOUNT_SID = config('TWILIO_ACCOUNT_SID', default='')
@@ -497,17 +503,24 @@ AUTH_USER_MODEL = 'users.User'
 # Email tracking settings
 BASE_URL = config('BASE_URL', default='http://13.233.6.207:8000')
 
-
 CELERY_BEAT_SCHEDULE = {
-    'send-scheduled-emails-every-minute': {
+    # 1. Email Manager (Scheduled Emails)
+    'email-manager-process-scheduled': {
         'task': 'apps.email_manager.tasks.process_scheduled_emails',
         'schedule': crontab(minute='*'),
-    }, 
-    'check-scheduled-campaigns-every-minute': {
+    },
+    'campaign-manager-check-scheduled': {
         'task': 'apps.campaign_manager.tasks.check_scheduled_campaigns',
         'schedule': crontab(minute='*'),
     },
-
+    'email-inbox-fetch-every-minute': {
+        'task': 'apps.email_inbox.tasks.fetch_new_emails',
+        'schedule': crontab(minute='*'),
+    }, 
+    'bulk-campaign-check-every-minute': {
+        'task': 'apps.email_inbox.tasks.process_scheduled_campaigns', 
+        'schedule': crontab(minute='*'),
+    },
 }
 
 

@@ -6,7 +6,8 @@ from .views import (
     EmailConversationViewSet,
     EmailFilterViewSet,
     EmailAttachmentViewSet,
-    EmailSearchQueryViewSet
+    EmailSearchQueryViewSet,
+    BulkEmailCampaignViewSet
 )
 
 router = DefaultRouter()
@@ -16,6 +17,7 @@ router.register(r'conversations', EmailConversationViewSet, basename='email-conv
 router.register(r'filters', EmailFilterViewSet, basename='email-filter')
 router.register(r'attachments', EmailAttachmentViewSet, basename='email-attachment')
 router.register(r'search-queries', EmailSearchQueryViewSet, basename='email-search-query')
+router.register(r'campaigns', BulkEmailCampaignViewSet, basename='bulk-email-campaign')
 
 urlpatterns = [
     path('', include(router.urls)),

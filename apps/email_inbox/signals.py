@@ -10,14 +10,11 @@ def broadcast_new_email(sender, instance, created, **kwargs):
     """
     Triggers when a new email is saved to the DB.
     """
-    # --- FIX: Check if instance.folder exists first ---
-    if created and instance.folder and instance.folder.folder_type == 'inbox':
+    if created and instance.folder and instance.folder.folder_type in ['inbox', 'sent']:
         channel_layer = get_channel_layer()
         
-        # Serialize the email data to send to the frontend
         email_data = EmailInboxMessageSerializer(instance).data
 
-        # Send to the "inbox_updates" group
         async_to_sync(channel_layer.group_send)(
             "inbox_updates",
             {

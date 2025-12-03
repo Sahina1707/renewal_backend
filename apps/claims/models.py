@@ -206,3 +206,28 @@ class Claim(BaseModel):
         if self.customer:
             return self.customer.email
         return None
+    
+class ClaimTimelineEvent(models.Model):
+    """Stores individual events that make up the claims processing timeline."""
+    claim = models.ForeignKey(
+        Claim, 
+        on_delete=models.CASCADE,
+        related_name='timeline_events', 
+        help_text="The claim this timeline event belongs to."
+    )
+    date = models.DateTimeField(
+        help_text="The date and time the event occurred."
+    )
+    title = models.CharField(
+        max_length=150,
+        help_text="Short title of the event (e.g., 'Surveyor Assigned')."
+    )
+    description = models.TextField(
+        blank=True,
+        help_text="Detailed description of the event or action taken."
+    )
+    
+    class Meta:
+        ordering = ['date'] 
+    def __str__(self):
+        return f"{self.claim.claim_number} - {self.title}"

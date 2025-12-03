@@ -92,31 +92,36 @@ class UserViewSet(viewsets.ModelViewSet):
         }
         
         # Get detailed breakdowns
-        from apps.customers.models import Customer
-        
-        # Status breakdown
-        status_counts = user.assigned_customers.values('status').annotate(
-            count=Count('id')
-        ).order_by('status')
-        workload_stats['customers_by_status'] = {
-            item['status']: item['count'] for item in status_counts
-        }
-        
-        # Priority breakdown
-        priority_counts = user.assigned_customers.values('priority').annotate(
-            count=Count('id')
-        ).order_by('priority')
-        workload_stats['customers_by_priority'] = {
-            item['priority']: item['count'] for item in priority_counts
-        }
-        
-        # Profile breakdown
-        profile_counts = user.assigned_customers.values('profile').annotate(
-            count=Count('id')
-        ).order_by('profile')
-        workload_stats['customers_by_profile'] = {
-            item['profile']: item['count'] for item in profile_counts
-        }
+        # Note: Depending on your app structure, ensure 'apps.customers' exists
+        try:
+            from apps.customers.models import Customer
+            
+            # Status breakdown
+            status_counts = user.assigned_customers.values('status').annotate(
+                count=Count('id')
+            ).order_by('status')
+            workload_stats['customers_by_status'] = {
+                item['status']: item['count'] for item in status_counts
+            }
+            
+            # Priority breakdown
+            priority_counts = user.assigned_customers.values('priority').annotate(
+                count=Count('id')
+            ).order_by('priority')
+            workload_stats['customers_by_priority'] = {
+                item['priority']: item['count'] for item in priority_counts
+            }
+            
+            # Profile breakdown
+            profile_counts = user.assigned_customers.values('profile').annotate(
+                count=Count('id')
+            ).order_by('profile')
+            workload_stats['customers_by_profile'] = {
+                item['profile']: item['count'] for item in profile_counts
+            }
+        except ImportError:
+            # Fallback if customers app isn't ready yet
+            pass
         
         return Response(workload_stats, status=status.HTTP_200_OK)
     
@@ -158,8 +163,8 @@ class UserViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_200_OK)
 
 
-class RoleViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet for Role management (read-only)"""
+class RoleViewSet(viewsets.ModelViewSet):
+    """ViewSet for Role management"""
     queryset = Role.objects.all()
     serializer_class = RoleSerializer
     permission_classes = [permissions.IsAuthenticated]

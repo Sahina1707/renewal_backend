@@ -10,20 +10,12 @@ from .models import (
 @admin.register(EmailFolder)
 class EmailFolderAdmin(admin.ModelAdmin):
     list_display = [
-        'name', 'folder_type', 'color_display', 'is_system', 'is_active',
+        'name', 'folder_type', 'is_system', 'is_active',
         'message_count', 'unread_count', 'created_at'
     ]
     list_filter = ['folder_type', 'is_system', 'is_active', 'created_at']
     search_fields = ['name', 'description']
     readonly_fields = ['id', 'created_at', 'updated_at', 'created_by', 'updated_by']
-    
-    def color_display(self, obj):
-        """Display color as a colored square"""
-        return format_html(
-            '<span style="display: inline-block; width: 20px; height: 20px; background-color: {}; border: 1px solid #ccc;"></span> {}',
-            obj.color, obj.color
-        )
-    color_display.short_description = 'Color'
     
     def message_count(self, obj):
         """Count of messages in this folder"""

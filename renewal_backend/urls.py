@@ -30,6 +30,9 @@ api_patterns = [
     # User management
     path('users/', include('apps.users.urls')),
 
+    # Customer Verification endpoints
+    path('verification/', include('apps.verification.urls')),
+
     # Core business endpoints
     path('customers/', include('apps.customers.urls')),
     path('policies/', include('apps.policies.urls')),
@@ -74,6 +77,7 @@ api_patterns = [
     path('policy-exclusions/', include('apps.policy_exclusions.urls')),
     path('policy-conditions/', include('apps.policy_conditions.urls')),
     path("teams/", include("apps.teams.urls")),
+    path("email-settings/", include("apps.email_settings.urls")),
 
     # Email Integration endpoints
     path('email-provider/', include('apps.email_provider.urls')),

@@ -69,7 +69,6 @@ class SequenceStep(models.Model):
     class TriggerConditions(models.TextChoices):
         ALWAYS_SEND = 'always', 'Always Send'
         NO_RESPONSE = 'no_response', 'Send if no response'
-        # --- NEW (from video 00:51) ---
         NO_ACTION = 'no_action', 'Send if no action taken'
 
     campaign = models.ForeignKey(
@@ -132,8 +131,6 @@ class CampaignLog(models.Model):
     sent_at = models.DateTimeField(default=timezone.now)
     error_message = models.TextField(blank=True, null=True)
     response_received_at = models.DateTimeField(null=True, blank=True)
-    
-    # --- NEW (for webhook tracking) ---
     message_provider_id = models.CharField(max_length=255, blank=True, null=True, db_index=True)
     
     created_at = models.DateTimeField(auto_now_add=True)

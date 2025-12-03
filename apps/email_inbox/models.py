@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.conf import settings
 import uuid
 
 User = get_user_model()
@@ -15,6 +16,7 @@ class EmailFolder(models.Model):
         ('drafts', 'Drafts'),
         ('trash', 'Trash'),
         ('spam', 'Spam'),
+        ('junk', 'Junk'),
         ('archive', 'Archive'),
         ('custom', 'Custom'),
     ]
@@ -56,7 +58,6 @@ class EmailFolder(models.Model):
     name = models.CharField(max_length=100)
     folder_type = models.CharField(max_length=20, choices=FOLDER_TYPES, default='custom')
     description = models.TextField(blank=True, null=True)
-    color = models.CharField(max_length=7, default='#007bff', help_text="Hex color code")
     is_system = models.BooleanField(default=False, help_text="System-created folder")
     is_active = models.BooleanField(default=True)
     
@@ -108,6 +109,8 @@ class EmailInboxMessage(models.Model):
         ('forwarded', 'Forwarded'),
         ('archived', 'Archived'),
         ('deleted', 'Deleted'),
+        ('draft', 'Draft'),
+        ('restored', 'Restored'),
     ]
     
     CATEGORY_CHOICES = [
@@ -175,15 +178,25 @@ class EmailInboxMessage(models.Model):
     confidence_score = models.FloatField(default=0.0)
     attachments = models.JSONField(default=list, blank=True)
     attachment_count = models.PositiveIntegerField(default=0)
+    is_processed = models.BooleanField(default=False)
+    processing_notes = models.TextField(blank=True, null=True)
+    assigned_to = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='assigned_emails'
+    )
+    forwarded_at = models.DateTimeField(blank=True, null=True)
     
     # Raw email data
+    raw_headers = models.JSONField(default=dict, blank=True)
+    raw_body = models.TextField(blank=True, null=True)
     headers = models.JSONField(default=dict, blank=True)
     size_bytes = models.PositiveIntegerField(default=0)
     source = models.CharField(max_length=50, default='webhook')
     source_message_id = models.CharField(max_length=255, blank=True, null=True)
-    
-    # Raw email data
-    
+        
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -192,7 +205,41 @@ class EmailInboxMessage(models.Model):
     is_deleted = models.BooleanField(default=False)
     deleted_at = models.DateTimeField(blank=True, null=True)
     deleted_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='deleted_email_inbox_messages')
+    is_escalated = models.BooleanField(default=False)
+    escalation_reason = models.TextField(blank=True, null=True)
+    escalation_priority = models.CharField(
+        max_length=20,
+        choices=[('high', 'High'), ('urgent', 'Urgent'), ('critical', 'Critical')],
+        blank=True, null=True
+    )
+    escalated_at = models.DateTimeField(blank=True, null=True)
+    escalated_by = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        related_name='escalated_inbox_messages' 
+    )
+    due_date = models.DateTimeField(null=True, blank=True)
+    parent_message = models.ForeignKey(
+        'self', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='replies'
+    )
     
+    # Customer Type (Required for the dashboard filters)
+    CUSTOMER_TYPE_CHOICES = [
+        ('normal', 'Normal'),
+        ('hni', 'HNI'),
+        ('super_hni', 'Super HNI'),
+        ('vip', 'VIP'),
+    ]
+    customer_type = models.CharField(
+        max_length=20, 
+        choices=CUSTOMER_TYPE_CHOICES, 
+        default='normal'
+    )
     class Meta:
         db_table = 'email_inbox_messages'
         ordering = ['-received_at']
@@ -434,4 +481,60 @@ class EmailAuditLog(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        db_table = 'email_audit_logs' 
         ordering = ['-timestamp']
+
+class EmailInternalNote(models.Model):
+    """
+    Internal notes for collaboration (matches the 'Add Note' feature in video)
+    """
+    email_message = models.ForeignKey(EmailInboxMessage, on_delete=models.CASCADE, related_name='internal_notes')
+    author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    note = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'email_internal_notes'
+        ordering = ['-created_at']
+class BulkEmailCampaign(models.Model):
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('scheduled', 'Scheduled'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200)
+    
+    # Template Snapshot Fields (Subject/Body from template_id)
+    subject_template = models.CharField(max_length=500, help_text="Base subject from template")
+    body_html_template = models.TextField(help_text="Base HTML from template")
+    
+    custom_subject = models.CharField(max_length=500, blank=True, null=True, help_text="User's custom subject override")
+    additional_message = models.TextField(blank=True, null=True, help_text="User's additional note")    
+    # Recipient data
+    recipients_data = models.JSONField(
+        default=list, 
+        help_text="List of dicts: [{'email': 'x', 'name': 'y', 'company': 'z'}]"
+    )
+    
+    # Scheduling
+    scheduled_at = models.DateTimeField(null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    
+    # Tracking
+    total_recipients = models.IntegerField(default=0)
+    successful_sends = models.IntegerField(default=0)
+    failed_sends = models.IntegerField(default=0)
+    
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'bulk_email_campaigns'
+        ordering = ['-created_at']

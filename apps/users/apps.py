@@ -10,6 +10,6 @@ class UsersConfig(AppConfig):
         """Initialize app when Django starts"""
         # Import signal handlers
         try:
-            import apps.users.signals  # noqa
+            import apps.users.signals  
         except ImportError:
             pass 
