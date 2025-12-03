@@ -3,11 +3,6 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from django.core.cache import cache
 
 class InboxConsumer(AsyncWebsocketConsumer):
-    """
-    Handles Real-Time updates for the Email Inbox.
-    1. Push new emails to the list instantly.
-    2. Track presence ("2 agents viewing").
-    """
     
     async def connect(self):
         self.user = self.scope["user"]

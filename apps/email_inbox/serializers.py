@@ -1,9 +1,18 @@
 from rest_framework import serializers
 from .models import (
     EmailInboxMessage, EmailFolder, EmailConversation, EmailFilter,
-    EmailAttachment, EmailSearchQuery
+    EmailAttachment, EmailSearchQuery,EmailInternalNote,BulkEmailCampaign,EmailAuditLog,
     
 )
+from django.apps import apps
+from django.utils.timesince import timesince
+class EmailInternalNoteSerializer(serializers.ModelSerializer):
+    author_name = serializers.CharField(source='author.get_full_name', read_only=True)
+    
+    class Meta:
+        model = EmailInternalNote
+        fields = ['id', 'note', 'author', 'author_name', 'created_at']
+        read_only_fields = ['id', 'author', 'created_at']
 
 
 class EmailFolderSerializer(serializers.ModelSerializer):
@@ -19,7 +28,7 @@ class EmailFolderSerializer(serializers.ModelSerializer):
         model = EmailFolder
         fields = [
             'id', 'name', 'folder_type', 'folder_type_display', 'description',
-            'color', 'is_system', 'is_active'
+             'is_system', 'is_active'
             , 'sort_order',
             'message_count', 'unread_count', 'created_at', 'updated_at',
             'created_by', 'created_by_name', 'updated_by', 'updated_by_name',
@@ -89,6 +98,7 @@ class EmailInboxMessageSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
     updated_by_name = serializers.CharField(source='updated_by.get_full_name', read_only=True)
     escalated_by_name = serializers.CharField(source='escalated_by.get_full_name', read_only=True)
+    internal_notes = EmailInternalNoteSerializer(many=True, read_only=True) 
 
     class Meta:
         model = EmailInboxMessage
@@ -112,6 +122,7 @@ class EmailInboxMessageSerializer(serializers.ModelSerializer):
             'due_date',
             'is_escalated',
             'customer_type',
+            'internal_notes',
         ]
         read_only_fields = [
             'id', 'message_id', 'received_at', 'read_at', 'replied_at',
@@ -314,6 +325,10 @@ class BulkEmailActionSerializer(serializers.Serializer):
         help_text="List of email IDs to perform action on"
     )
     action = serializers.ChoiceField(choices=[
+        ('mark_resolved', 'Mark Resolved'),
+        ('flag', 'Flag for Follow-Up'),
+        ('unflag', 'Unflag'),
+        ('assign_to', 'Bulk Assign'),
         ('mark_read', 'Mark as read'),
         ('mark_unread', 'Mark as unread'),
         ('star', 'Star'),
@@ -328,9 +343,9 @@ class BulkEmailActionSerializer(serializers.Serializer):
         ('remove_tag', 'Remove tag'),
     ])
     action_value = serializers.CharField(
-        required=False,
+        required=False, 
         allow_blank=True,
-        help_text="Action parameter (folder ID, user ID, tag name, etc.)"
+        help_text="Required only for 'assign_to' (User ID)"
     )
 
 
@@ -408,3 +423,209 @@ class EmailComposeSerializer(serializers.Serializer):
     subject = serializers.CharField(max_length=500)
     html_content = serializers.CharField(required=False, allow_blank=True)
     text_content = serializers.CharField(required=False, allow_blank=True)
+class EmailInboxListSerializer(serializers.ModelSerializer):
+    # Only fields needed for the columns
+    due_status = serializers.SerializerMethodField()
+    date_column = serializers.SerializerMethodField()
+    due_date_column = serializers.SerializerMethodField()
+    from_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EmailInboxMessage
+        fields = [
+            'id', 
+            'message_id', 
+            'is_starred',
+            'from_display',
+            'from_email',
+            'subject',
+            'snippet',          # Just a 1-line preview, NOT full body
+            'customer_type',    # VIP/Normal badge
+            'priority',
+            'has_attachments',  # Just a boolean icon
+            'status',
+            'date_column',
+            'due_date_column',
+        ]
+
+    # ... (Keep the get_due_status, get_date_column methods we wrote before) ...
+    def get_due_status(self, obj):
+        # ... (Same code as before) ...
+        return "ON TRACK" 
+
+    def get_date_column(self, obj):
+        if not obj.received_at: return None
+        return {
+            "date": obj.received_at.strftime("%m/%d/%Y"),
+            "time": obj.received_at.strftime("%I:%M %p")
+        }
+
+    def get_due_date_column(self, obj):
+        # ... (Same code as before) ...
+        return {"status": "No due date"}
+
+    def get_from_display(self, obj):
+        return obj.from_name if obj.from_name else obj.from_email
+
+class EmailAttachmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmailAttachment
+        fields = ['id', 'filename', 'file_path', 'file_size', 'content_type']
+
+class EmailInboxDetailSerializer(serializers.ModelSerializer):
+    # Full details for the page view
+    internal_notes = serializers.SerializerMethodField()
+    attachments = EmailAttachmentSerializer(many=True, read_only=True)
+    formatted_date = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EmailInboxMessage
+        fields = [
+            'id',
+            'message_id',
+            'thread_id',
+            'subject',
+            'from_email',
+            'from_name',
+            'to_emails',
+            'cc_emails',
+            'bcc_emails',
+            'received_at',
+            'formatted_date',
+            
+            # Content
+            'html_content',     
+            'text_content',
+            
+            # Metadata
+            'tags',            
+            'customer_type',
+            'priority',
+            'status',
+            'folder',
+            
+            # Related Data
+            'attachments',     
+            'internal_notes',   
+        ]
+
+    def get_formatted_date(self, obj):
+        return obj.received_at.strftime("%B %d, %Y at %I:%M %p")
+
+    def get_internal_notes(self, obj):
+        return [{
+            'id': note.id,
+            'note': note.note,
+            'author': note.author.get_full_name() if note.author else 'System',
+            'created_at': note.created_at
+        } for note in obj.internal_notes.all().order_by('-created_at')]
+class BulkEmailCampaignSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
+    template_id = serializers.UUIDField(write_only=True, required=False) 
+    
+    class Meta:
+        model = BulkEmailCampaign
+        fields = [
+            'id', 
+            'name', 
+            'template_id',          # This input field causes the TypeError
+            'subject_template', 
+            'body_html_template',
+            'custom_subject', 
+            'additional_message',
+            'recipients_data', 
+            'scheduled_at', 
+            'sent_at', 
+            'status', 
+            'total_recipients', 
+            'successful_sends', 
+            'failed_sends', 
+            'created_by', 
+            'created_by_name',
+            'created_at', 
+            'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'sent_at', 'status', 'total_recipients', 
+            'successful_sends', 'failed_sends', 'created_by', 
+            'created_at', 'updated_at'
+        ]
+        extra_kwargs = {
+            'subject_template': {'required': False},
+            'body_html_template': {'required': False},
+            'custom_subject': {'required': False},
+            'additional_message': {'required': False},
+            'recipients_data': {'required': True}
+        }
+
+    # --- FIX FOR TypeError: BulkEmailCampaign() got unexpected keyword arguments: 'template_id' ---
+    def create(self, validated_data):
+        # 1. Pop the non-model field from the dictionary
+        template_id = validated_data.pop('template_id', None)
+        
+        # 2. Pop the calculated fields which might be None if user didn't input them 
+        # (This avoids passing None to mandatory ModelFields, although your fields are now null=True)
+        # We don't need this step as the content is populated in validate()
+
+        # 3. Create the model instance using the remaining validated data
+        return super().create(validated_data)
+
+    def validate(self, data):
+        # Your existing template lookup logic MUST remain here to populate subject/body
+        template_id = data.get('template_id')
+        
+        if template_id:
+            try:
+                EmailTemplate = apps.get_model('email_templates', 'EmailTemplate')
+                template = EmailTemplate.objects.get(id=template_id)
+                
+                if not data.get('subject_template'):
+                    data['subject_template'] = template.subject
+                
+                if not data.get('body_html_template'):
+                    data['body_html_template'] = getattr(template, 'body_html', getattr(template, 'html_content', ''))
+                    
+            except Exception as e:
+                raise serializers.ValidationError(f"Invalid Template ID: {str(e)}")
+        
+        # Final Safety Check
+        if not data.get('subject_template') or not data.get('body_html_template'):
+             raise serializers.ValidationError("Template content missing.")
+
+        # Validate schedule time
+        from django.utils import timezone
+        if data.get('scheduled_at') and data['scheduled_at'] < timezone.now():
+             raise serializers.ValidationError({"scheduled_at": "Scheduled time cannot be in the past."})
+
+        return data
+class EmailAuditLogSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the Audit Trail history.
+    """
+    performed_by_name = serializers.CharField(source='performed_by.get_full_name', read_only=True)
+    
+    subtitle = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EmailAuditLog
+        fields = ['id', 'action', 'details', 'performed_by_name', 'timestamp', 'subtitle']
+
+    def get_subtitle(self, obj):
+        name = obj.performed_by.get_full_name() if obj.performed_by else "System"
+        time_diff = timesince(obj.timestamp).split(',')[0]
+        
+        return f"{name} • {time_diff} ago"
+class RecipientImportSerializer(serializers.Serializer):
+    """
+    Handles the 'Bulk Import' modal data. 
+    Accepts raw CSV text or a file and returns structured JSON.
+    """
+    # Option 1: Copy-pasted text from the modal
+    csv_text = serializers.CharField(required=False, allow_blank=True, help_text="Raw text from the import modal")
+    # Option 2: File upload
+    file = serializers.FileField(required=False, help_text="CSV or Excel file")
+
+    def validate(self, data):
+        if not data.get('csv_text') and not data.get('file'):
+            raise serializers.ValidationError("Please provide either text or a file.")
+        return data

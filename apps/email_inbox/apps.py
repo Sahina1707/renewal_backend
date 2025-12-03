@@ -6,5 +6,4 @@ class EmailInboxConfig(AppConfig):
     name = 'apps.email_inbox'
 
     def ready(self):
-        # Import and connect signals
         import apps.email_inbox.signals

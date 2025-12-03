@@ -52,6 +52,12 @@ class CustomerFileViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         """Set updated_by when updating a customer file"""
         serializer.save(updated_by=self.request.user)
+
+    def perform_destroy(self, instance):
+        """Perform a soft delete by deactivating the file."""
+        instance.is_active = False
+        instance.updated_by = self.request.user
+        instance.save()
     
     def create(self, request, *args, **kwargs):
         """Create a new customer file"""

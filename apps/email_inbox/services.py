@@ -3,11 +3,16 @@ import re
 from typing import List, Dict, Any, Optional
 from django.core.mail import EmailMultiAlternatives
 from django.conf import settings
-from django.db.models import Q, Count, F, Avg
+from django.db.models import Case, When, Value, FloatField, Avg, Count, Q, F
 from django.utils import timezone
 from datetime import timedelta
 import uuid
-
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
+from apps.email_settings.models import EmailAccount
+from apps.email_settings.utils import decrypt_credential
 from .models import (
     EmailInboxMessage, EmailFolder, EmailConversation, EmailFilter,
     EmailAttachment, EmailSearchQuery
@@ -23,33 +28,22 @@ class EmailInboxService:
         pass
     
     def receive_email(self, from_email: str, to_email: str, subject: str,
-                     html_content: str = '', text_content: str = '',
-                     from_name: str = None, cc_emails: List[str] = None,
-                     bcc_emails: List[str] = None, reply_to: str = None,
-                     raw_headers: Dict[str, Any] = None, raw_body: str = None,
-                     attachments: List[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """
-        Receive and process an incoming email
-        
-        Args:
-            from_email: Sender email address
-            to_email: Recipient email address
-            subject: Email subject
-            html_content: HTML content
-            text_content: Plain text content
-            from_name: Sender name
-            cc_emails: CC email addresses
-            bcc_emails: BCC email addresses
-            reply_to: Reply-to email address
-            raw_headers: Raw email headers
-            raw_body: Raw email body
-            attachments: List of attachment data
-        
-        Returns:
-            Dict with success status and message details
-        """
+                      html_content: str = '', text_content: str = '',
+                      from_name: str = None, cc_emails: List[str] = None,
+                      bcc_emails: List[str] = None, reply_to: str = None,
+                      raw_headers: Dict[str, Any] = None, raw_body: str = None,
+                      attachments: List[Dict[str, Any]] = None,
+                      folder_type_override: str = 'inbox') -> Dict[str, Any]:  # <--- NEW PARAM
         try:
-            # Create email message
+            # --- FIX: Use the override variable, NOT hardcoded 'inbox' ---
+            target_folder, _ = EmailFolder.objects.get_or_create(
+                folder_type=folder_type_override,
+                defaults={
+                    'name': folder_type_override.capitalize(), 
+                    'is_system': True, 
+                }
+            )
+
             email_message = EmailInboxMessage.objects.create(
                 from_email=from_email,
                 from_name=from_name,
@@ -62,6 +56,8 @@ class EmailInboxService:
                 text_content=text_content,
                 message_id=str(uuid.uuid4()),
                 thread_id=str(uuid.uuid4()),
+                folder=target_folder,  # <--- Use the variable here
+                status='read' if folder_type_override == 'sent' else 'unread', # Sent items are read
                 in_reply_to='',
                 references='',
                 is_spam=False,
@@ -343,65 +339,145 @@ class EmailInboxService:
     
     def send_outbound_email(self, email_message_obj, attachments=None):
         """
-        Actually sends the email via SMTP/Gmail/Outlook
+        Sends email using the SPECIFIC SMTP credentials of the sender account.
         """
         try:
-            # 1. Setup Email
-            subject = email_message_obj.subject
-            body_html = email_message_obj.html_content or email_message_obj.text_content
-            from_email = settings.DEFAULT_FROM_EMAIL
-            to_emails = email_message_obj.to_emails # Assuming this is a list in your JSONField
+            # 1. Identify which account is sending this
+            sender_address = email_message_obj.from_email
             
-            # 2. Create Message Object
+            # Find the account in the DB
+            account = EmailAccount.objects.filter(
+                email_address__iexact=sender_address, # Case-insensitive match
+                is_deleted=False
+            ).first()
+
+            if not account:
+                # Fallback: If no account found (e.g. system notification), use Django default
+                logger.warning(f"No EmailAccount found for {sender_address}. Using default backend.")
+                return self._send_via_django_backend(email_message_obj, attachments)
+
+            # 2. Decrypt Credentials
+            password = decrypt_credential(account.access_credential)
+            if not password:
+                return False, "Account has no password saved."
+
+            # 3. Construct the Email (MIME)
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = email_message_obj.subject
+            msg['From'] = f"{account.account_name} <{account.email_address}>"
+            
+            # Handle list of recipients
+            to_list = email_message_obj.to_emails
+            if isinstance(to_list, str): to_list = [to_list] # Safety check
+            msg['To'] = ", ".join(to_list)
+            
+            if email_message_obj.cc_emails:
+                msg['Cc'] = ", ".join(email_message_obj.cc_emails)
+            
+            if email_message_obj.reply_to:
+                msg['Reply-To'] = email_message_obj.reply_to
+
+            # Attach Body
+            body_html = email_message_obj.html_content or email_message_obj.text_content
+            body_text = email_message_obj.text_content or "Please view in HTML."
+            
+            msg.attach(MIMEText(body_text, 'plain'))
+            if body_html:
+                msg.attach(MIMEText(body_html, 'html'))
+
+            # 4. Handle Attachments
+            if attachments:
+                for file in attachments:
+                    # Check if it's a Django UploadedFile or a dictionary
+                    try:
+                        if hasattr(file, 'read'): # UploadedFile
+                            content = file.read()
+                            name = file.name
+                            ctype = file.content_type
+                        elif isinstance(file, dict): # Dictionary (from PDF gen)
+                            content = file['content']
+                            name = file['name']
+                            ctype = file['content_type']
+                        else:
+                            continue
+
+                        part = MIMEApplication(content, Name=name)
+                        part['Content-Disposition'] = f'attachment; filename="{name}"'
+                        msg.attach(part)
+                    except Exception as e:
+                        logger.error(f"Attachment error: {e}")
+
+            # 5. Connect to Specific SMTP Server
+            # (Matches the "Test Connection" logic you built earlier)
+            if account.use_ssl_tls and account.smtp_port == 465:
+                server = smtplib.SMTP_SSL(account.smtp_server, account.smtp_port, timeout=10)
+            else:
+                server = smtplib.SMTP(account.smtp_server, account.smtp_port, timeout=10)
+                if account.use_ssl_tls:
+                    server.starttls()
+
+            server.login(account.email_address, password)
+            
+            # Combine all recipients (To + CC + BCC)
+            all_recipients = to_list + (email_message_obj.cc_emails or []) + (email_message_obj.bcc_emails or [])
+            
+            server.sendmail(account.email_address, all_recipients, msg.as_string())
+            server.quit()
+            
+            return True, "Sent successfully via SMTP"
+
+        except Exception as e:
+            logger.error(f"Failed to send email via {email_message_obj.from_email}: {e}")
+            return False, str(e)
+
+    def _send_via_django_backend(self, email_message_obj, attachments=None):
+        """Fallback method using standard Django settings"""
+        try:
             msg = EmailMultiAlternatives(
-                subject=subject,
-                body=email_message_obj.text_content or "Please view this email in an HTML compatible viewer.",
-                from_email=from_email,
-                to=to_emails,
+                subject=email_message_obj.subject,
+                body=email_message_obj.text_content,
+                from_email=settings.DEFAULT_FROM_EMAIL, # Fallback only
+                to=email_message_obj.to_emails,
                 cc=email_message_obj.cc_emails,
                 bcc=email_message_obj.bcc_emails,
                 reply_to=[email_message_obj.reply_to] if email_message_obj.reply_to else None
             )
-            
-            # 3. Attach HTML alternative
-            if body_html:
-                msg.attach_alternative(body_html, "text/html")
-
-            # 4. Handle Attachments (If passed during creation)
-            if attachments:
-                for file in attachments:
-                    # file is an InMemoryUploadedFile from request.FILES
-                    msg.attach(file.name, file.read(), file.content_type)
-
-            # 5. Send
+            if email_message_obj.html_content:
+                msg.attach_alternative(email_message_obj.html_content, "text/html")
             msg.send()
-            
-            return True, "Sent successfully"
-
+            return True, "Sent via default backend"
         except Exception as e:
-            logger.error(f"Failed to send email: {e}")
             return False, str(e)
-    
     def reply_to_email(self, email_id: str, subject: str, html_content: str = '',
-                      text_content: str = '', to_emails: List[str] = None,
-                      cc_emails: List[str] = None, bcc_emails: List[str] = None,
-                      priority: str = 'normal', tags: List[str] = None) -> Dict[str, Any]:
+                       text_content: str = '', to_emails: List[str] = None,
+                       cc_emails: List[str] = None, bcc_emails: List[str] = None,
+                       priority: str = 'normal', tags: List[str] = None) -> Dict[str, Any]:
         """Reply to an email"""
         try:
             original_email = EmailInboxMessage.objects.get(id=email_id)
             
-            # Create reply message
+            # --- FIX: Get Sent Folder ---
+            sent_folder, _ = EmailFolder.objects.get_or_create(
+                folder_type='sent',
+                defaults={'name': 'Sent', 'is_system': True}
+            )
+            our_account_email = None
+            for recipient in original_email.to_emails:
+                if EmailAccount.objects.filter(email_address__iexact=recipient).exists():
+                    our_account_email = recipient
+                break
+
+            # Create reply message (In Memory)
             reply_message = EmailInboxMessage(
-                from_email=original_email.to_emails[0] if original_email.to_emails else settings.DEFAULT_FROM_EMAIL,
-                to_emails=[original_email.from_email] + (to_emails or []),
-                cc_emails=cc_emails or [],
+            from_email = our_account_email or (original_email.to_emails[0] if original_email.to_emails else settings.DEFAULT_FROM_EMAIL),            
                 bcc_emails=bcc_emails or [],
                 subject=subject,
                 html_content=html_content,
                 text_content=text_content,
                 category=original_email.category,
                 priority=priority,
-                status='unread', # Temp status
+                status='read',        
+                folder=sent_folder,   
                 thread_id=original_email.thread_id,
                 parent_message=original_email,
                 tags=tags or [],
@@ -414,6 +490,9 @@ class EmailInboxService:
             if not success:
                 return {'success': False, 'message': f'Failed to send reply: {error_msg}'}
             
+            # --- FIX: SAVE TO DATABASE ---
+            reply_message.save()  # <--- CRITICAL! This was missing.
+
             # Mark original as replied
             original_email.mark_as_replied()
             
@@ -424,25 +503,25 @@ class EmailInboxService:
             }
             
         except EmailInboxMessage.DoesNotExist:
-            return {
-                'success': False,
-                'message': 'Original email not found'
-            }
+            return {'success': False, 'message': 'Original email not found'}
         except Exception as e:
             logger.error(f"Error replying to email: {str(e)}")
-            return {
-                'success': False,
-                'message': f'Error replying to email: {str(e)}'
-            }
+            return {'success': False, 'message': f'Error replying to email: {str(e)}'}
     
     def forward_email(self, email_id: str, to_emails: List[str], subject: str = None,
-                     message: str = '', cc_emails: List[str] = None,
-                     bcc_emails: List[str] = None, priority: str = 'normal',
-                     tags: List[str] = None) -> Dict[str, Any]:
+                      message: str = '', cc_emails: List[str] = None,
+                      bcc_emails: List[str] = None, priority: str = 'normal',
+                      tags: List[str] = None) -> Dict[str, Any]:
         """Forward an email"""
         try:
             original_email = EmailInboxMessage.objects.get(id=email_id)
             
+            # --- FIX: Get Sent Folder ---
+            sent_folder, _ = EmailFolder.objects.get_or_create(
+                folder_type='sent',
+                defaults={'name': 'Sent', 'is_system': True}
+            )
+
             # Create forward message
             forward_subject = subject or f"Fwd: {original_email.subject}"
             forward_message = EmailInboxMessage(
@@ -455,7 +534,8 @@ class EmailInboxService:
                 text_content=f"{message}\n---\n{original_email.text_content}",
                 category=original_email.category,
                 priority=priority,
-                status='unread', # Temp status
+                status='read',        # <--- Outgoing mail is always 'read'
+                folder=sent_folder,   # <--- ASSIGN TO SENT FOLDER
                 tags=tags or [],
                 message_id=str(uuid.uuid4())
             )
@@ -465,6 +545,9 @@ class EmailInboxService:
 
             if not success:
                 return {'success': False, 'message': f'Failed to send forward: {error_msg}'}
+
+            # --- FIX: SAVE TO DATABASE ---
+            forward_message.save() # <--- CRITICAL! This was missing.
 
             # Mark original as forwarded
             original_email.mark_as_forwarded()
@@ -476,16 +559,10 @@ class EmailInboxService:
             }
             
         except EmailInboxMessage.DoesNotExist:
-            return {
-                'success': False,
-                'message': 'Original email not found'
-            }
+            return {'success': False, 'message': 'Original email not found'}
         except Exception as e:
             logger.error(f"Error forwarding email: {str(e)}")
-            return {
-                'success': False,
-                'message': f'Error forwarding email: {str(e)}'
-            }
+            return {'success': False, 'message': f'Error forwarding email: {str(e)}'}
     
     def search_emails(self, query_params: Dict[str, Any]) -> Dict[str, Any]:
         """Search emails based on query parameters"""
@@ -583,7 +660,7 @@ class EmailInboxService:
                 'message': f'Error searching emails: {str(e)}'
             }
     
-    def get_email_statistics(self, start_date: str = None, end_date: str = None) -> Dict[str, Any]:
+    def get_email_statistics(self, start_date=None, end_date=None):
         """Get email inbox statistics"""
         try:
             # Build filter
@@ -593,16 +670,53 @@ class EmailInboxService:
             if end_date:
                 filters['received_at__lte'] = end_date
             
-            # Get basic counts
+            # Base Queryset
             emails = EmailInboxMessage.objects.filter(**filters)
             
+            # --- 1. NEW DASHBOARD METRICS (Video 2) ---
+            
+            # Resolved Count
+            resolved_count = emails.filter(status__in=['resolved', 'archived']).count()
+            
+            # Total Counts
             total_emails = emails.count()
             unread_emails = emails.filter(status='unread').count()
             read_emails = emails.filter(status='read').count()
             starred_emails = emails.filter(is_starred=True).count()
             important_emails = emails.filter(is_important=True).count()
             
-            # Get counts by status
+            # Satisfaction Score (Average Sentiment)
+            satisfaction_agg = emails.aggregate(
+                score=Avg(
+                    Case(
+                        When(sentiment='positive', then=Value(5.0)),
+                        When(sentiment='neutral', then=Value(3.0)),
+                        When(sentiment='negative', then=Value(1.0)),
+                        default=Value(3.0),
+                        output_field=FloatField()
+                    )
+                )
+            )
+            satisfaction_score = round(satisfaction_agg['score'] or 0, 1)
+            
+            # SLA Compliance Calculation
+            # Logic: If (replied before due date) OR (resolved before due date) -> Compliant
+            sla_compliant_emails = emails.filter(
+                due_date__isnull=False
+            ).filter(
+                Q(replied_at__lte=F('due_date')) | 
+                Q(status='resolved', updated_at__lte=F('due_date'))
+            ).count()
+            
+            total_with_due_date = emails.filter(due_date__isnull=False).count()
+            
+            if total_with_due_date > 0:
+                sla_compliance = round((sla_compliant_emails / total_with_due_date) * 100, 1)
+            else:
+                sla_compliance = 100.0 
+
+            # --- 2. EXISTING CHART DATA ---
+
             emails_by_status = {}
             for status, _ in EmailInboxMessage.STATUS_CHOICES:
                 count = emails.filter(status=status).count()
@@ -658,7 +772,14 @@ class EmailInboxService:
             
             avg_response_time = sum(response_times) / len(response_times) if response_times else 0
             
+            # --- 3. FINAL RETURN (COMBINED) ---
             return {
+                # New Metrics
+                'resolved': resolved_count,
+                'satisfaction_score': satisfaction_score,
+                'sla_compliance': sla_compliance,
+                
+                # Existing Metrics
                 'total_emails': total_emails,
                 'unread_emails': unread_emails,
                 'read_emails': read_emails,

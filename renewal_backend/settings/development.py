@@ -4,6 +4,7 @@ Development settings for Intelipro Insurance Policy Renewal System.
 
 from .base import *
 from decouple import config
+from django.conf import settings
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
@@ -47,7 +48,7 @@ if DEBUG:
 # Use console backend only if no EMAIL_HOST_USER is configured
 # This allows testing real email sending when SMTP credentials are provided
 # print(f"DEBUG: EMAIL_HOST_USER is: [ {config('EMAIL_HOST_USER', default='IS-NOT-SET')} ]")
-if not config('EMAIL_HOST_USER', default=None):
+if not settings.EMAIL_HOST_USER:
     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
     print("📧 Using console email backend (emails will appear in terminal)")
 else:
