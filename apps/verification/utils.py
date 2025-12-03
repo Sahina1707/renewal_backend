@@ -5,11 +5,19 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
-HEADERS = {
-    "accept": "application/json",
-    "authorization": f"Basic {getattr(settings, 'BUREAU_API_KEY', '')}",
-    "content-type": "application/json"
-}
+# HEADERS = {
+#     "accept": "application/json",
+#     "authorization": f"Basic {getattr(settings, 'BUREAU_API_KEY', '')}",
+#     "content-type": "application/json"
+# }
+
+def bureau_headers():
+    return {
+        "accept": "application/json",
+        "authorization": f"Basic {settings.BUREAU_API_KEY}",
+        "content-type": "application/json"
+    }
+
 
 BUREAU_BASE_URL = getattr(settings, 'BUREAU_BASE_URL', 'https://api.sandbox.bureau.id/v2/services')
 
@@ -26,7 +34,7 @@ def verify_email(name, email):
         }
         
         logger.info(f"Verifying email: {email} for name: {name}")
-        response = requests.post(url, headers=HEADERS, json=payload, timeout=30)
+        response = requests.post(url, headers=bureau_headers(), json=payload, timeout=30)
         response.raise_for_status()
         
         data = response.json()
@@ -65,7 +73,7 @@ def verify_phone(number):
         }
         
         logger.info(f"Verifying phone number: {number} (normalized to: {clean_number})")
-        response = requests.post(url, headers=HEADERS, json=payload, timeout=30)
+        response = requests.post(url, headers=bureau_headers(), json=payload, timeout=30)
         response.raise_for_status()
         
         data = response.json()
@@ -99,7 +107,7 @@ def verify_pan(pan):
         }
         
         logger.info(f"Verifying PAN: {pan}")
-        response = requests.post(url, headers=HEADERS, json=payload, timeout=30)
+        response = requests.post(url, headers=bureau_headers(), json=payload, timeout=30)
         response.raise_for_status()
         
         data = response.json()
