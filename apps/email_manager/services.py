@@ -79,7 +79,8 @@ class EmailManagerService:
             # Send email
             msg.send(fail_silently=False)
 
-            real_msg_id = custom_msg_id.strip("<>").lower()
+            # real_msg_id = custom_msg_id.strip("<>").lower()
+            real_msg_id = custom_msg_id.strip("<>")
 
             # Update status in DB
             now = timezone.now()

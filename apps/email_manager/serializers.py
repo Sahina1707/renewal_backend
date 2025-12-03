@@ -146,6 +146,8 @@ class EmailManagerUpdateSerializer(serializers.ModelSerializer):
 
 class SentEmailListSerializer(serializers.ModelSerializer):
     due_date = serializers.SerializerMethodField()
+    message_html = serializers.SerializerMethodField()
+    message_preview = serializers.SerializerMethodField()
 
     class Meta:
         model = EmailManager
@@ -158,6 +160,9 @@ class SentEmailListSerializer(serializers.ModelSerializer):
             'email_status',
             'sent_at',
             'due_date',
+            'message',        
+            'message_html',   
+            'message_preview', 
         ]
 
     def get_due_date(self, obj):
@@ -168,7 +173,18 @@ class SentEmailListSerializer(serializers.ModelSerializer):
             return payment.due_date if payment else None
         except Exception:
             return None
-        
+
+    def get_message_html(self, obj):
+        """Convert text message into simple HTML <br> format."""
+        if not obj.message:
+            return ""
+        return obj.message.replace("\n", "<br/>")
+
+    def get_message_preview(self, obj):
+        raw = obj.message or ""
+        raw = strip_tags(raw)
+        return raw[:120] + "..." if len(raw) > 120 else raw
+
 class EmailManagerInboxSerializer(serializers.ModelSerializer):
     message = serializers.SerializerMethodField()
     html_message = serializers.SerializerMethodField()

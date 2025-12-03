@@ -97,6 +97,10 @@ api_patterns = [
     path('closed-case-chatbot/', include('apps.closed_case_chatbot.urls')),
     path('policy-timeline-chatbot/', include('apps.policytimeline_chatbot.urls')),
     path('case-logs-chatbot/', include('apps.case_logs_chatbot.urls')),
+    path('renewals/', include('apps.renewals.urls')),
+    
+    # Customer Verification endpoints
+    path('verification/', include('apps.verification.urls')),
 
     # API Documentation
     path('schema/', PublicSchemaView.as_view(), name='schema'),

@@ -1,21 +1,18 @@
 from rest_framework import serializers
 from apps.renewals.models import RenewalCase
+from apps.renewals.models import Competitor
 
 class NotInterestedCaseSerializer(serializers.ModelSerializer):
     case_id = serializers.CharField(source='case_number', read_only=True)
     
-    # 1. Customer Group
     customer = serializers.SerializerMethodField()
     policy_number = serializers.CharField(source='policy.policy_number', read_only=True)
     product = serializers.SerializerMethodField()
     
-    # 3. The "Reason" Badge
     reason = serializers.CharField(source='get_not_interested_reason_display', read_only=True)
     
-    # 4. "Current Provider" (Mapped from the competitor table)
     current_provider = serializers.CharField(source='competitor.name', allow_null=True, read_only=True)
     
-    # 5. Other Fields
     marked_date = serializers.DateField(source='not_interested_date', read_only=True)
     agent = serializers.SerializerMethodField()
     remarks = serializers.CharField(read_only=True)
@@ -49,3 +46,18 @@ class NotInterestedCaseSerializer(serializers.ModelSerializer):
 
     def get_agent(self, obj):
         return obj.assigned_to.get_full_name() if obj.assigned_to else "Unassigned"
+    
+
+class NotInterestedCaseUpdateSerializer(serializers.Serializer):
+    not_interested_reason = serializers.ChoiceField(
+        choices=RenewalCase.NOT_INTERESTED_REASON_CHOICES,
+        required=True
+    )
+    not_interested_date = serializers.DateField(required=True)
+    competitor_id = serializers.IntegerField(required=False, allow_null=True)
+
+    def validate_competitor_id(self, value):
+        if value is not None:
+            if not Competitor.objects.filter(id=value).exists():
+                raise serializers.ValidationError("Invalid competitor_id")
+        return value    
