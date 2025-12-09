@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.utils.html import strip_tags
 from .models import (
     EmailInboxMessage, EmailFolder, EmailConversation, EmailFilter,
     EmailAttachment, EmailSearchQuery,EmailInternalNote,BulkEmailCampaign,EmailAuditLog,
@@ -210,7 +211,7 @@ class EmailFilterSerializer(serializers.ModelSerializer):
             'deleted_at', 'deleted_by'
         ]
         read_only_fields = [
-            'id', 'is_system', 'match_count', 'last_matched', 'created_at',
+            'id', 'match_count', 'last_matched', 'created_at',
             'updated_at', 'created_by', 'updated_by', 'is_deleted', 'deleted_at', 'deleted_by'
         ]
     
@@ -429,6 +430,8 @@ class EmailInboxListSerializer(serializers.ModelSerializer):
     date_column = serializers.SerializerMethodField()
     due_date_column = serializers.SerializerMethodField()
     from_display = serializers.SerializerMethodField()
+    snippet = serializers.SerializerMethodField()
+    has_attachments = serializers.SerializerMethodField()
 
     class Meta:
         model = EmailInboxMessage
@@ -446,11 +449,27 @@ class EmailInboxListSerializer(serializers.ModelSerializer):
             'status',
             'date_column',
             'due_date_column',
+            'due_status',
         ]
+    def get_has_attachments(self, obj):
+        return obj.attachment_count > 0
+    
+    def get_snippet(self, obj):
+        """Returns the first 100 characters of the email body, stripped of HTML."""
+        # Get raw content
+        body = obj.text_content or obj.html_content or ""
+        
+        # FIX: Remove HTML tags so it looks clean in the UI
+        clean_body = strip_tags(body)
+        
+        # Remove extra whitespace/newlines
+        clean_body = " ".join(clean_body.split())
+        
+        if len(clean_body) > 100:
+            return clean_body[:100] + "..."
+        return clean_body
 
-    # ... (Keep the get_due_status, get_date_column methods we wrote before) ...
     def get_due_status(self, obj):
-        # ... (Same code as before) ...
         return "ON TRACK" 
 
     def get_date_column(self, obj):
@@ -461,7 +480,6 @@ class EmailInboxListSerializer(serializers.ModelSerializer):
         }
 
     def get_due_date_column(self, obj):
-        # ... (Same code as before) ...
         return {"status": "No due date"}
 
     def get_from_display(self, obj):
@@ -477,6 +495,7 @@ class EmailInboxDetailSerializer(serializers.ModelSerializer):
     internal_notes = serializers.SerializerMethodField()
     attachments = EmailAttachmentSerializer(many=True, read_only=True)
     formatted_date = serializers.SerializerMethodField()
+    thread_history = serializers.SerializerMethodField()
 
     class Meta:
         model = EmailInboxMessage
@@ -502,14 +521,17 @@ class EmailInboxDetailSerializer(serializers.ModelSerializer):
             'customer_type',
             'priority',
             'status',
+            'category',       # <--- Make sure this is here for the dropdown
             'folder',
             
             # Related Data
             'attachments',     
-            'internal_notes',   
+            'internal_notes',
+            'thread_history'  # <--- Add this
         ]
 
     def get_formatted_date(self, obj):
+        if not obj.received_at: return ""
         return obj.received_at.strftime("%B %d, %Y at %I:%M %p")
 
     def get_internal_notes(self, obj):
@@ -519,6 +541,32 @@ class EmailInboxDetailSerializer(serializers.ModelSerializer):
             'author': note.author.get_full_name() if note.author else 'System',
             'created_at': note.created_at
         } for note in obj.internal_notes.all().order_by('-created_at')]
+
+    def get_thread_history(self, obj):
+        """
+        Fetches other emails in the same conversation thread,
+        excluding the current one being viewed.
+        """
+        if not obj.thread_id:
+            return []
+
+        # Find other messages with same thread_id
+        threads = EmailInboxMessage.objects.filter(
+            thread_id=obj.thread_id, 
+            is_deleted=False
+        ).exclude(id=obj.id).order_by('-received_at') 
+
+        # Return a simplified list for the UI
+        return [{
+            'id': t.id,
+            'subject': t.subject,
+            'from_email': t.from_email,
+            'snippet': (t.text_content or "")[:100] + "...", 
+            'received_at': t.received_at,
+            'formatted_date': t.received_at.strftime("%b %d, %I:%M %p") if t.received_at else "",
+            'status': t.status
+        } for t in threads]
+
 class BulkEmailCampaignSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
     template_id = serializers.UUIDField(write_only=True, required=False) 

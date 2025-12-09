@@ -31,7 +31,7 @@ app.conf.beat_schedule = {
         'schedule': crontab(hour=9, minute=0),
     },
     'check-scheduled-campaigns-every-minute': {
-        'task': 'check_scheduled_campaigns', 
+        'task': 'apps.email_inbox.tasks.process_scheduled_campaigns',
         'schedule': 60.0, 
     },
 }

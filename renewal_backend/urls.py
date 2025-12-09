@@ -66,7 +66,6 @@ api_patterns = [
     path('customer-insights/', include('apps.customer_insights.urls')),
     path('claims/', include('apps.claims.urls')),
     path('campaign_manager/',include('apps.campaign_manager.urls')),
-    path('sms_provider/',include('apps.sms_provider.urls')),
     path('target-audience/', include('apps.target_audience.urls')),
     path('policy-timeline/', include('apps.policy_timeline.urls')),
     path('renewal-timeline/', include('apps.renewal_timeline.urls')),
@@ -77,10 +76,8 @@ api_patterns = [
     path('policy-exclusions/', include('apps.policy_exclusions.urls')),
     path('policy-conditions/', include('apps.policy_conditions.urls')),
     path("teams/", include("apps.teams.urls")),
-    path("email-settings/", include("apps.email_settings.urls")),
 
-    # Email Integration endpoints
-    path('email-provider/', include('apps.email_provider.urls')),
+    
     # path('communication-provider/', include('apps.communication_provider.urls')),  
     path('email-templates/', include('apps.email_templates.urls')),
     path('email-operations/', include('apps.email_operations.urls')),
@@ -89,7 +86,6 @@ api_patterns = [
     path('email-manager/', include('apps.email_manager.urls')),
 
     # WhatsApp Integration endpoints
-    path('whatsapp_provider/', include('apps.whatsapp_provider.urls')),
     path('offers/', include('apps.offers.urls')),
     path('dashboard/', include('apps.dashboard.urls')),
     path('upload-chatbot/', include('apps.upload_chatbot.urls')),
@@ -98,14 +94,19 @@ api_patterns = [
     path('policy-timeline-chatbot/', include('apps.policytimeline_chatbot.urls')),
     path('case-logs-chatbot/', include('apps.case_logs_chatbot.urls')),
     path('renewals/', include('apps.renewals.urls')),
-    
-    # Customer Verification endpoints
-    path('verification/', include('apps.verification.urls')),
 
     # API Documentation
     path('schema/', PublicSchemaView.as_view(), name='schema'),
     path('docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     path('redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
+
+    # settings
+    path('campaign-settings/',include('apps.campaign_management_settings.urls')),
+    path('email-provider/', include('apps.email_provider.urls')),
+    path('whatsapp_provider/', include('apps.whatsapp_provider.urls')),
+    path('sms_provider/', include('apps.sms_provider.urls')),
+    path("email-settings/", include("apps.email_settings.urls")),
+
 ]
 
 # Main URL patterns
