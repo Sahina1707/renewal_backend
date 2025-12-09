@@ -130,6 +130,19 @@ class EmailInboxMessage(models.Model):
         ('neutral', 'Neutral'),
         ('negative', 'Negative'),
     ]
+    CATEGORY_CHOICES = [
+        ('complaint', 'Complaint'),      
+        ('feedback', 'Feedback'),        
+        ('refund', 'Refund'),            
+        ('appointment', 'Appointment'),  
+        ('uncategorized', 'Uncategorized'), 
+    ]
+    
+    category = models.CharField(
+        max_length=20, 
+        choices=CATEGORY_CHOICES, 
+        default='uncategorized'
+    )
     
     id = models.BigAutoField(primary_key=True)
     message_id = models.CharField(max_length=255, unique=True, help_text="Unique message identifier")
@@ -148,7 +161,6 @@ class EmailInboxMessage(models.Model):
     text_content = models.TextField(blank=True, null=True)
     
     # Classification
-    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='general')
     priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='normal')
     sentiment = models.CharField(max_length=10, choices=SENTIMENT_CHOICES, default='neutral')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='unread')
@@ -530,6 +542,8 @@ class BulkEmailCampaign(models.Model):
     total_recipients = models.IntegerField(default=0)
     successful_sends = models.IntegerField(default=0)
     failed_sends = models.IntegerField(default=0)
+    opened_count = models.IntegerField(default=0)
+    clicked_count = models.IntegerField(default=0)
     
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
     created_at = models.DateTimeField(auto_now_add=True)

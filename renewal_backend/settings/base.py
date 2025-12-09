@@ -107,7 +107,7 @@ LOCAL_APPS = [
     'apps.case_logs_chatbot',
     'apps.teams',
     'apps.email_settings',
-    
+    'apps.campaign_management_settings',
     # 'apps.communications',
     # 'apps.emails',
     # 'apps.surveys',
@@ -528,3 +528,4 @@ CELERY_BEAT_SCHEDULE = {
 # GOOGLE_GMAIL_PUBSUB_TOPIC = "projects/intelipro-email/topics/gmail-notifications"
 # GOOGLE_GMAIL_SERVICE_ACCOUNT_FILE
 
+EMAIL_CREDENTIAL_KEY ="J-g7yndJd84OrcXgn9QMo2AhjUhLo9wjHJOGUi7gqIo="

@@ -3,21 +3,24 @@ from .models import EmailAccount, EmailModuleSettings, ClassificationRule
 
 # Serializer for the Email Account details
 class EmailAccountSerializer(serializers.ModelSerializer):
-    access_credential = serializers.CharField(write_only=True)
+    access_credential = serializers.CharField(write_only=True,required=False)
+    specific_provider_name = serializers.CharField(source='specific_provider.name', read_only=True)
     class Meta:
         model = EmailAccount
         fields = [
             'id', 'account_name', 'email_address', 'email_provider',
             'imap_server', 'imap_port', 'smtp_server', 'smtp_port',
             'use_ssl_tls', 'auto_sync_enabled', 'sync_interval_minutes',
-            'access_credential', 
+            'access_credential', 'sending_method', 'specific_provider',      
+            'specific_provider_name', 'is_default_sender',
+            'connection_status', 'last_sync_at', 'last_sync_log',
             'created_at', 'updated_at', 'created_by', 'updated_by', 
             'is_deleted', 'deleted_at', 'deleted_by'
         ]
         read_only_fields = [
             'connection_status', 'last_sync_at', 'last_sync_log',
             'created_at', 'updated_at', 'created_by', 'updated_by', 
-            'is_deleted', 'deleted_at', 'deleted_by'
+            'is_deleted', 'deleted_at', 'deleted_by','specific_provider_name'
         ]
 # Serializer for the main module settings (global toggles)
 class EmailModuleSettingsSerializer(serializers.ModelSerializer):
