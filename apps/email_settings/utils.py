@@ -72,12 +72,9 @@ def decrypt_credential(token: str) -> str:
     f = _get_fernet()
     try:
         return f.decrypt(token.encode()).decode()
-    except InvalidToken:
-        # If decryption fails, it might be an old plaintext password. 
-        # Return it as-is so the user can re-save it properly later.
-        return token
+    except Exception:
+        raise ValueError("Decryption failed")
 
-# ---------- Normalization / auto-config ----------
 def apply_provider_defaults(account_obj) -> None:
     provider_key = (account_obj.email_provider or 'custom').lower()
     defaults = PROVIDER_DEFAULTS.get(provider_key, PROVIDER_DEFAULTS['custom'])

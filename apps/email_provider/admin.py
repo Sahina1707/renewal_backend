@@ -64,29 +64,64 @@ class EmailProviderConfigAdmin(admin.ModelAdmin):
     )
     
     def daily_usage_percentage(self, obj):
-        """Calculate daily usage percentage"""
-        if obj.daily_limit == 0:
-            return "N/A"
-        percentage = (obj.emails_sent_today / obj.daily_limit) * 100
-        color = "red" if percentage > 80 else "orange" if percentage > 60 else "green"
+        sent = obj.emails_sent_today or 0
+        limit = obj.daily_limit or 0
+
+        if limit == 0:
+            return "N/A (No Limit)"
+
+        percent_val = (sent / limit) * 100
+
+    # Compute colour coding
+        if percent_val > 90:
+            color = "red"
+        elif percent_val > 75:
+            color = "orange"
+        else:
+            color = "green"
+
+    # Format BEFORE passing to format_html
+        percent_val = f"{percent_val:.1f}%"
+
         return format_html(
-            '<span style="color: {};">{:.1f}%</span>',
-            color, percentage
-        )
-    daily_usage_percentage.short_description = "Daily Usage %"
+        '<span style="color: {}; font-weight: bold;">{}</span>',
+        color,
+        percent_val
+    )
+        
     
     def monthly_usage_percentage(self, obj):
-        """Calculate monthly usage percentage"""
-        if obj.monthly_limit == 0:
-            return "N/A"
-        percentage = (obj.emails_sent_this_month / obj.monthly_limit) * 100
-        color = "red" if percentage > 80 else "orange" if percentage > 60 else "green"
+        # 1. Get raw values safely
+        sent = obj.emails_sent_this_month or 0
+        limit = obj.monthly_limit or 0
+        
+        # 2. Prevent Division by Zero
+        if limit == 0:
+            return "N/A (No Limit)"
+            
+        # 3. Calculate percentage
+        try:
+            percent_val = (float(sent) / float(limit)) * 100
+        except (ValueError, TypeError):
+            return "Error"
+
+        # 4. Determine color
+        if percent_val > 90:
+            color = 'red'
+        elif percent_val > 75:
+            color = 'orange'
+        else:
+            color = 'green'
+
+        # 5. Return formatted HTML
+        from django.utils.html import format_html
         return format_html(
-            '<span style="color: {};">{:.1f}%</span>',
-            color, percentage
+            '<span style="color: {}; font-weight: bold;">{}%</span>',
+            color, 
+            round(percent_val, 1)  # Using round() prevents the string formatting crash
         )
-    monthly_usage_percentage.short_description = "Monthly Usage %"
     
+    monthly_usage_percentage.short_description = "Monthly Usage"
     def get_queryset(self, request):
         """Filter out soft-deleted providers"""
         return super().get_queryset(request).filter(is_deleted=False)
@@ -126,7 +161,9 @@ class EmailProviderHealthLogAdmin(admin.ModelAdmin):
         'provider', 'is_healthy', 'response_time', 'checked_at'
     ]
     list_filter = ['is_healthy', 'provider', 'checked_at']
-    search_fields = ['provider__name', 'error_message']
+    search_fields = ['provider__name',
+                    #   'error_message'
+                      ]
     readonly_fields = ['id', 'checked_at']
     date_hierarchy = 'checked_at'
     
@@ -174,7 +211,12 @@ class EmailProviderUsageLogAdmin(admin.ModelAdmin):
 @admin.register(EmailProviderTestResult)
 class EmailProviderTestResultAdmin(admin.ModelAdmin):
     list_display = [
-        'provider', 'test_email', 'status', 'response_time', 'tested_at', 'tested_by'
+        'provider', 
+        'test_email', 
+        'status', 
+        'response_time', 
+        'tested_at', 
+        'tested_by'
     ]
     list_filter = ['status', 'provider', 'tested_at']
     search_fields = ['provider__name', 'test_email', 'tested_by__username']

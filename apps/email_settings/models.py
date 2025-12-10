@@ -112,13 +112,18 @@ class EmailAccount(models.Model):
 
     def save(self, *args, **kwargs):
         apply_provider_defaults(self)
+
         if self.access_credential:
-             try:
-                 decrypt_credential(self.access_credential)
-             except (Exception, ValueError):
-                 self.access_credential = encrypt_credential(self.access_credential)
-        
-        # Ensure only one default sender per user
+            # We must import Fernet directly to check if the string is valid
+            from cryptography.fernet import Fernet, InvalidToken
+            from .utils import _get_fernet
+
+            try:
+                f = _get_fernet()
+                f.decrypt(self.access_credential.encode())
+            except (InvalidToken, ValueError, AttributeError):
+                self.access_credential = encrypt_credential(self.access_credential)
+ 
         if self.is_default_sender:
             EmailAccount.objects.filter(user=self.user, is_default_sender=True).exclude(pk=self.pk).update(is_default_sender=False)
 
