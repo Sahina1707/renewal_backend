@@ -59,7 +59,8 @@ class EmailInboxMessageAdmin(admin.ModelAdmin):
             'fields': ('category', 'priority', 'sentiment', 'status')
         }),
         ('Organization', {
-            'fields': ('folder', 'is_starred', 'is_important', 'tags', 'thread_id', 'parent_message')
+            'fields': ('folder', 'is_starred', 'is_important', 'tags', 'thread_id',
+                        'parent_message')
         }),
         ('Processing', {
             'fields': ('is_processed', 'processing_notes', 'assigned_to')

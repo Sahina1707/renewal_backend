@@ -2,11 +2,10 @@ from openai import OpenAI
 from django.conf import settings
 import json
 
-client = OpenAI(
+def analyze_email_sentiment_and_intent(text: str):
+    client = OpenAI(
     api_key=settings.OPENAI_API_KEY
 )
-
-def analyze_email_sentiment_and_intent(text: str):
     
     try:
         if not text:
