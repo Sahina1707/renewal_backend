@@ -69,6 +69,12 @@ class AudienceViewSet(viewsets.ModelViewSet):
         for item in validated_data:
             email = item.get('email')
             phone = item.get('phone')
+            if email:
+                item['email'] = email.strip() # <--- ADDED!
+            if phone:
+                item['phone'] = phone.strip()
+            email = item['email']
+            phone = item['phone']
             
             # 2. Check for duplicates
             is_duplicate = False
@@ -160,6 +166,12 @@ class AudienceViewSet(viewsets.ModelViewSet):
         for item in serializer.validated_data:
             email = item.get('email')
             phone = item.get('phone')
+            if email:
+                item['email'] = email.strip() # <--- ADDED!
+                email = item['email']         # Use the cleaned value
+            if phone:
+                item['phone'] = phone.strip() # <--- OPTIONAL BUT RECOMMENDED!
+                phone = item['phone']
             
             is_duplicate = False
             if email and email in existing_emails:
@@ -176,7 +188,7 @@ class AudienceViewSet(viewsets.ModelViewSet):
         # --- END UPDATE ---
 
         if new_contacts:
-            AudienceContact.objects.bulk_create(new_contacts)
+            AudienceContact.objects.bulk_create(new_contacts, ignore_conflicts=True)
             
             audience.contact_count = AudienceContact.objects.filter(audience=audience, is_deleted=False).count()
             audience.last_updated = timezone.now()
@@ -197,7 +209,20 @@ class AudienceViewSet(viewsets.ModelViewSet):
             'success': True,
             'message': 'No new contacts were added. They may already exist in the audience or the file was empty.'
         }, status=status.HTTP_200_OK)
+    # Inside AudienceViewSet
 
+    def perform_destroy(self, instance):
+        """
+        Soft delete the Audience instead of removing it from DB.
+        """
+        if hasattr(instance, 'soft_delete'):
+            instance.soft_delete(user=self.request.user)
+        else:
+            # Fallback if specific method doesn't exist
+            instance.is_deleted = True
+            instance.metadata['deleted_by'] = self.request.user.id
+            instance.metadata['deleted_at'] = str(timezone.now())
+            instance.save()
 
 class AudienceContactViewSet(viewsets.ModelViewSet):
     """ViewSet for managing individual AudienceContacts."""
@@ -208,14 +233,24 @@ class AudienceContactViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         contact = serializer.save(created_by=self.request.user)
-        contact.audience.contact_count = contact.audience.contacts.filter(is_deleted=False).count()
-        contact.audience.last_updated = timezone.now()
-        contact.audience.save()
+        # Update stats helper
+        self._update_audience_stats(contact.audience)
 
-    def perform_destroy(self, instance: AudienceContact):
-        audience = instance.audience
-        instance.soft_delete(user=self.request.user)
+    def perform_destroy(self, instance):
+        """
+        Soft delete the contact explicitly.
+        This fixes the Foreign Key Constraint error immediately.
+        """
+        instance.is_deleted = True
+        instance.save()
         
-        audience.contact_count = AudienceContact.objects.filter(audience=audience, is_deleted=False).count()
+        self._update_audience_stats(instance.audience)
+
+    def _update_audience_stats(self, audience):
+        """Helper to update counts on the parent audience"""
+        audience.contact_count = AudienceContact.objects.filter(
+            audience=audience, 
+            is_deleted=False
+        ).count()
         audience.last_updated = timezone.now()
-        audience.save()
+        audience.save(update_fields=['contact_count', 'last_updated'])

@@ -175,7 +175,8 @@ class EmailProviderHealthLogAdmin(admin.ModelAdmin):
 @admin.register(EmailProviderUsageLog)
 class EmailProviderUsageLogAdmin(admin.ModelAdmin):
     list_display = [
-        'provider', 'emails_sent', 'success_count', 'failure_count',
+        'provider', 'emails_sent',
+          'success_count', 'failure_count',
         'success_rate', 'average_response_time', 'logged_at'
     ]
     list_filter = ['provider', 'logged_at']

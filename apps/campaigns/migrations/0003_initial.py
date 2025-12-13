@@ -20,11 +20,6 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.AddField(
-            model_name='campaign',
-            name='whatsapp_provider',
-            field=models.ForeignKey(blank=True, help_text='Specific provider for WhatsApp channel. If null, uses system default.', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='whatsapp_campaigns', to='whatsapp_provider.whatsappprovider'),
-        ),
-        migrations.AddField(
             model_name='campaignanalytics',
             name='campaign',
             field=models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='analytics', to='campaigns.campaign'),

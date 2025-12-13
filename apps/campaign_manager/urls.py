@@ -9,6 +9,7 @@ router.register(r'logs', views.CampaignLogViewSet, basename='log')
 urlpatterns = [
     path('', include(router.urls)),
     
+    
     path(
         'webhooks/email-status/', 
         views.WebhookReceiverView.as_view(), 

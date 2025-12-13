@@ -26,8 +26,6 @@ class WhatsAppOptionSerializer(serializers.ModelSerializer):
         # ✅ FIX: Ensure 'name' matches your WhatsApp model
         fields = ['id', 'name', 'business_name', 'provider_type']
 
-# --- MAIN SETTINGS SERIALIZER ---
-
 class CampaignSettingSerializer(serializers.ModelSerializer):
     class Meta:
         model = CampaignSetting

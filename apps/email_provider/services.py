@@ -28,7 +28,8 @@ logger = logging.getLogger(__name__)
 class EmailProviderService:
     """Service for managing email providers and sending emails"""
     
-    def __init__(self):
+    def __init__(self,config: EmailProviderConfig = None):
+        self.config = config
         self.encryption_key = getattr(settings, 'EMAIL_PROVIDER_ENCRYPTION_KEY', None)
         self._fernet = None
         if self.encryption_key:
@@ -105,25 +106,19 @@ class EmailProviderService:
                    bcc_emails: List[str] = None, attachments: List[Tuple[str, str, str]] = None,
                    custom_args: Dict[str, str] = None) -> Dict[str, Any]:
         """
-        Send email using the best available provider
-        
-        Args:
-            to_emails: List of recipient email addresses
-            subject: Email subject
-            html_content: HTML content of the email
-            text_content: Plain text content of the email
-            from_email: Sender email address
-            from_name: Sender name
-            reply_to: Reply-to email address
-            cc_emails: List of CC email addresses
-            bcc_emails: List of BCC email addresses
-            attachments: List of tuples (filename, content, mimetype)
-        
-        Returns:
-            Dict with success status, provider info, and response details
+        Send email using the specific provider attached to the service instance 
+        (self.config) OR the best available provider if no config was attached.
         """
-        provider = self.get_available_provider()
         
+        # --- Provider Selection Logic ---
+        if self.config:
+            # Campaign manager forces a specific provider (self.config)
+            provider = self.config
+        else:
+            # Fallback to dynamic selection
+            provider = self.get_available_provider() 
+        # --- End Provider Selection Logic ---
+
         if not provider:
             return {
                 'success': False,
@@ -136,16 +131,16 @@ class EmailProviderService:
         try:
             if provider.provider_type == 'sendgrid':
                 result = self._send_via_sendgrid(provider, to_emails, subject, html_content,
-                                               text_content, from_email, from_name, reply_to,
-                                               cc_emails, bcc_emails, attachments, custom_args)
+                                                 text_content, from_email, from_name, reply_to,
+                                                 cc_emails, bcc_emails, attachments, custom_args)
             elif provider.provider_type == 'aws_ses':
                 result = self._send_via_aws_ses(provider, to_emails, subject, html_content,
-                                              text_content, from_email, from_name, reply_to,
-                                              cc_emails, bcc_emails, attachments)
+                                                text_content, from_email, from_name, reply_to,
+                                                cc_emails, bcc_emails, attachments)
             elif provider.provider_type == 'smtp':
                 result = self._send_via_smtp(provider, to_emails, subject, html_content,
-                                           text_content, from_email, from_name, reply_to,
-                                           cc_emails, bcc_emails, attachments)
+                                            text_content, from_email, from_name, reply_to,
+                                            cc_emails, bcc_emails, attachments)
             else:
                 return {
                     'success': False,
@@ -180,7 +175,6 @@ class EmailProviderService:
                 'provider_name': provider.name,
                 'response_time': response_time
             }
-    
     def _send_via_sendgrid(self, provider: EmailProviderConfig, to_emails: List[str],
                           subject: str, html_content: str, text_content: str,
                           from_email: str, from_name: str, reply_to: str,

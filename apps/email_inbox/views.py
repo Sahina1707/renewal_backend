@@ -478,37 +478,6 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def mark_spam(self, request, pk=None):
         email = self.get_object()
-        spam_folder = EmailFolder.objects.filter(name__iexact="Spam").first()
-        
-        if not spam_folder:
-             spam_folder, _ = EmailFolder.objects.get_or_create(
-                name="Spam", 
-                defaults={'folder_type': 'spam', 'is_system': True}
-            )
-            
-        email.folder = spam_folder
-        email.is_spam = True
-        email.save(update_fields=['folder', 'is_spam'])
-        return Response({'message': 'Marked as Spam'})
-    @action(detail=True, methods=['post'])
-    def mark_spam(self, request, pk=None):
-        email = self.get_object()
-        
-        spam_folder, _ = EmailFolder.objects.get_or_create(
-            folder_type='spam', 
-            defaults={'name': 'Spam', 'is_system': True}
-        )
-            
-        email.folder = spam_folder
-        email.is_spam = True  # Flag it
-        email.save(update_fields=['folder', 'is_spam'])
-        
-        return Response({'message': 'Marked as Spam'})
-
-    @action(detail=True, methods=['post'])
-    def unmark_spam(self, request, pk=None):
-        email = self.get_object()
-        
         inbox_folder = EmailFolder.objects.filter(folder_type='inbox').first()
         if not inbox_folder:
              inbox_folder, _ = EmailFolder.objects.get_or_create(
@@ -631,7 +600,11 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
         action = serializer.validated_data['action']
         action_value = serializer.validated_data.get('action_value')
         
-        emails = EmailInboxMessage.objects.filter(id__in=email_ids)
+        if action == 'restore':
+            emails = EmailInboxMessage.objects.filter(id__in=email_ids)
+        else:
+            emails = EmailInboxMessage.objects.filter(id__in=email_ids, is_deleted=False)
+            
         updated_count = 0
         
         try:
@@ -641,8 +614,6 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
                 updated_count = emails.update(status='unread', read_at=None, updated_by=request.user)
             elif action == 'star' or action == 'flag':
                 updated_count = emails.update(is_starred=True, updated_by=request.user)
-            elif action == 'unstar' or action == 'unflag':
-                updated_count = emails.update(is_starred=False, updated_by=request.user)
             elif action == 'mark_important':
                 updated_count = emails.update(is_important=True, updated_by=request.user)
             elif action == 'mark_resolved':
@@ -675,6 +646,18 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
                         email.tags.remove(action_value)
                         email.save()
                         updated_count += 1
+            
+            elif action == 'restore':
+                inbox_folder, _ = EmailFolder.objects.get_or_create(
+                    folder_type='inbox', defaults={'name': 'Inbox', 'is_system': True}
+                )
+                updated_count = emails.update(
+                    is_deleted=False,
+                    deleted_at=None,
+                    deleted_by=None,
+                    folder=inbox_folder,
+                    updated_by=request.user
+                )
 
             return Response({
                 'message': f'Bulk action {action} completed.',
@@ -733,6 +716,45 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
         email.save(update_fields=['folder', 'status'])
         
         return Response({'message': 'Moved to Junk Email'})
+    @action(detail=True, methods=['post'])
+    def restore(self, request, pk=None):
+        """
+        Restores a deleted email from Trash to Inbox.
+        """
+        try:
+            # We query .all() directly because get_object() uses the 
+            # default queryset which filters out is_deleted=True items.
+            email = EmailInboxMessage.objects.get(pk=pk)
+        except EmailInboxMessage.DoesNotExist:
+            return Response({'error': 'Email not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # 1. Check if it actually needs restoring
+        if not email.is_deleted:
+            return Response({'message': 'Email is not in Trash'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 2. Get Inbox Folder
+        inbox_folder, _ = EmailFolder.objects.get_or_create(
+            folder_type='inbox',
+            defaults={'name': 'Inbox', 'is_system': True}
+        )
+
+        # 3. Restore Logic
+        email.is_deleted = False
+        email.deleted_at = None
+        email.deleted_by = None
+        email.folder = inbox_folder # Move back to Inbox
+        email.updated_by = request.user
+        email.save()
+
+        # 4. Audit Log
+        EmailAuditLog.objects.create(
+            email_message=email,
+            action="Restored",
+            details="Restored from Trash to Inbox",
+            performed_by=request.user
+        )
+
+        return Response({'message': 'Email restored to Inbox successfully'})
 
     @action(detail=True, methods=['post'], url_path='add-note')
     def add_note(self, request, pk=None):
