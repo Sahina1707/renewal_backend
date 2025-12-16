@@ -392,10 +392,97 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
         """
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
+        date_range = request.query_params.get('date_range', '').strip().rstrip('/')
+        
+        if date_range:
+            now = timezone.now()
+            if date_range in ['7d', '7days']:
+                start_date = now - timezone.timedelta(days=7)
+            elif date_range in ['30d', '30days']:
+                start_date = now - timezone.timedelta(days=30)
+            elif date_range in ['90d', '90days']:
+                start_date = now - timezone.timedelta(days=90)
+            elif date_range == 'last_year':
+                prev_year = now.year - 1
+                start_date = now.replace(year=prev_year, month=1, day=1, hour=0, minute=0, second=0)
+                end_date = now.replace(year=prev_year, month=12, day=31, hour=23, minute=59, second=59)
         
         service = EmailInboxService()
         data = service.get_full_analytics_report(start_date, end_date)
         return Response(data)
+
+    @action(detail=False, methods=['get'], url_path='export_analytics')
+    def export_analytics(self, request):
+        """
+        Exports the full analytics report (Summary, Agents, Campaigns) to CSV.
+        """
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        date_range = request.query_params.get('date_range', '').strip().rstrip('/')
+        
+        if date_range:
+            now = timezone.now()
+            if date_range in ['7d', '7days']:
+                start_date = now - timezone.timedelta(days=7)
+            elif date_range in ['30d', '30days']:
+                start_date = now - timezone.timedelta(days=30)
+            elif date_range in ['90d', '90days']:
+                start_date = now - timezone.timedelta(days=90)
+            elif date_range == 'last_year':
+                prev_year = now.year - 1
+                start_date = now.replace(year=prev_year, month=1, day=1, hour=0, minute=0, second=0)
+                end_date = now.replace(year=prev_year, month=12, day=31, hour=23, minute=59, second=59)
+        
+        service = EmailInboxService()
+        data = service.get_full_analytics_report(start_date, end_date)
+        
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="analytics_report_{timezone.now().date()}.csv"'
+        
+        writer = csv.writer(response)
+        
+        # 1. Summary Section
+        writer.writerow(['--- SUMMARY METRICS ---'])
+        summary = data.get('summary', {})
+        for key, value in summary.items():
+            writer.writerow([key.replace('_', ' ').title(), value])
+        
+        writer.writerow([]) 
+        
+        # 2. Agent Performance Section
+        writer.writerow(['--- AGENT PERFORMANCE ---'])
+        agents = data.get('agent_performance', [])
+        if agents:
+            headers = ['Agent Name', 'Emails Handled', 'Avg Response Time', 'Resolution Rate (%)', 'Customer Rating', 'Efficiency']
+            keys = ['agent_name', 'emails_handled', 'avg_response_time', 'resolution_rate', 'customer_rating', 'efficiency']
+            writer.writerow(headers)
+            for agent in agents:
+                writer.writerow([agent.get(k) for k in keys])
+        
+        writer.writerow([])
+
+        # 3. Campaign Performance Section
+        writer.writerow(['--- CAMPAIGN PERFORMANCE ---'])
+        campaigns_data = data.get('campaign_performance', {})
+        
+        writer.writerow(['Metric', 'Value'])
+        writer.writerow(['Total Campaigns', campaigns_data.get('total_campaigns')])
+        writer.writerow(['Total Recipients', campaigns_data.get('total_recipients')])
+        writer.writerow(['Avg Delivery Rate', f"{campaigns_data.get('avg_delivery_rate')}%"])
+        writer.writerow(['Avg Open Rate', f"{campaigns_data.get('avg_open_rate')}%"])
+        writer.writerow(['Avg Click Rate', f"{campaigns_data.get('avg_click_rate')}%"])
+        
+        writer.writerow([])
+        writer.writerow(['Recent Campaigns'])
+        recent = campaigns_data.get('recent_campaigns', [])
+        if recent:
+            headers = ['Name', 'Date', 'Recipients', 'Delivered', 'Opened', 'Clicked', 'Open Rate (%)', 'Click Rate (%)']
+            keys = ['name', 'date', 'recipients', 'delivered', 'opened', 'clicked', 'open_rate', 'click_rate']
+            writer.writerow(headers)
+            for camp in recent:
+                writer.writerow([camp.get(k) for k in keys])
+
+        return response
 
     @action(detail=True, methods=['post'])
     def escalate(self, request, pk=None):
@@ -672,9 +759,7 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
         
         if not email_ids:
             return Response({'error': 'No emails selected'}, status=400)
-
-        emails = EmailInboxMessage.objects.filter(id__in=email_ids)
-        
+        emails = EmailInboxMessage.objects.filter(id__in=email_ids)        
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="emails_export.csv"'
         
@@ -696,8 +781,8 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
                 email.from_email,
                 email.subject,
                 email.get_status_display(),
-                email.customer_type,  # From your new field
-                email.priority,
+                email.get_customer_type_display(),
+                email.get_priority_display(),
                 email.assigned_to.get_full_name() if email.assigned_to else "Unassigned"
             ])
             

@@ -9,7 +9,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
 from django.utils import timezone
 
-# ---------- Provider auto-configuration ----------
+# Provider auto-configuration
 PROVIDER_DEFAULTS = {
     'gmail': {
         'imap_server': 'imap.gmail.com',
@@ -45,14 +45,12 @@ PROVIDER_DEFAULTS = {
     }
 }
 
-# ---------- Dataclasses for structured results ----------
 @dataclass
 class ConnectionResult:
     success: bool
     message: str
     details: Dict[str, Any]
 
-# ---------- Encryption helpers (Fernet) ----------
 def _get_fernet() -> Fernet:
     key = getattr(settings, 'EMAIL_CREDENTIAL_KEY', None)
     if not key:

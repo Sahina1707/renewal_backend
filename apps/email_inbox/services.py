@@ -751,6 +751,10 @@ class EmailInboxService:
         if start_date:
             email_filters['received_at__gte'] = start_date
             campaign_filters['created_at__gte'] = start_date
+            
+        if end_date:
+            email_filters['received_at__lte'] = end_date
+            campaign_filters['created_at__lte'] = end_date
         
         emails = EmailInboxMessage.objects.filter(**email_filters)
         campaigns = BulkEmailCampaign.objects.filter(**campaign_filters)
@@ -758,6 +762,14 @@ class EmailInboxService:
         # A. General Stats
         total_emails = emails.count()
         resolved_count = emails.filter(status__in=['resolved', 'closed']).count()
+        
+        # Calculate Global Average Response Time
+        global_replied = emails.filter(replied_at__isnull=False, received_at__isnull=False)
+        global_avg_hours = 0.0
+        if global_replied.exists():
+            # Sum total seconds and convert to hours
+            total_seconds = sum((e.replied_at - e.received_at).total_seconds() for e in global_replied)
+            global_avg_hours = round((total_seconds / global_replied.count()) / 3600, 1)
         
         # Satisfaction Score
         sat_agg = emails.aggregate(
@@ -779,10 +791,8 @@ class EmailInboxService:
             # 1. Emails Assigned
             assigned_msgs = emails.filter(assigned_to=agent)
             
-            # If agent has 0 emails assigned, show 0s (don't skip them, so they appear in list)
             if not assigned_msgs.exists():
-                # Optional: Skip if you don't want empty rows
-                # continue 
+
                 pass
 
             # 2. Emails Handled (Replied or Resolved)
@@ -854,7 +864,7 @@ class EmailInboxService:
             "summary": {
                 "total_emails": total_emails,
                 "resolved": resolved_count,
-                "avg_response_time": "2.4 hours", 
+                "avg_response_time": f"{global_avg_hours} hours",
                 "satisfaction": satisfaction
             },
             "agent_performance": agent_performance,

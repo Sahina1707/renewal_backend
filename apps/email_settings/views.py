@@ -191,6 +191,7 @@ class TestConnectionAPIView(APIView):
         account.updated_by = request.user
         account.save()
         return Response(test_results, status=status.HTTP_200_OK)
+    
 class ProviderDefaultsAPIView(APIView):
     """
     Returns the default IMAP/SMTP settings for supported providers (Gmail, Outlook, etc.).
@@ -202,8 +203,6 @@ class ProviderDefaultsAPIView(APIView):
         # Return the dictionary defined in utils.py
         return Response(PROVIDER_DEFAULTS)
 
-# apps/email_settings/views.py
-
 class GlobalTestConnectionAPIView(APIView):
     """
     Tests the connection for the FIRST active email account found in the DB.
@@ -211,8 +210,6 @@ class GlobalTestConnectionAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        # 1. We do NOT look at request.data (the JSON body).
-        # 2. We look at the database directly.
         account = EmailAccount.objects.filter(user=request.user, is_deleted=False).first()
         
         if not account:
