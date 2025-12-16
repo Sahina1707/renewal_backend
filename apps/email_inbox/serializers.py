@@ -342,6 +342,7 @@ class BulkEmailActionSerializer(serializers.Serializer):
         ('assign_to', 'Assign to user'),
         ('add_tag', 'Add tag'),
         ('remove_tag', 'Remove tag'),
+        ('restore', 'Restore'),
     ])
     action_value = serializers.CharField(
         required=False, 

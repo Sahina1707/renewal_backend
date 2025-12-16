@@ -207,7 +207,7 @@ ALLOWED_HOSTS=localhost,127.0.0.1
 DATABASE_URL=postgresql://user:pass@localhost:5432/intelipro_renewal
 
 # Redis
-REDIS_URL=redis://localhost:6379/0
+REDIS_URL=redis://localhost:6379/1
 
 # File Storage (AWS S3)
 AWS_ACCESS_KEY_ID=your_access_key

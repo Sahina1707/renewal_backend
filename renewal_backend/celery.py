@@ -36,12 +36,12 @@ app.conf.beat_schedule = {
     },
 }
 
-app.conf.task_routes = {
-    'apps.email_manager.tasks.*': {'queue': 'emails'},
-    'apps.policies.tasks.*': {'queue': 'policies'},
-    'apps.analytics.tasks.*': {'queue': 'analytics'},
-    'apps.campaign_manager.tasks.*': {'queue': 'campaigns'}, 
-}
+# app.conf.task_routes = {
+#     'apps.email_manager.tasks.*': {'queue': 'emails'},
+#     'apps.policies.tasks.*': {'queue': 'policies'},
+#     'apps.analytics.tasks.*': {'queue': 'analytics'},
+#     'apps.campaign_manager.tasks.*': {'queue': 'campaigns'}, 
+# }
 @app.task(bind=True)
 def debug_task(self):
     print(f"Request: {self.request!r}")

@@ -68,9 +68,9 @@ class CampaignSettingsView(generics.RetrieveUpdateAPIView):
 class DownloadReportView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def _get_sms_report_data(self):
+    def _get_sms_report_data(self,request):
         """Fetches and formats SMS campaign statistics."""
-        sms_stats = SmsMessage.objects.values('campaign__name').annotate(
+        sms_stats = SmsMessage.objects.filter(provider__created_by=request.user).values('campaign__name').annotate(
             total=Count('id'),
             delivered=Count('id', filter=Q(status='delivered')),
             failed=Count('id', filter=Q(status='failed')),
@@ -90,14 +90,15 @@ class DownloadReportView(APIView):
             })
         return report_data
 
-    def _get_whatsapp_report_data(self):
+    def _get_whatsapp_report_data(self,request):
         """Fetches and formats WhatsApp campaign statistics."""
-        wa_stats = WhatsAppMessage.objects.values('campaign__name').annotate(
-            total=Count('id'),
-            delivered=Count('id', filter=Q(status='delivered')),
-            read=Count('id', filter=Q(status='read')),
-            failed=Count('id', filter=Q(status='failed'))
-        )
+        wa_stats = WhatsAppMessage.objects.filter(
+        provider__created_by=request.user).values('campaign__name').annotate(
+        total=Count('id'),
+        delivered=Count('id', filter=Q(status='delivered')),
+        read=Count('id', filter=Q(status='read')),
+        failed=Count('id', filter=Q(status='failed'))
+    )
 
         report_data = []
         for item in wa_stats:
@@ -123,7 +124,7 @@ class DownloadReportView(APIView):
             )
 
         # Fetch and combine data from all channels
-        report_data = self._get_sms_report_data() + self._get_whatsapp_report_data()
+        report_data = self._get_sms_report_data(request) + self._get_whatsapp_report_data(request)
 
         if not report_data:
             return Response(
