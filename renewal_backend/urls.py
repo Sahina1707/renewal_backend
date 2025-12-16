@@ -106,7 +106,8 @@ api_patterns = [
     path('whatsapp_provider/', include('apps.whatsapp_provider.urls')),
     path('sms_provider/', include('apps.sms_provider.urls')),
     path("email-settings/", include("apps.email_settings.urls")),
-
+    path("whatsapp_flow_settings/", include("apps.whatsapp_flow_settings.urls")),
+    path("whatsapp_flow_management/", include("apps.whatsapp_flow_management.urls")),
 ]
 
 # Main URL patterns
