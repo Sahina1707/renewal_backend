@@ -54,14 +54,32 @@ class WhatsAppProviderCreateUpdateSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'webhook_verify_token', 'created_by', 'updated_by']
 
     def validate(self, data):
-        # 1. Encrypt the access_token if provided
+        # 1. Encrypt the access_token if provided (Existing logic)
         if 'access_token' in data and data['access_token']:
             data['access_token'] = _encrypt_value(data['access_token'])
 
-        # 2. Generate a webhook token if missing
+        # 2. Generate a webhook token if missing (Existing logic)
         if not data.get('webhook_verify_token') and not self.instance:
             data['webhook_verify_token'] = str(uuid.uuid4())
 
+        # 3. [NEW] Enforce Single Default Rule
+        is_default = data.get('is_default', getattr(self.instance, 'is_default', False))
+        
+        if is_default:
+            existing_default = WhatsAppProvider.objects.filter(
+                is_default=True, 
+                is_deleted=False
+            )
+            
+            if self.instance:
+                # Exclude the current instance if it's an update
+                existing_default = existing_default.exclude(pk=self.instance.pk)
+            
+            if existing_default.exists():
+                raise serializers.ValidationError({
+                    'is_default': "A default WhatsApp provider is already active. Please deactivate the existing default first."
+                })
+        
         return data
     
     # (Keep your create and update methods from before for handling is_default logic)

@@ -54,7 +54,11 @@ class Audience(models.Model):
         self.deleted_at = timezone.now()
         self.deleted_by = user
         self.save(update_fields=['is_deleted', 'deleted_at', 'deleted_by'])
-    
+        self.contacts.filter(is_deleted=False).update(
+            is_deleted=True,
+            deleted_at=timezone.now(),
+            deleted_by=user
+        )
 
 class AudienceContact(models.Model):
     """

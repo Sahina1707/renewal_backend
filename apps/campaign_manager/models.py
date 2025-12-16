@@ -5,6 +5,8 @@ from django.utils import timezone
 from apps.users.models import User 
 from apps.audience_manager.models import Audience, AudienceContact
 from apps.email_provider.models import EmailProviderConfig
+from apps.sms_provider.models import SmsProvider
+from apps.whatsapp_provider.models import WhatsAppProvider
 from apps.templates.models import Template
 
 # --- 2. CAMPAIGN MODEL
@@ -19,10 +21,9 @@ class Campaign(models.Model):
         ACTIVE = 'active', 'Active'
         PAUSED = 'paused', 'Paused'
         COMPLETED = 'completed', 'Completed'
-        SCHEDULED = 'scheduled', 'Scheduled' # <-- NEW
+        SCHEDULED = 'scheduled', 'Scheduled' 
 
     name = models.CharField(max_length=255)
-    # --- NEW (from video 00:27) ---
     description = models.TextField(blank=True, null=True)
     
     campaign_type = models.CharField(max_length=20, choices=CampaignTypes.choices)
@@ -33,13 +34,29 @@ class Campaign(models.Model):
         on_delete=models.PROTECT,
         related_name="cm_campaigns"
     )
-    # --- ADD THIS FIELD ---
     email_provider = models.ForeignKey(
         EmailProviderConfig, 
         on_delete=models.SET_NULL, 
         null=True, 
         blank=True,
         help_text="Specific provider for this campaign"
+    )
+    # SMS Integration
+    sms_provider = models.ForeignKey(
+        SmsProvider, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        help_text="Select specific SMS credentials (MSG91/Twilio)"
+    )
+
+    # WhatsApp Integration
+    whatsapp_provider = models.ForeignKey(
+        WhatsAppProvider, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        help_text="Select specific WhatsApp credentials (Meta/Twilio)"
     )
     scheduled_date = models.DateTimeField(null=True, blank=True)
     
@@ -81,7 +98,6 @@ class SequenceStep(models.Model):
     
     step_order = models.PositiveIntegerField() 
     
-    # --- UPDATED (from video 00:59) ---
     delay_minutes = models.PositiveIntegerField(default=0)
     delay_hours = models.PositiveIntegerField(default=0)
     delay_days = models.PositiveIntegerField(default=0)
