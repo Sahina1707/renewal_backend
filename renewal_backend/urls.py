@@ -87,6 +87,10 @@ api_patterns = [
     path('email-inbox/', include('apps.email_inbox.urls')),
     path('email-integration/', include('apps.email_integration.urls')),
     path('email-manager/', include('apps.email_manager.urls')),
+    path('call-provider/',include('apps.call_provider.urls')),
+    path('bot-calling-provider/', include('apps.bot_calling_provider.urls')),
+    path('social/', include('apps.social_integration.urls')),
+
 
     # WhatsApp Integration endpoints
     path('whatsapp_provider/', include('apps.whatsapp_provider.urls')),
@@ -99,8 +103,7 @@ api_patterns = [
     path('case-logs-chatbot/', include('apps.case_logs_chatbot.urls')),
     path('renewals/', include('apps.renewals.urls')),
     
-    # Customer Verification endpoints
-    path('verification/', include('apps.verification.urls')),
+
 
     # API Documentation
     path('schema/', PublicSchemaView.as_view(), name='schema'),
