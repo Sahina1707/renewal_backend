@@ -7,15 +7,15 @@ from apps.email_provider.models import EmailProviderConfig
 from apps.audience_manager.models import AudienceContact
 from apps.whatsapp_provider.services import WhatsAppService, WhatsAppAPIError
 from apps.whatsapp_provider.models import WhatsAppMessageTemplate, WhatsAppProvider
+from apps.sms_provider.services import SmsService, SmsApiException
 import time
 
 @shared_task(name="check_scheduled_campaigns")
 def check_scheduled_campaigns():
     now = timezone.now()
     
-    # --- UPDATED ---
     campaigns_to_start = Campaign.objects.filter(
-        status=Campaign.CampaignStatus.SCHEDULED, # <-- Find SCHEDULED
+        status=Campaign.CampaignStatus.SCHEDULED, 
         scheduled_date__lte=now,
         is_deleted=False
     )
@@ -41,7 +41,15 @@ def process_campaign(campaign_id):
     except Campaign.DoesNotExist:
         return f"Campaign {campaign_id} not found."
 
-    contacts = campaign.audience.contacts.all()
+    # --- Optimization: Resolve Default Provider Upfront ---
+    # This prevents race conditions where multiple worker tasks try to save the provider simultaneously.
+    if campaign.enable_email and not campaign.email_provider:
+        default_provider = EmailProviderConfig.objects.filter(is_default=True, is_active=True).first()
+        if default_provider:
+            campaign.email_provider = default_provider
+            campaign.save(update_fields=['email_provider'])
+
+    contacts = campaign.audience.contacts.filter(is_deleted=False)    
     if not contacts.exists():
         campaign.status = Campaign.CampaignStatus.COMPLETED
         campaign.save()
@@ -165,9 +173,8 @@ def schedule_step_for_contact(self, campaign_id, step_id, contact_id):
             if not provider:
                 # Fetch System Default
                 provider = EmailProviderConfig.objects.filter(is_default=True, is_active=True).first()
-                if provider:
-                    campaign.email_provider = provider
-                    campaign.save(update_fields=['email_provider'])
+                # NOTE: We do NOT save the campaign here to avoid race conditions/DB locks 
+                # when multiple tasks run simultaneously.
             
             # 2. Send
             if provider:

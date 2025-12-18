@@ -34,7 +34,13 @@ SYNC_INTERVAL_CHOICES = [
     (60, '1 Hour'),
 ]
 
-# --- 1. Email Accounts Model (Support Inbox, Sales Inquiry) 
+# --- NEW: Choices for the Fallback Logic ---
+SENDING_METHOD_CHOICES = [
+    ('smtp', 'Use Incoming SMTP Credentials (Gmail/Outlook)'),
+    ('system_default', 'Use System Default Provider (e.g. Corp SendGrid)'),
+    ('specific_provider', 'Use Specific Provider (Override)'),
+]
+
 class EmailAccount(models.Model):
     """
     Stores configuration for a single connected email account (IMAP/SMTP).
@@ -61,6 +67,28 @@ class EmailAccount(models.Model):
     last_sync_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp of the last successful sync or test.")
     last_sync_log = models.TextField(blank=True, help_text="Stores the error message if the connection failed.")
 
+    # --- NEW SENDING CONFIGURATION ---
+    sending_method = models.CharField(
+        max_length=20, 
+        choices=SENDING_METHOD_CHOICES, 
+        default='smtp',
+        help_text="Determines how emails are sent from this account."
+    )
+    specific_provider = models.ForeignKey(
+        'email_provider.EmailProviderConfig', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        help_text="If 'Use Specific Provider' is selected, this provider will be used."
+    )
+
+    # Helper to auto-select this account in Campaigns
+    is_default_sender = models.BooleanField(
+        default=False, 
+        help_text="If true, this account is pre-selected as the 'From' address in new campaigns."
+    )
+    # ---------------------------------
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     access_credential = models.CharField(
@@ -81,13 +109,23 @@ class EmailAccount(models.Model):
 
     def __str__(self):
         return f"{self.account_name} ({self.email_address})"
+
     def save(self, *args, **kwargs):
         apply_provider_defaults(self)
+
         if self.access_credential:
-             try:
-                 decrypt_credential(self.access_credential)
-             except (Exception, ValueError):
-                 self.access_credential = encrypt_credential(self.access_credential)
+            # We must import Fernet directly to check if the string is valid
+            from cryptography.fernet import Fernet, InvalidToken
+            from .utils import _get_fernet
+
+            try:
+                f = _get_fernet()
+                f.decrypt(self.access_credential.encode())
+            except (InvalidToken, ValueError, AttributeError):
+                self.access_credential = encrypt_credential(self.access_credential)
+ 
+        if self.is_default_sender:
+            EmailAccount.objects.filter(user=self.user, is_default_sender=True).exclude(pk=self.pk).update(is_default_sender=False)
 
         super().save(*args, **kwargs)
 
@@ -101,7 +139,7 @@ class EmailAccount(models.Model):
         self.deleted_by = user
         self.save()
 
-# 2. Central Settings Model (To hold all global toggles and paths) ---
+# ... (EmailModuleSettings, ClassificationRule, EmailMessage remain the same)
 class EmailModuleSettings(models.Model):
     """
     Stores general, global, processing, and AI features settings, unique per user.
@@ -184,7 +222,7 @@ class ClassificationRule(models.Model):
         self.deleted_at = timezone.now()
         self.deleted_by = user
         self.save()
-# ... (existing imports)
+
 
 class EmailMessage(models.Model):
     """

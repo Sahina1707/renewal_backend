@@ -2,14 +2,27 @@ from openai import OpenAI
 from django.conf import settings
 import json
 
-client = OpenAI(
-    api_key=settings.OPENAI_API_KEY
-)
+
+# Safe initialization of OpenAI client
+client = None
+if getattr(settings, "OPENAI_API_KEY", None):
+    try:
+        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+    except Exception as e:
+        print(f"⚠️ Failed to initialize OpenAI client: {e}")
+        client = None
+else:
+    print("⚠️ OPENAI_API_KEY not set — AI analysis disabled.")
+
 
 def analyze_email_sentiment_and_intent(text: str):
-    
     try:
+        # If no text, return neutral response
         if not text:
+            return {"sentiment": "neutral (50%)", "intent": "unknown"}
+
+        # If OpenAI client is not available
+        if client is None:
             return {"sentiment": "neutral (50%)", "intent": "unknown"}
 
         prompt = f"""
@@ -47,6 +60,7 @@ def analyze_email_sentiment_and_intent(text: str):
             result = {"sentiment": "neutral", "confidence": 70, "intent": "unknown"}
 
         sentiment_label = f"{result.get('sentiment', 'neutral')} ({result.get('confidence', 70)}%)"
+        
         return {
             "sentiment": sentiment_label,
             "intent": result.get("intent", "unknown")

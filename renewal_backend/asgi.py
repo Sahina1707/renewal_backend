@@ -23,11 +23,23 @@ import apps.notifications.routing
 
 websocket_urlpatterns = apps.notifications.routing.websocket_urlpatterns + apps.email_inbox.routing.websocket_urlpatterns
 
+
+# Uncomment for Production
+# application = ProtocolTypeRouter({
+#     "http": django_asgi_app,
+#     "websocket": AllowedHostsOriginValidator(
+#         AuthMiddlewareStack(
+#             URLRouter(websocket_urlpatterns)
+#         )
+#     ),
+# }) 
+
+# Comment / Remove for Production
 application = ProtocolTypeRouter({
     "http": django_asgi_app,
-    "websocket": AllowedHostsOriginValidator(
+    "websocket": 
         AuthMiddlewareStack(
             URLRouter(websocket_urlpatterns)
-        )
+        
     ),
 }) 

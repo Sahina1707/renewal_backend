@@ -55,6 +55,30 @@ class EmailProviderConfigCreateSerializer(serializers.ModelSerializer):
             'daily_limit', 'monthly_limit', 'rate_limit_per_minute',
             'priority', 'is_default', 'is_active'
         ]
+    def validate(self, data):
+        """
+        Ensure only one provider is marked as default.
+        """
+        is_default = data.get('is_default', False)
+        
+        if is_default:
+            # Check if any other ACTIVE provider is already the default
+            # We filter by is_deleted=False to ignore soft-deleted records.
+            existing_default = EmailProviderConfig.objects.filter(
+                is_default=True, 
+                is_deleted=False
+            )
+            
+            if self.instance:
+                # Exclude the current instance if it's an update
+                existing_default = existing_default.exclude(pk=self.instance.pk)
+            
+            if existing_default.exists():
+                raise serializers.ValidationError({
+                    'is_default': "A default provider already exists. Please deactivate the existing default before setting a new one."
+                })
+        
+        return data
     
     def create(self, validated_data):
         """Create a new email provider configuration"""
@@ -84,6 +108,28 @@ class EmailProviderConfigUpdateSerializer(serializers.ModelSerializer):
             'daily_limit', 'monthly_limit', 'rate_limit_per_minute',
             'priority', 'is_default', 'is_active'
         ]
+    def validate(self, data):
+        """
+        [NEW] Ensures only one provider is marked as default when updating an existing one.
+        """
+        is_default = data.get('is_default', self.instance.is_default) # Use existing value if not provided
+        
+        if is_default:
+            # Check if any other ACTIVE provider is already the default
+            existing_default = EmailProviderConfig.objects.filter(
+                is_default=True, 
+                is_deleted=False
+            )
+            
+            # Exclude the instance being updated (its ID) from the check
+            existing_default = existing_default.exclude(pk=self.instance.pk)
+            
+            if existing_default.exists():
+                raise serializers.ValidationError({
+                    'is_default': "A default provider already exists. Please deactivate the existing default before setting this one."
+                })
+        
+        return data
     
     def update(self, instance, validated_data):
         """Update an email provider configuration"""

@@ -9,7 +9,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
 from django.utils import timezone
 
-# ---------- Provider auto-configuration ----------
+# Provider auto-configuration
 PROVIDER_DEFAULTS = {
     'gmail': {
         'imap_server': 'imap.gmail.com',
@@ -45,14 +45,12 @@ PROVIDER_DEFAULTS = {
     }
 }
 
-# ---------- Dataclasses for structured results ----------
 @dataclass
 class ConnectionResult:
     success: bool
     message: str
     details: Dict[str, Any]
 
-# ---------- Encryption helpers (Fernet) ----------
 def _get_fernet() -> Fernet:
     key = getattr(settings, 'EMAIL_CREDENTIAL_KEY', None)
     if not key:
@@ -72,12 +70,9 @@ def decrypt_credential(token: str) -> str:
     f = _get_fernet()
     try:
         return f.decrypt(token.encode()).decode()
-    except InvalidToken:
-        # If decryption fails, it might be an old plaintext password. 
-        # Return it as-is so the user can re-save it properly later.
-        return token
+    except Exception:
+        raise ValueError("Decryption failed")
 
-# ---------- Normalization / auto-config ----------
 def apply_provider_defaults(account_obj) -> None:
     provider_key = (account_obj.email_provider or 'custom').lower()
     defaults = PROVIDER_DEFAULTS.get(provider_key, PROVIDER_DEFAULTS['custom'])

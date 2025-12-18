@@ -43,11 +43,17 @@ LOCAL_APPS = [
     'apps.users',
     'apps.authentication',
     'apps.verification',
+    'apps.whatsapp_provider',
     'apps.customers',
     'apps.policies',
+    'apps.email_provider',
+    'apps.sms_provider',
+    'apps.email_templates',
     'apps.uploads',
-    'apps.campaigns',
     'apps.templates',
+    'apps.campaigns',
+    'apps.campaign_manager',
+    'apps.campaign_management_settings',
     'apps.target_audience',
     'apps.policy_data',
     'apps.files_upload',
@@ -75,7 +81,6 @@ LOCAL_APPS = [
     'apps.customers_files',
     'apps.ai_insights',
     'apps.claims',
-    'apps.campaign_manager',
     'apps.audience_manager',
     'apps.customer_insights',
     'apps.ai_policy_recommendations',
@@ -87,10 +92,6 @@ LOCAL_APPS = [
     'apps.policy_exclusions',
     'apps.policy_conditions',
     'apps.renewal_timeline',
-    'apps.email_provider',
-    'apps.whatsapp_provider',
-    'apps.sms_provider',
-    'apps.email_templates',
     'apps.email_operations',
     'apps.email_inbox',
     'apps.email_integration',
@@ -112,6 +113,8 @@ LOCAL_APPS = [
     'apps.social_integration',
     
 
+    'apps.whatsapp_flow_settings',
+    'apps.whatsapp_flow_management',
     # 'apps.communications',
     # 'apps.emails',
     # 'apps.surveys',
@@ -192,7 +195,7 @@ CACHES = {
 }
 
 # Redis Configuration (uncomment when Redis is available)
-# REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/0')
+# REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/1')
 # CACHES = {
 #     'default': {
 #         'BACKEND': 'django_redis.cache.RedisCache',
@@ -321,7 +324,7 @@ SIMPLE_JWT = {
 # CORS Configuration
 CORS_ALLOWED_ORIGINS = config(
     'CORS_ALLOWED_ORIGINS',
-    default='http://localhost:3000,http://127.0.0.1:3000,http://13.233.6.207:8000',
+    default='http://localhost:3001,http://127.0.0.1:3000,http://13.233.6.207:8000',
     cast=lambda v: [s.strip() for s in v.split(',')]
 )
 
@@ -406,10 +409,6 @@ TWILIO_PHONE_NUMBER = config('TWILIO_PHONE_NUMBER', default='')
 WHATSAPP_ACCESS_TOKEN = config('WHATSAPP_ACCESS_TOKEN', default='')
 WHATSAPP_PHONE_NUMBER_ID = config('WHATSAPP_PHONE_NUMBER_ID', default='')
 WHATSAPP_BUSINESS_ACCOUNT_ID = config('WHATSAPP_BUSINESS_ACCOUNT_ID', default='')
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-# OPENAI_ORGANIZATION = config('OPENAI_ORGANIZATION', default='')
-# OPENAI_MODEL = config('OPENAI_MODEL', default='gpt-4')
 
 OPENAI_API_KEY = config('OPENAI_API_KEY', default='')
 # OPENAI_ORGANIZATION = config('OPENAI_ORGANIZATION', default='')
@@ -528,9 +527,9 @@ CELERY_BEAT_SCHEDULE = {
 }
 
 
-EMAIL_CREDENTIAL_KEY ="TRtZIlF8VlpLAIBcRiWsemXH3f_uUvY5hfg458YAhfY="
- 
 # GOOGLE_GMAIL_PROJECT_ID = "intelipro-email"
 # GOOGLE_GMAIL_PUBSUB_TOPIC = "projects/intelipro-email/topics/gmail-notifications"
 # GOOGLE_GMAIL_SERVICE_ACCOUNT_FILE
 
+EMAIL_CREDENTIAL_KEY = config('EMAIL_CREDENTIAL_KEY', default="YOaPFq4HU_lb-F7VG-FMM-Pv0viLuKlEKbW5HM69DmU=")
+ 

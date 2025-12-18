@@ -3,10 +3,33 @@ from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from .models import (
     EmailInboxMessage, EmailFolder, EmailConversation, EmailFilter,
-    EmailAttachment, EmailSearchQuery
+    EmailAttachment, EmailSearchQuery, BulkEmailCampaign
 )
 
-
+@admin.register(BulkEmailCampaign)
+class BulkEmailCampaignAdmin(admin.ModelAdmin):
+    list_display = [
+        'name', 
+        'status', 
+        'scheduled_at', 
+        'total_recipients', 
+        'successful_sends', 
+        'failed_sends', 
+        'created_by'
+    ]
+    list_filter = ['status', 'scheduled_at', 'created_by']
+    search_fields = ['name', 'subject_template', 'custom_subject']
+    readonly_fields = [
+        'total_recipients', 
+        'successful_sends', 
+        'failed_sends', 
+        'opened_count', 
+        'clicked_count', 
+        'sent_at', 
+        'created_at', 
+        'updated_at'
+    ]
+    date_hierarchy = 'created_at'
 @admin.register(EmailFolder)
 class EmailFolderAdmin(admin.ModelAdmin):
     list_display = [
@@ -59,7 +82,8 @@ class EmailInboxMessageAdmin(admin.ModelAdmin):
             'fields': ('category', 'priority', 'sentiment', 'status')
         }),
         ('Organization', {
-            'fields': ('folder', 'is_starred', 'is_important', 'tags', 'thread_id', 'parent_message')
+            'fields': ('folder', 'is_starred', 'is_important', 'tags', 'thread_id',
+                        'parent_message')
         }),
         ('Processing', {
             'fields': ('is_processed', 'processing_notes', 'assigned_to')

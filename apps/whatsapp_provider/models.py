@@ -139,6 +139,7 @@ class WhatsAppProvider(models.Model):
         ordering = ['-is_default', 'name']
         verbose_name = 'WhatsApp Provider'
         verbose_name_plural = 'WhatsApp Providers'
+        unique_together = ('provider_type', 'account_id', 'is_deleted')
     
     def __str__(self):
         return f"{self.name} ({self.get_provider_type_display()})"

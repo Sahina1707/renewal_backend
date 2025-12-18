@@ -13,9 +13,11 @@ from django.utils import timezone
 from django.template import Template, Context
 from celery import shared_task
 
-# Imports from your other apps
+# Imports from Settings App
 from apps.email_settings.models import EmailAccount, EmailModuleSettings
 from apps.email_settings.utils import decrypt_credential
+
+# Imports from Inbox App
 from .models import BulkEmailCampaign, EmailInboxMessage, EmailFolder
 from .services import EmailInboxService
 
@@ -62,13 +64,57 @@ def extract_body(msg, content_type_pref):
             except: pass
     return content
 
-def send_via_account_smtp(account, to_email, subject, html_body, attachments):
+def get_sending_configuration(account):
+    """
+    Determines the correct SMTP/API credentials based on the Account's 'sending_method'.
+    """
+    config = {
+        'from_email': account.email_address,
+        'use_tls': True
+    }
+
+    # OPTION A: Use Account's own SMTP
+    if account.sending_method == 'smtp':
+        config.update({
+            'host': account.smtp_server,
+            'port': account.smtp_port,
+            'username': account.email_address,
+            'password': decrypt_credential(account.access_credential)
+        })
+        config['use_tls'] = account.use_ssl_tls
+        return config
+
+    # OPTION B & C: Use a Provider
+    # NOTE: Ensure this matches your actual app name for providers
+    from apps.email_providers.models import EmailProviderConfig 
+    
+    provider = None
+    if account.sending_method == 'specific_provider':
+        provider = account.specific_provider
+    elif account.sending_method == 'system_default':
+        provider = EmailProviderConfig.objects.filter(is_default=True).first()
+
+    if not provider:
+        raise ValueError(f"No provider found for sending method: {account.sending_method}")
+
+    # Map Provider fields to config
+    config.update({
+        'host': provider.smtp_host,
+        'port': provider.smtp_port,
+        'username': provider.smtp_username, 
+        'password': provider.smtp_password 
+    })
+    
+    return config
+
+def send_email_with_config(config, to_email, subject, html_body, attachments):
+    """
+    Generic sender that works with the config dictionary.
+    """
     try:
-        credential = decrypt_credential(account.access_credential)
-        
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
-        msg['From'] = account.email_address
+        msg['From'] = config['from_email']
         msg['To'] = to_email
         
         msg.attach(MIMEText(html_body, 'html'))
@@ -78,10 +124,12 @@ def send_via_account_smtp(account, to_email, subject, html_body, attachments):
             part['Content-Disposition'] = f'attachment; filename="{att["name"]}"'
             msg.attach(part)
 
-        server = smtplib.SMTP(account.smtp_server, account.smtp_port)
-        server.starttls()
-        server.login(account.email_address, credential)
-        server.sendmail(account.email_address, to_email, msg.as_string())
+        server = smtplib.SMTP(config['host'], config['port'])
+        if config.get('use_tls'):
+            server.starttls()
+            
+        server.login(config['username'], config['password'])
+        server.sendmail(config['from_email'], to_email, msg.as_string())
         server.quit()
         return True
     except Exception as e:
@@ -89,6 +137,8 @@ def send_via_account_smtp(account, to_email, subject, html_body, attachments):
         return False
 
 def process_imap_folder(mail, folder_name, is_incoming, account, service):
+    # ... (Keep your existing IMAP folder processing logic here) ...
+    # (It looks correct in your snippet)
     try:
         mail.select(folder_name)
         status, messages = mail.search(None, 'UNSEEN')
@@ -96,7 +146,6 @@ def process_imap_folder(mail, folder_name, is_incoming, account, service):
 
         email_ids = messages[0].split()
         count = 0
-
         for email_id in email_ids:
             try:
                 _, msg_data = mail.fetch(email_id, "(RFC822)")
@@ -124,7 +173,7 @@ def process_imap_folder(mail, folder_name, is_incoming, account, service):
         return 0
 
 # ==========================================
-# TASKS (UPDATED NAMES TO MATCH SETTINGS)
+# TASKS
 # ==========================================
 
 @shared_task(name="apps.email_inbox.tasks.fetch_new_emails")
@@ -158,7 +207,7 @@ def fetch_new_emails():
 
 @shared_task(name="apps.email_inbox.tasks.send_campaign_emails")
 def send_campaign_emails(campaign_id):
-    """Sends emails for a campaign."""
+    """Sends emails for a campaign with Smart Configuration."""
     try:
         campaign = BulkEmailCampaign.objects.get(id=campaign_id)
         if campaign.status in ['processing', 'completed']: return "Already processed"
@@ -166,12 +215,23 @@ def send_campaign_emails(campaign_id):
         campaign.status = 'processing'
         campaign.save(update_fields=['status'])
         
+        # 1. Find Sender Account
         sender_account = EmailAccount.objects.filter(user=campaign.created_by, is_deleted=False).first()
         if not sender_account:
             campaign.status = 'failed'
             campaign.save()
             return "No sending account found."
 
+        # 2. Get Configuration (Smart Logic)
+        try:
+            smtp_config = get_sending_configuration(sender_account)
+        except Exception as e:
+            logger.error(f"Configuration Error: {e}")
+            campaign.status = 'failed'
+            campaign.save()
+            return f"Config failed: {e}"
+
+        # Settings
         module_settings = EmailModuleSettings.objects.filter(user=campaign.created_by).first()
         auto_gen_docs = module_settings.auto_generate_documents if module_settings else False
         attach_docs = module_settings.attach_to_emails if module_settings else False
@@ -184,23 +244,25 @@ def send_campaign_emails(campaign_id):
 
         for recipient in campaign.recipients_data:
             try:
-                # Fix mismatch: if 'name' exists but 'customer_name' is missing, copy it
+                # Data Mapping
                 if 'name' in recipient and 'customer_name' not in recipient:
                     recipient['customer_name'] = recipient['name']
                 if 'company_name' not in recipient:
                     recipient['company_name'] = "RenewIQ"
 
+                # Mail Merge
                 ctx = Context(recipient)
                 final_subject = Template(base_subject).render(ctx)
                 body_content = Template(base_body).render(ctx)
                 
+                # Attachments
                 attachments = []
                 if auto_gen_docs and attach_docs:
                     pdf_bytes = generate_pdf_from_html(body_content, recipient)
                     doc_name = f"Policy_{recipient.get('policy_number', 'Doc')}.pdf"
                     attachments.append({'name': doc_name, 'content': pdf_bytes, 'content_type': 'application/pdf'})
 
-                # Save Sent Email
+                # Save to DB (Sent Items)
                 EmailInboxMessage.objects.create(
                     from_email=sender_account.email_address,
                     to_emails=[recipient.get('email')],
@@ -214,11 +276,13 @@ def send_campaign_emails(campaign_id):
                     created_by=campaign.created_by
                 )
 
-                if send_via_account_smtp(sender_account, recipient.get('email'), final_subject, body_content, attachments):
+                # Send using Config
+                if send_email_with_config(smtp_config, recipient.get('email'), final_subject, body_content, attachments):
                     success_count += 1
                 else:
                     fail_count += 1
             except Exception as e:
+                logger.error(f"Error sending to {recipient.get('email')}: {e}")
                 fail_count += 1
                 continue
 
@@ -227,8 +291,10 @@ def send_campaign_emails(campaign_id):
         campaign.failed_sends = fail_count
         campaign.sent_at = timezone.now()
         campaign.save()
+        
     except BulkEmailCampaign.DoesNotExist:
         pass
+
 @shared_task(name="apps.email_inbox.tasks.process_scheduled_campaigns")
 def process_scheduled_campaigns():
     """Checks for campaigns that are scheduled for now or the past."""
