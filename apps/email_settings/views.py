@@ -11,78 +11,78 @@ from .models import EmailAccount, EmailModuleSettings, ClassificationRule
 from .serializers import EmailAccountSerializer, EmailModuleSettingsSerializer, ClassificationRuleSerializer
 from .services import EmailSyncService
 from rest_framework.decorators import action
-def check_imap_connection(server, port, email, credential, use_ssl):
-    """Checks the IMAP connection (Incoming Mail)."""
-    try:
-        if use_ssl:
-            M = imaplib.IMAP4_SSL(server, port)
-        else:
-            M = imaplib.IMAP4(server, port)
+# def check_imap_connection(server, port, email, credential, use_ssl):
+#     """Checks the IMAP connection (Incoming Mail)."""
+#     try:
+#         if use_ssl:
+#             M = imaplib.IMAP4_SSL(server, port)
+#         else:
+#             M = imaplib.IMAP4(server, port)
         
-        # Attempt login
-        M.login(email, credential)
-        M.logout()
-        return True, "IMAP connection successful."
-    except imaplib.IMAP4.error as e:
-        return False, f"IMAP login failed: {str(e)}"
-    except Exception as e:
-        return False, f"IMAP connection error: {str(e)}"
+#         # Attempt login
+#         M.login(email, credential)
+#         M.logout()
+#         return True, "IMAP connection successful."
+#     except imaplib.IMAP4.error as e:
+#         return False, f"IMAP login failed: {str(e)}"
+#     except Exception as e:
+#         return False, f"IMAP connection error: {str(e)}"
 
-def check_smtp_connection(server, port, email, credential, use_ssl):
-    """Checks the SMTP connection (Outgoing Mail)."""
-    try:
-        if use_ssl:
-            if port == 465:
-                # Implicit SSL/TLS on port 465
-                S = smtplib.SMTP_SSL(server, port, timeout=10)
-            else:
-                # Explicit STARTTLS on other ports (e.g., 587)
-                S = smtplib.SMTP(server, port, timeout=10)
-                S.starttls()
-        else:
-            # Unencrypted connection
-            S = smtplib.SMTP(server, port, timeout=10)
+# def check_smtp_connection(server, port, email, credential, use_ssl):
+#     """Checks the SMTP connection (Outgoing Mail)."""
+#     try:
+#         if use_ssl:
+#             if port == 465:
+#                 # Implicit SSL/TLS on port 465
+#                 S = smtplib.SMTP_SSL(server, port, timeout=10)
+#             else:
+#                 # Explicit STARTTLS on other ports (e.g., 587)
+#                 S = smtplib.SMTP(server, port, timeout=10)
+#                 S.starttls()
+#         else:
+#             # Unencrypted connection
+#             S = smtplib.SMTP(server, port, timeout=10)
         
-        S.ehlo()
-        S.login(email, credential)
-        S.quit()
-        return True, "SMTP connection successful."
-    except smtplib.SMTPAuthenticationError:
-        return False, "SMTP authentication failed (invalid credential)."
-    except smtplib.SMTPConnectError:
-        return False, "SMTP connection failed (server or port error)."
-    except Exception as e:
-        return False, f"SMTP connection error: {str(e)}"
+#         S.ehlo()
+#         S.login(email, credential)
+#         S.quit()
+#         return True, "SMTP connection successful."
+#     except smtplib.SMTPAuthenticationError:
+#         return False, "SMTP authentication failed (invalid credential)."
+#     except smtplib.SMTPConnectError:
+#         return False, "SMTP connection failed (server or port error)."
+#     except Exception as e:
+#         return False, f"SMTP connection error: {str(e)}"
 
-def test_account_connection(account_instance):
-    """Tests both IMAP and SMTP connection using the EmailAccount instance data."""
+# def test_account_connection(account_instance):
+#     """Tests both IMAP and SMTP connection using the EmailAccount instance data."""
     
-    # FIX: Remove spaces from the credential before using it
-    credential = "".join(account_instance.access_credential.split()) if account_instance.access_credential else ""
+#     # FIX: Remove spaces from the credential before using it
+#     credential = "".join(account_instance.access_credential.split()) if account_instance.access_credential else ""
 
-    # 1. Test IMAP
-    imap_success, imap_message = check_imap_connection(
-        account_instance.imap_server, 
-        account_instance.imap_port, 
-        account_instance.email_address, 
-        credential, 
-        account_instance.use_ssl_tls
-    )
+#     # 1. Test IMAP
+#     imap_success, imap_message = check_imap_connection(
+#         account_instance.imap_server, 
+#         account_instance.imap_port, 
+#         account_instance.email_address, 
+#         credential, 
+#         account_instance.use_ssl_tls
+#     )
 
-    # 2. Test SMTP
-    smtp_success, smtp_message = check_smtp_connection(
-        account_instance.smtp_server, 
-        account_instance.smtp_port, 
-        account_instance.email_address, 
-        credential, 
-        account_instance.use_ssl_tls
-    )
+#     # 2. Test SMTP
+#     smtp_success, smtp_message = check_smtp_connection(
+#         account_instance.smtp_server, 
+#         account_instance.smtp_port, 
+#         account_instance.email_address, 
+#         credential, 
+#         account_instance.use_ssl_tls
+#     )
 
-    return {
-        "success": imap_success and smtp_success,
-        "imap_status": imap_message,
-        "smtp_status": smtp_message,
-    }
+#     return {
+#         "success": imap_success and smtp_success,
+#         "imap_status": imap_message,
+#         "smtp_status": smtp_message,
+#     }
 
 class IsOwner(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):

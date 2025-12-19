@@ -86,7 +86,7 @@ def get_sending_configuration(account):
 
     # OPTION B & C: Use a Provider
     # NOTE: Ensure this matches your actual app name for providers
-    from apps.email_providers.models import EmailProviderConfig 
+    from apps.email_provider.models import EmailProviderConfig 
     
     provider = None
     if account.sending_method == 'specific_provider':

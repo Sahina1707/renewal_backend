@@ -5,6 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.db.models import Q, Count
 from django.utils import timezone
 from django.conf import settings
+from django.apps import apps
 from rest_framework.views import APIView
 from .tasks import send_campaign_emails,process_scheduled_campaigns
 import csv
@@ -38,6 +39,7 @@ from .serializers import (EmailInboxMessageSerializer,
     EmailAuditLogSerializer,
     EmailConversationSerializer,
     RecipientImportSerializer,
+    CampaignPreviewSerializer,
 )
 from .services import EmailInboxService
 from apps.email_settings.models import EmailAccount
@@ -611,13 +613,13 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
         # 3. Auto-detect Sender (Same logic as send_new)
         from apps.email_settings.models import EmailAccount
         sender_account = EmailAccount.objects.filter(
-            user=request.user, 
-            email_address='jhansi07558@gmail.com', # Prioritize your main email
+            user=request.user,
+            is_default_sender=True,
             is_deleted=False
         ).first()
         
         if not sender_account:
-            sender_account = EmailAccount.objects.filter(user=request.user, is_default_sender=True).first()
+            sender_account = EmailAccount.objects.filter(user=request.user, is_deleted=False).first()
         
         from_email = sender_account.email_address if sender_account else settings.DEFAULT_FROM_EMAIL
 
@@ -899,9 +901,22 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
              return Response({'error': 'folder_id is required'}, status=400)
              
         try:
-            folder = EmailFolder.objects.get(id=folder_id)
+            folder = EmailFolder.objects.get(id=folder_id, is_deleted=False)
+            
+            previous_folder_name = email.folder.name if email.folder else "Unassigned"
+            
             email.folder = folder
-            email.save(update_fields=['folder'])
+            email.updated_by = request.user
+            email.save(update_fields=['folder', 'updated_by'])
+            
+            # Add Audit Log for history tracking
+            EmailAuditLog.objects.create(
+                email_message=email,
+                action="Moved Folder",
+                details=f"Moved from '{previous_folder_name}' to '{folder.name}'",
+                performed_by=request.user
+            )
+            
             return Response({'message': f'Moved to {folder.name}'})
         except EmailFolder.DoesNotExist:
             return Response({'error': 'Folder not found'}, status=404)
@@ -1138,10 +1153,31 @@ class BulkEmailCampaignViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def perform_create(self, serializer):
-        campaign = serializer.save(created_by=self.request.user)
+        # Fix: Set status to 'scheduled' if a date is provided, otherwise default 'draft'
+        status = 'draft'
+        if serializer.validated_data.get('scheduled_at'):
+            status = 'scheduled'
+            
+        campaign = serializer.save(created_by=self.request.user, status=status)
         
         if not campaign.scheduled_at:
             send_campaign_emails.delay(campaign.id)
+
+    @action(detail=True, methods=['post'])
+    def send(self, request, pk=None):
+        """Manually triggers the sending of a campaign (e.g. from Draft)."""
+        campaign = self.get_object()
+        
+        if campaign.status in ['processing', 'completed']:
+            return Response({'error': 'Campaign is already processing or completed.'}, status=400)
+            
+        # Update status immediately for UI feedback
+        campaign.status = 'processing'
+        campaign.save(update_fields=['status'])
+        
+        send_campaign_emails.delay(campaign.id)
+        
+        return Response({'message': 'Campaign sending started.', 'status': 'processing'})
 
     @action(detail=False, methods=['post'])
     def preview(self, request):
@@ -1151,10 +1187,13 @@ class BulkEmailCampaignViewSet(viewsets.ModelViewSet):
             
         data = serializer.validated_data
         recipient = data.get('sample_recipient', {})
+        if 'name' in recipient and 'customer_name' not in recipient:
+            recipient['customer_name'] = recipient['name']
         
+        if 'company_name' not in recipient:
+            recipient['company_name'] = "RenewIQ"         
         subject = ""
-        body = ""
-        
+        body = ""                
         if data.get('template_id'):
             try:
                 EmailTemplate = apps.get_model('email_templates', 'EmailTemplate')
