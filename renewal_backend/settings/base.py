@@ -322,21 +322,50 @@ SIMPLE_JWT = {
 }
 
 # CORS Configuration
-CORS_ALLOWED_ORIGINS = config(
-    'CORS_ALLOWED_ORIGINS',
-    default='http://localhost:3001,http://127.0.0.1:3000,http://13.233.6.207:8000',
-    cast=lambda v: [s.strip() for s in v.split(',')]
-)
+# CORS_ALLOWED_ORIGINS = config(
+#     'CORS_ALLOWED_ORIGINS',
+#     default='http://localhost:3001,http://127.0.0.1:3000,http://13.233.6.207:8000',
+#     cast=lambda v: [s.strip() for s in v.split(',')]
+# )
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://13.127.153.213",
+]
+
+CORS_ALLOW_METHODS = [
+    "DELETE",
+    "GET",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
+]
+
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "authorization",
+    "content-type",
+    "origin",
+    "x-csrftoken",
+    "x-requested-with",
+]
+
 
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_ORIGINS = False
 
 # CSRF Configuration
-CSRF_TRUSTED_ORIGINS = config(
-    'CSRF_TRUSTED_ORIGINS',
-    default='http://localhost:3000,http://127.0.0.1:3000,http://13.233.6.207:8000',
-    cast=lambda v: [s.strip() for s in v.split(',')]
-)
+# CSRF_TRUSTED_ORIGINS = config(
+#     'CSRF_TRUSTED_ORIGINS',
+#     default='http://localhost:3000,http://127.0.0.1:3000,http://13.233.6.207:8000',
+#     cast=lambda v: [s.strip() for s in v.split(',')]
+# )
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://13.127.153.213",
+]
 
 # Session Configuration
 SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
