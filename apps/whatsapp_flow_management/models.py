@@ -41,6 +41,7 @@ class WhatsAppFlow(SoftDeleteBase):
         ('POST_CAMPAIGN', 'Post-Campaign Follow-up'),
         ('SCHEDULED', 'Scheduled Trigger'),
         ('API', 'API Trigger'),
+        ('WEBHOOK', 'Webhook Trigger'),
     ]
 
     name = models.CharField(max_length=255, unique=True)
@@ -77,7 +78,6 @@ class FlowBlock(models.Model):
     def __str__(self):
         return f"{self.flow.name} - {self.get_block_type_display()} ({self.block_id})"
 
-# --- 3. Flow Analytics Model (Required for Dashboard Summary) ---
 class FlowAnalytics(models.Model):
     flow = models.OneToOneField(
         WhatsAppFlow, 
@@ -85,16 +85,23 @@ class FlowAnalytics(models.Model):
         related_name='analytics'
     )
     
+    # Existing fields
+    total_runs = models.IntegerField(default=0)
+    completed_runs = models.IntegerField(default=0)  
+    dropped_off_runs = models.IntegerField(default=0) 
+    avg_duration_seconds = models.FloatField(default=0.0)
+    node_drop_off_data = models.JSONField(default=dict, blank=True)
     total_recipients = models.PositiveIntegerField(default=0)
     messages_delivered = models.PositiveIntegerField(default=0)
     messages_replied = models.PositiveIntegerField(default=0)
     delivery_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     reply_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
-
+    avg_response_time = models.FloatField(default=0.0) 
+    click_through_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     def __str__(self):
-        return f"Analytics for {self.flow.name}"
+        return f"Stats for {self.flow.name}"
 
-# --- 4. WhatsApp Message Templates Model (For Templates Tab) ---
+
 class WhatsAppMessageTemplate(SoftDeleteBase):
     STATUS_CHOICES = [
         ('DRAFT', 'Draft'),
@@ -116,6 +123,18 @@ class FlowTemplate(SoftDeleteBase):
     description = models.TextField()
     template_flow_json = models.JSONField(default=dict)
     category = models.CharField(max_length=50, default='General')
+
+    def __str__(self):
+        return self.name
+    
+class AITemplate(SoftDeleteBase):
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True, null=True)
+    category = models.CharField(max_length=50, default='General')
+    prompt_used = models.TextField() 
+    generated_content = models.JSONField(default=dict) 
+    
+    status = models.CharField(max_length=20, default='DRAFT')
 
     def __str__(self):
         return self.name

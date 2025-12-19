@@ -146,6 +146,7 @@ class EmailInboxMessage(models.Model):
     
     id = models.BigAutoField(primary_key=True)
     message_id = models.CharField(max_length=255, unique=True, help_text="Unique message identifier")
+    custom_id = models.CharField(max_length=50, unique=True, blank=True, null=True, help_text="Auto-generated ID like EMAIL-0001")
     
     # Email headers
     from_email = models.EmailField()
@@ -268,6 +269,14 @@ class EmailInboxMessage(models.Model):
     def __str__(self):
         return f"{self.subject} from {self.from_email}"
     
+    def save(self, *args, **kwargs):
+        is_new = self._state.adding
+        super().save(*args, **kwargs)
+        if is_new and not self.custom_id:
+            self.custom_id = f"EMAIL-{self.id:04d}"
+            # Update DB directly to avoid recursion or double signals
+            EmailInboxMessage.objects.filter(id=self.id).update(custom_id=self.custom_id)
+
     def mark_as_read(self):
         """Mark message as read"""
         if self.status == 'unread':

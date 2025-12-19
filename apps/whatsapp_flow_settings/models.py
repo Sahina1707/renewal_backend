@@ -6,9 +6,42 @@ from openai import max_retries
 from django.db.models import Manager,UniqueConstraint, Q
 import pytz
 
-# --- 1. WhatsApp Configuration (Main Settings) ---
-# (This remains largely the same, but we add the AuditLog model below)
-class WhatsAppConfiguration(models.Model):
+class AuditLogModel(models.Model):
+    """
+    Abstract base class that provides self-updating
+    'created' and 'modified' fields, plus user tracking.
+    """
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Created At")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Last Updated")
+    is_deleted = models.BooleanField(default=False)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name="%(app_label)s_%(class)s_created",
+        verbose_name="Created By"
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name="%(app_label)s_%(class)s_updated",
+        verbose_name="Updated By"
+    )
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+
+    class Meta:
+        abstract = True
+
+class WhatsAppConfiguration(AuditLogModel):
     # API Credentials
     phone_number_id = models.CharField(max_length=255, help_text="Meta Phone Number ID")
     access_token = models.TextField(help_text="Meta Access Token")
@@ -46,24 +79,19 @@ class WhatsAppConfiguration(models.Model):
     def __str__(self):
         return "WhatsApp Global Settings"
 
-
-# --- 2. Dynamic Access Roles (New Model) ---
-class FlowAccessRole(models.Model):
+class FlowAccessRole(AuditLogModel):
     """
     Stores roles dynamically (Admin, Editor, Viewer, etc.)
     You can add/remove these without code changes.
     """
     name = models.CharField(max_length=50, unique=True, help_text="e.g., 'Admin', 'Viewer'")
-    description = models.TextField(blank=True, help_text="Detailed description of what this role can do.")
-    
-    # We can add boolean flags here to define permissions granularly later
+    description = models.TextField(blank=True, help_text="Detailed description of what this role can do.")    
     can_publish = models.BooleanField(default=False)
     can_edit = models.BooleanField(default=False)
 
     def __str__(self):
         return self.name
 
-# --- Soft Delete Logic ---
 class NonDeletedManager(Manager):
     def get_queryset(self):
         # This is the core logic: exclude records where is_deleted is True
@@ -71,21 +99,17 @@ class NonDeletedManager(Manager):
 
 class SoftDeleteBase(models.Model):
     is_deleted = models.BooleanField(default=False)
-
-    # Use the custom manager as the default 'objects' manager
     objects = NonDeletedManager() 
-    # Keep a manager that returns EVERYTHING (for audit/admin view)
     all_objects = models.Manager() 
 
     class Meta:
         abstract = True
 
     def delete(self, *args, **kwargs):
-        # Override the delete method to perform a soft delete
         self.is_deleted = True
         self.save()
         
-class WhatsAppAccessPermission(SoftDeleteBase):
+class WhatsAppAccessPermission(SoftDeleteBase,AuditLogModel):
     """
     Assigns a dynamic role to a specific user.
     """
