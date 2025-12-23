@@ -10,12 +10,19 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        # 1️⃣ Add the column first
+        migrations.AddField(
+            model_name='template',
+            name='template_type',
+            field=models.CharField(
+                max_length=50,
+                default='html',
+            ),
+        ),
+
+        # 2️⃣ Ensure existing rows are updated (safe)
         migrations.RunSQL(
             "UPDATE templates SET template_type = 'html' WHERE template_type IS NULL;",
             reverse_sql="UPDATE templates SET template_type = NULL WHERE template_type = 'html';"
-        ),
-        migrations.RunSQL(
-            "ALTER TABLE templates ALTER COLUMN template_type SET DEFAULT 'html';",
-            reverse_sql="ALTER TABLE templates ALTER COLUMN template_type DROP DEFAULT;"
         ),
     ]
