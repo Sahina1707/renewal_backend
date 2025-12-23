@@ -20,40 +20,40 @@ class EmailFolder(models.Model):
         ('archive', 'Archive'),
         ('custom', 'Custom'),
     ]
-    CUSTOMER_TYPE_CHOICES = [
-        ('normal', 'Normal'),
-        ('hni', 'HNI (High Net Worth)'),
-        ('super_hni', 'Super HNI'),
-        ('vip', 'VIP'),
-    ]
-    customer_type = models.CharField(
-        max_length=20,
-        choices=CUSTOMER_TYPE_CHOICES,
-        default='normal',
-        help_text="Customer categorization for support tiers"
-    )
+    # CUSTOMER_TYPE_CHOICES = [
+    #     ('normal', 'Normal'),
+    #     ('hni', 'HNI (High Net Worth)'),
+    #     ('super_hni', 'Super HNI'),
+    #     ('vip', 'VIP'),
+    # ]
+    # customer_type = models.CharField(
+    #     max_length=20,
+    #     choices=CUSTOMER_TYPE_CHOICES,
+    #     default='normal',
+    #     help_text="Customer categorization for support tiers"
+    # )
 
-    ESCALATION_PRIORITY_CHOICES = [
-        ('high', 'High Priority'),
-        ('urgent', 'Urgent Priority'),
-        ('critical', 'Critical Priority'),
-    ]
-    is_escalated = models.BooleanField(default=False)
-    escalation_reason = models.TextField(blank=True, null=True)
-    escalation_priority = models.CharField(
-        max_length=20,
-        choices=ESCALATION_PRIORITY_CHOICES,
-        blank=True,
-        null=True
-    )
-    escalated_at = models.DateTimeField(blank=True, null=True)
-    escalated_by = models.ForeignKey(
-        User, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        related_name='escalated_emails'
-    )
-    due_date = models.DateTimeField(null=True, blank=True)
+    # ESCALATION_PRIORITY_CHOICES = [
+    #     ('high', 'High Priority'),
+    #     ('urgent', 'Urgent Priority'),
+    #     ('critical', 'Critical Priority'),
+    # ]
+    # is_escalated = models.BooleanField(default=False)
+    # escalation_reason = models.TextField(blank=True, null=True)
+    # escalation_priority = models.CharField(
+    #     max_length=20,
+    #     choices=ESCALATION_PRIORITY_CHOICES,
+    #     blank=True,
+    #     null=True
+    # )
+    # escalated_at = models.DateTimeField(blank=True, null=True)
+    # escalated_by = models.ForeignKey(
+    #     User, 
+    #     on_delete=models.SET_NULL, 
+    #     null=True, 
+    #     related_name='escalated_emails'
+    # )
+    # due_date = models.DateTimeField(null=True, blank=True)
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100)
     folder_type = models.CharField(max_length=20, choices=FOLDER_TYPES, default='custom')
@@ -123,19 +123,15 @@ class EmailInboxMessage(models.Model):
         ('feedback', 'Feedback'),
         ('marketing', 'Marketing'),
         ('system', 'System'),
+        ('refund', 'Refund'),            
+        ('appointment', 'Appointment'),  
+        ('uncategorized', 'Uncategorized'),
     ]
     
     SENTIMENT_CHOICES = [
         ('positive', 'Positive'),
         ('neutral', 'Neutral'),
         ('negative', 'Negative'),
-    ]
-    CATEGORY_CHOICES = [
-        ('complaint', 'Complaint'),      
-        ('feedback', 'Feedback'),        
-        ('refund', 'Refund'),            
-        ('appointment', 'Appointment'),  
-        ('uncategorized', 'Uncategorized'), 
     ]
     
     category = models.CharField(
@@ -519,12 +515,15 @@ class EmailInternalNote(models.Model):
         ordering = ['-created_at']
 class BulkEmailCampaign(models.Model):
     STATUS_CHOICES = [
+        ('unread', 'Unread'),
+        ('read', 'Read'),
+        ('replied', 'Replied'),
+        ('forwarded', 'Forwarded'),
+        ('archived', 'Archived'),
+        ('deleted', 'Deleted'),
         ('draft', 'Draft'),
-        ('scheduled', 'Scheduled'),
-        ('processing', 'Processing'),
-        ('completed', 'Completed'),
-        ('failed', 'Failed'),
-        ('cancelled', 'Cancelled'),
+        ('restored', 'Restored'),
+        ('failed', 'Failed'), 
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

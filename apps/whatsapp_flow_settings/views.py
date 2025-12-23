@@ -21,41 +21,59 @@ class AuditModelViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         # When updating, only change updated_by
         serializer.save(updated_by=self.request.user)
-                        
 class WhatsAppConfigurationViewSet(AuditModelViewSet):
     queryset = WhatsAppConfiguration.objects.all()
     serializer_class = WhatsAppConfigurationSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    # 1. GET /settings/ (Returns the single object)
+    # --- SINGLETON GET ---
     def list(self, request, *args, **kwargs):
+        """
+        GET /settings/
+        Returns the single configuration object.
+        """
         config = WhatsAppConfiguration.objects.first()
-        if config:
-            serializer = self.get_serializer(config)
-            return Response(serializer.data)
-        return Response({"detail": "No configuration found. Please create one (POST)."}, status=status.HTTP_404_NOT_FOUND)
+        if not config:
+            # Optional: Return empty data or 404 depending on frontend needs
+            return Response({"detail": "No configuration found."}, status=status.HTTP_404_NOT_FOUND)
+            
+        serializer = self.get_serializer(config)
+        return Response(serializer.data)
 
-    # 2. POST /settings/ (Creates the single object)
+    # --- SINGLETON CREATE ---
     def create(self, request, *args, **kwargs):
+        """
+        POST /settings/
+        Creates the configuration only if it doesn't exist.
+        """
         if WhatsAppConfiguration.objects.exists():
-            return Response({"detail": "Configuration already exists. Use PATCH."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Configuration already exists. Use PATCH to update."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
         return super().create(request, *args, **kwargs)
 
-    # 3. PATCH /settings/ (Updates the single object WITHOUT an ID)
-    # This is the special method to match your Postman "update_all"
     def update_singleton(self, request, *args, **kwargs):
+        """
+        PATCH /settings/
+        Updates the single configuration object without needing an ID.
+        """
         instance = WhatsAppConfiguration.objects.first()
         if not instance:
-            return Response({"detail": "No configuration found."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "No configuration found. Create it first."}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        
+        # We call perform_update manually to ensure audit logs work
+        self.perform_update(serializer)
 
-        # Call the standard update logic with this instance
-        kwargs['pk'] = instance.pk 
-        return self.update(request, *args, **kwargs)
+        return Response(serializer.data)
 
-    # 4. The Standard Update Logic (Fixed with Transaction)
     @transaction.atomic
     def update(self, request, *args, **kwargs):
-        # If called from update_singleton, we get the instance via get_object() using the PK we injected
         instance = self.get_object()
         data = request.data.copy()
 

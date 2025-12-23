@@ -1,10 +1,11 @@
+from ngrok import default
 from rest_framework import serializers
 from .models import EmailAccount, EmailModuleSettings, ClassificationRule
 
 # Serializer for the Email Account details
 class EmailAccountSerializer(serializers.ModelSerializer):
     access_credential = serializers.CharField(write_only=True,required=False)
-    specific_provider_name = serializers.CharField(source='specific_provider.name', read_only=True)
+    specific_provider_name = serializers.CharField(source='specific_provider.name', read_only=True,default=None)
     class Meta:
         model = EmailAccount
         fields = [

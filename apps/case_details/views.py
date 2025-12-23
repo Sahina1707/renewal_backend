@@ -11,6 +11,7 @@ from apps.customer_communication_preferences.models import CustomerCommunication
 from .serializers import CustomerCommunicationPreferenceSerializer
 from apps.renewal_timeline.models import CommonRenewalTimelineSettings
 from apps.customer_payments.models import CustomerPayment
+from apps.policy_timeline.models import CustomerPaymentSchedule
 
 
 class CombinedPolicyDataAPIView(APIView):
@@ -167,6 +168,16 @@ class CustomerPreferencesSummaryAPIView(APIView):
 
             renewal_timeline = None
             common_timeline_settings = CommonRenewalTimelineSettings.objects.filter(is_active=True).first()
+            # Try to get specific customer behavior
+            payment_schedule, created = CustomerPaymentSchedule.objects.get_or_create(
+                customer=customer,
+                defaults={
+                    'average_payment_timing_days': 5,
+                    'preferred_payment_method': 'credit_card',
+                    'total_payments_last_12_months': 12
+                }
+            )
+
             if common_timeline_settings:
                 if common_timeline_settings.reminder_schedule:
                     formatted_reminder_schedule = common_timeline_settings.reminder_schedule
@@ -182,8 +193,13 @@ class CustomerPreferencesSummaryAPIView(APIView):
                         else:
                             formatted_reminder_schedule.append(f"{days} days before due date (Email)")
                 
+                renewal_pattern = common_timeline_settings.renewal_pattern
+                if payment_schedule:
+                    avg_days = payment_schedule.average_payment_timing_days
+                    renewal_pattern = f"Pays {abs(avg_days)} days {'early' if avg_days >= 0 else 'late'}"
+
                 renewal_timeline = {
-                    'renewal_pattern': common_timeline_settings.renewal_pattern,
+                    'renewal_pattern': renewal_pattern,
                     'reminder_schedule': formatted_reminder_schedule,
                     'auto_renewal_enabled': common_timeline_settings.auto_renewal_enabled,
                     'is_active': common_timeline_settings.is_active,

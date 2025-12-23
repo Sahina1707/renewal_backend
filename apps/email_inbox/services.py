@@ -34,9 +34,14 @@ class EmailInboxService:
                       bcc_emails: List[str] = None, reply_to: str = None,
                       raw_headers: Dict[str, Any] = None, raw_body: str = None,
                       attachments: List[Dict[str, Any]] = None,
-                      folder_type_override: str = 'inbox',
-                      source: str = 'webhook') -> Dict[str, Any]:  # <--- ADDED 'source' HERE
+                      folder_type_override: str = 'inbox', source: str = 'webhook',
+                      message_id: Optional[str] = None) -> Dict[str, Any]:
         try:
+            final_message_id = message_id or str(uuid.uuid4())
+            if EmailInboxMessage.objects.filter(message_id=final_message_id).exists():
+                logger.info(f"Skipping duplicate email with Message-ID: {final_message_id}")
+                return {'success': True, 'message': 'Email already exists', 'skipped': True}
+
             target_folder, _ = EmailFolder.objects.get_or_create(
                 folder_type=folder_type_override,
                 defaults={
@@ -55,11 +60,11 @@ class EmailInboxService:
                 subject=subject,
                 html_content=html_content,
                 text_content=text_content,
-                message_id=str(uuid.uuid4()),
+                message_id=final_message_id,
                 thread_id=str(uuid.uuid4()),
                 folder=target_folder,
                 status='read' if folder_type_override == 'sent' else 'unread',
-                source=source,  # <--- PASS IT TO THE MODEL HERE
+                source=source,
                 attachments=[],
                 attachment_count=0,
                 headers={},
@@ -138,47 +143,6 @@ class EmailInboxService:
         except Exception as e:
             logger.error(f"Error classifying email: {str(e)}")
 
-    # --- API 1: DASHBOARD STATS (For Home Screen) ---
-    def get_dashboard_summary(self, user):
-        today = timezone.now().date()
-        emails = EmailInboxMessage.objects.filter(is_deleted=False)
-        
-        # 1. Top Cards Data
-        total_today = emails.filter(received_at__date=today).count()
-        new_unread = emails.filter(status='unread').count()
-        in_progress = emails.filter(status__in=['read', 'replied']).count()
-        
-        # 2. SLA Breaches (Due Date passed)
-        sla_breaches = emails.filter(
-            due_date__lt=timezone.now(),
-            status__in=['unread', 'read']
-        ).count()
-
-        # 3. Categorized Breakdown (For Colored Buttons)
-        # We initialize with 0 so the frontend always gets all keys
-        categories = {
-            "complaint": 0,
-            "feedback": 0,
-            "refund": 0,
-            "appointment": 0,
-            "uncategorized": 0
-        }
-        
-        # Fill with actual DB counts
-        db_counts = emails.values('category').annotate(count=Count('id'))
-        for item in db_counts:
-            cat_key = item['category']
-            if cat_key in categories:
-                categories[cat_key] = item['count']
-
-        return {
-            "total_today": total_today,
-            "new_emails": new_unread,
-            "in_progress": in_progress,
-            "sla_breaches": sla_breaches,
-            "categories": categories, # Use this object to populate the buttons
-            "sla_alert_message": f"{sla_breaches} emails have breached SLA requirements"
-        }
 
     def _apply_filters(self, email_message: EmailInboxMessage):
         """Apply email filters to the message"""

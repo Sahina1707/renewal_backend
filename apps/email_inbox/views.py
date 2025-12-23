@@ -104,6 +104,8 @@ class EmailFolderViewSet(viewsets.ModelViewSet):
 class EmailInboxMessageViewSet(viewsets.ModelViewSet):
     queryset = EmailInboxMessage.objects.filter(is_deleted=False)
     permission_classes = [IsAuthenticated]
+    lookup_field = 'custom_id'
+    lookup_url_kwarg = 'pk'
     
     def get_serializer_class(self):
         if self.action == 'list':
@@ -565,24 +567,24 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
         return Response({'message': 'Moved to Junk Email'})
 
     @action(detail=True, methods=['post'])
-    def mark_spam(self, request, pk=None):
+    def mark_spam(self, request, pk=None):  # Make sure to use 'pk' or 'custom_id' based on your previous lookup setup
         email = self.get_object()
-        inbox_folder = EmailFolder.objects.filter(folder_type='inbox').first()
-        if not inbox_folder:
-             inbox_folder, _ = EmailFolder.objects.get_or_create(
-                name="Inbox", 
-                defaults={'folder_type': 'inbox', 'is_system': True}
-            )
-
-        email.folder = inbox_folder
-        email.is_spam = False       
-        email.status = 'read'
         
+        # 1. Find or Create a Spam/Junk Folder
+        spam_folder = EmailFolder.objects.filter(folder_type__in=['spam', 'junk']).first()
+        if not spam_folder:
+             spam_folder, _ = EmailFolder.objects.get_or_create(
+                name="Junk Email", 
+                defaults={'folder_type': 'spam', 'is_system': True}
+            )
+        email.folder = spam_folder
+        email.is_spam = True         
+        email.status = 'read'        
         email.updated_by = request.user
+        
         email.save(update_fields=['folder', 'is_spam', 'status', 'updated_by'])
         
-        return Response({'message': 'Email moved back to Inbox'})
-
+        return Response({'message': 'Email marked as Spam and moved to Junk folder'})
     @action(detail=True, methods=['get'])
     def audit_trail(self, request, pk=None):
         email = self.get_object()
@@ -590,7 +592,6 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
         serializer = EmailAuditLogSerializer(logs, many=True)
         
         return Response(serializer.data)
-    # ... inside class EmailInboxMessageViewSet ...
 
     @action(detail=False, methods=['post', 'patch'])
     def save_draft(self, request):
@@ -789,20 +790,7 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
             ])
             
         return response
-    @action(detail=True, methods=['post'])
-    def mark_junk(self, request, pk=None):
-        email = self.get_object()
-        
-        junk_folder, _ = EmailFolder.objects.get_or_create(
-            folder_type='junk',
-            defaults={'name': 'Junk Email', 'is_system': True}
-        )
-            
-        email.folder = junk_folder
-        email.status = 'read'
-        email.save(update_fields=['folder', 'status'])
-        
-        return Response({'message': 'Moved to Junk Email'})
+
     @action(detail=True, methods=['post'])
     def restore(self, request, pk=None):
         """

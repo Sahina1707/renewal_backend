@@ -1,5 +1,6 @@
 import imaplib
 import email
+from unittest import result
 import requests
 import email.utils
 from email.header import decode_header
@@ -104,10 +105,8 @@ class EmailSyncService:
             except:
                 pass
 
-        # 3. Pass to the Main Inbox Service
-        # This ensures Manual Sync uses the exact same logic as the Background Task
         inbox_service = EmailInboxService()
-        inbox_service.receive_email(
+        result=inbox_service.receive_email(
             from_email=from_email,
             from_name=from_name,
             to_email=account.email_address,
@@ -116,6 +115,12 @@ class EmailSyncService:
             text_content=body_text,
             source='manual_sync'
         )
+        if result and not result.get('skipped'):
+            from apps.email_inbox.models import EmailInboxMessage
+            email_obj = EmailInboxMessage.objects.filter(message_id=result.get('message_id')).first()
+            
+            if email_obj:
+                self._send_webhook_notification(email_obj, account.user)
 
     def _send_webhook_notification(self, email_obj, user):
         """
