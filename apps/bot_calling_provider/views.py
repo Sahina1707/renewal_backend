@@ -12,7 +12,7 @@ from .models import (
     BotCallingProviderUsageLog,
     BotCallingProviderTestResult,
 )
-    ###
+
 from .serializers import (
     BotCallingProviderConfigSerializer,
     BotCallingProviderConfigCreateSerializer,
@@ -23,15 +23,26 @@ from .serializers import (
     BotCallingProviderTestSerializer,
     BotCallingProviderStatsSerializer,
 )
+
 from .services import BotCallingProviderService
 
 
+# ============================================================
+#  BOT CALLING PROVIDER CONFIG
+# ============================================================
+
 class BotCallingProviderConfigViewSet(viewsets.ModelViewSet):
-    """Manage bot calling provider configurations"""
+    """
+    Manage bot calling provider configurations.
+    PATCH behavior matches call_provider exactly.
+    """
 
     queryset = BotCallingProviderConfig.objects.filter(is_deleted=False)
     permission_classes = [IsAuthenticated]
 
+    # --------------------------------------------------
+    # Serializer selection
+    # --------------------------------------------------
     def get_serializer_class(self):
         if self.action == 'create':
             return BotCallingProviderConfigCreateSerializer
@@ -39,6 +50,9 @@ class BotCallingProviderConfigViewSet(viewsets.ModelViewSet):
             return BotCallingProviderConfigUpdateSerializer
         return BotCallingProviderConfigSerializer
 
+    # --------------------------------------------------
+    # Queryset filters
+    # --------------------------------------------------
     def get_queryset(self):
         queryset = super().get_queryset().filter(is_deleted=False)
 
@@ -60,15 +74,53 @@ class BotCallingProviderConfigViewSet(viewsets.ModelViewSet):
 
         return queryset.order_by('priority', 'name')
 
+    # --------------------------------------------------
+    # CREATE
+    # --------------------------------------------------
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
-    def perform_update(self, serializer):
-        serializer.save(updated_by=self.request.user)
+    # --------------------------------------------------
+    # UPDATE (PUT)
+    # --------------------------------------------------
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
 
+        serializer = self.get_serializer(
+            instance,
+            data=request.data,
+            partial=False,
+            context={'request': request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save(updated_by=request.user)
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # --------------------------------------------------
+    # PARTIAL UPDATE (PATCH) ✅ FIX
+    # --------------------------------------------------
+    def partial_update(self, request, *args, **kwargs):
+        instance = self.get_object()
+
+        serializer = self.get_serializer(
+            instance,
+            data=request.data,
+            partial=True,   # 🔥 REQUIRED FOR PATCH
+            context={'request': request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save(updated_by=request.user)
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # --------------------------------------------------
+    # DELETE (SOFT DELETE)
+    # --------------------------------------------------
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         name = instance.name
+
         instance.soft_delete()
         instance.deleted_by = request.user
         instance.save(update_fields=['deleted_by'])
@@ -78,12 +130,11 @@ class BotCallingProviderConfigViewSet(viewsets.ModelViewSet):
             status=status.HTTP_204_NO_CONTENT,
         )
 
-    # ---------- HEALTH CHECK ----------
+    # --------------------------------------------------
+    # HEALTH CHECK
+    # --------------------------------------------------
     @action(detail=True, methods=['post'], url_path='health_check')
     def health_check(self, request, pk=None):
-        """
-        POST /api/bot-calling-provider/providers/<id>/health_check/
-        """
         provider = self.get_object()
         service = BotCallingProviderService()
 
@@ -103,7 +154,9 @@ class BotCallingProviderConfigViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
-    # ---------- RESET USAGE ----------
+    # --------------------------------------------------
+    # RESET USAGE
+    # --------------------------------------------------
     @action(detail=True, methods=['post'])
     def reset_usage(self, request, pk=None):
         provider = self.get_object()
@@ -118,34 +171,30 @@ class BotCallingProviderConfigViewSet(viewsets.ModelViewSet):
                 {'error': 'Invalid reset type. Use "daily" or "monthly"'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
         return Response({'message': f'{reset_type.title()} bot call usage reset successfully'})
 
-    # ---------- SET DEFAULT ----------
+    # --------------------------------------------------
+    # SET DEFAULT
+    # --------------------------------------------------
     @action(detail=True, methods=['patch'], url_path='set-default')
     def set_default(self, request, pk=None):
-        """
-        PATCH /api/bot-calling-provider/providers/<id>/set-default/
-        Body: {}
-        """
         provider = self.get_object()
 
-        # Remove default from all non-deleted providers
         BotCallingProviderConfig.objects.filter(is_deleted=False).update(is_default=False)
 
-        # Set this provider as default + active
         provider.is_default = True
         provider.is_active = True
         provider.save(update_fields=['is_default', 'is_active'])
 
         return Response(
-            {
-                "message": "Default provider set successfully",
-                "provider_id": provider.id,
-            },
+            {"message": "Default provider set successfully", "provider_id": provider.id},
             status=status.HTTP_200_OK,
         )
 
-    # ---------- ACTIVATE / DEACTIVATE ----------
+    # --------------------------------------------------
+    # ACTIVATE / DEACTIVATE
+    # --------------------------------------------------
     @action(detail=True, methods=['patch'], url_path='activate')
     def activate(self, request, pk=None):
         provider = self.get_object()
@@ -168,12 +217,14 @@ class BotCallingProviderConfigViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
-    # ---------- STATISTICS ----------
+    # --------------------------------------------------
+    # STATISTICS
+    # --------------------------------------------------
     @action(detail=False, methods=['get'])
     def statistics(self, request):
         providers = self.get_queryset()
-
         stats = []
+
         for provider in providers:
             daily_pct = (provider.calls_made_today / provider.daily_limit * 100) if provider.daily_limit else 0
             monthly_pct = (provider.calls_made_this_month / provider.monthly_limit * 100) if provider.monthly_limit else 0
@@ -210,7 +261,9 @@ class BotCallingProviderConfigViewSet(viewsets.ModelViewSet):
         serializer = BotCallingProviderStatsSerializer(stats, many=True)
         return Response(serializer.data)
 
-    # ---------- HEALTH STATUS FOR ALL ----------
+    # --------------------------------------------------
+    # HEALTH STATUS FOR ALL
+    # --------------------------------------------------
     @action(detail=False, methods=['get'])
     def health_status(self, request):
         providers = self.get_queryset()
@@ -233,6 +286,10 @@ class BotCallingProviderConfigViewSet(viewsets.ModelViewSet):
         return Response(data)
 
 
+# ============================================================
+#  HEALTH LOG VIEWSET
+# ============================================================
+
 class BotCallingProviderHealthLogViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = BotCallingProviderHealthLog.objects.all()
     serializer_class = BotCallingProviderHealthLogSerializer
@@ -240,6 +297,7 @@ class BotCallingProviderHealthLogViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
+
         provider_id = self.request.query_params.get('provider_id')
         if provider_id:
             queryset = queryset.filter(provider_id=provider_id)
@@ -249,14 +307,19 @@ class BotCallingProviderHealthLogViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(is_healthy=is_healthy.lower() == 'true')
 
         start_date = self.request.query_params.get('start_date')
-        end_date = self.request.query_params.get('end_date')
         if start_date:
             queryset = queryset.filter(checked_at__gte=start_date)
+
+        end_date = self.request.query_params.get('end_date')
         if end_date:
             queryset = queryset.filter(checked_at__lte=end_date)
 
         return queryset.order_by('-checked_at')
 
+
+# ============================================================
+#  USAGE LOG VIEWSET
+# ============================================================
 
 class BotCallingProviderUsageLogViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = BotCallingProviderUsageLog.objects.all()
@@ -265,19 +328,25 @@ class BotCallingProviderUsageLogViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
+
         provider_id = self.request.query_params.get('provider_id')
         if provider_id:
             queryset = queryset.filter(provider_id=provider_id)
 
         start_date = self.request.query_params.get('start_date')
-        end_date = self.request.query_params.get('end_date')
         if start_date:
             queryset = queryset.filter(logged_at__gte=start_date)
+
+        end_date = self.request.query_params.get('end_date')
         if end_date:
             queryset = queryset.filter(logged_at__lte=end_date)
 
         return queryset.order_by('-logged_at')
 
+
+# ============================================================
+#  TEST RESULT VIEWSET
+# ============================================================
 
 class BotCallingProviderTestResultViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = BotCallingProviderTestResult.objects.all()
@@ -286,6 +355,7 @@ class BotCallingProviderTestResultViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
+
         provider_id = self.request.query_params.get('provider_id')
         if provider_id:
             queryset = queryset.filter(provider_id=provider_id)

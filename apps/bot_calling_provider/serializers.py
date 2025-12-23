@@ -8,6 +8,10 @@ from .models import (
 )
 
 
+# ============================================================
+#  READ / LIST SERIALIZER
+# ============================================================
+
 class BotCallingProviderConfigSerializer(serializers.ModelSerializer):
     provider_type_display = serializers.CharField(source='get_provider_type_display', read_only=True)
     priority_display = serializers.CharField(source='get_priority_display', read_only=True)
@@ -20,17 +24,18 @@ class BotCallingProviderConfigSerializer(serializers.ModelSerializer):
 
             'bot_script',
 
-            # Ubona Bot
+            # Ubona
             'ubona_api_key', 'ubona_api_url', 'ubona_account_sid', 'ubona_caller_id',
 
             # House of Agents
-            'hoa_api_key', 'hoa_api_url', 'hoa_agent_id', 'hoa_campaign_id', 'hoa_webhook_url',
+            'hoa_api_key', 'hoa_api_url', 'hoa_agent_id',
+            'hoa_campaign_id', 'hoa_webhook_url',
 
             # Gnani.ai
             'gnani_api_key', 'gnani_api_url', 'gnani_bot_id',
             'gnani_project_id', 'gnani_language', 'gnani_voice_gender',
 
-            # Twilio Voice Bot
+            # Twilio
             'twilio_account_sid', 'twilio_auth_token', 'twilio_from_number',
             'twilio_status_callback_url', 'twilio_voice_url',
 
@@ -43,48 +48,58 @@ class BotCallingProviderConfigSerializer(serializers.ModelSerializer):
             'calls_made_today', 'calls_made_this_month',
             'last_reset_daily', 'last_reset_monthly',
 
-            # Audit fields
+            # Audit
             'created_at', 'updated_at', 'created_by', 'updated_by',
             'is_deleted', 'deleted_at', 'deleted_by',
         ]
+
         read_only_fields = [
-            'id', 'created_at', 'updated_at', 'created_by', 'updated_by',
-            'last_health_check', 'status', 'calls_made_today',
-            'calls_made_this_month', 'last_reset_daily', 'last_reset_monthly',
+            'id',
+            'created_at', 'updated_at',
+            'created_by', 'updated_by',
+            'last_health_check', 'status',
+            'calls_made_today', 'calls_made_this_month',
+            'last_reset_daily', 'last_reset_monthly',
             'is_deleted', 'deleted_at', 'deleted_by',
         ]
 
+
+# ============================================================
+#  CREATE SERIALIZER
+# ============================================================
 
 class BotCallingProviderConfigCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = BotCallingProviderConfig
         fields = [
             'name', 'provider_type',
-
             'bot_script',
 
-            # Ubona Bot
+            # Ubona
             'ubona_api_key', 'ubona_api_url', 'ubona_account_sid', 'ubona_caller_id',
 
-            # House of Agents
-            'hoa_api_key', 'hoa_api_url', 'hoa_agent_id', 'hoa_campaign_id', 'hoa_webhook_url',
+            # HOA
+            'hoa_api_key', 'hoa_api_url', 'hoa_agent_id',
+            'hoa_campaign_id', 'hoa_webhook_url',
 
-            # Gnani.ai
+            # Gnani
             'gnani_api_key', 'gnani_api_url', 'gnani_bot_id',
             'gnani_project_id', 'gnani_language', 'gnani_voice_gender',
 
-            # Twilio Voice Bot
+            # Twilio
             'twilio_account_sid', 'twilio_auth_token', 'twilio_from_number',
             'twilio_status_callback_url', 'twilio_voice_url',
 
-            # limits + flags
+            # Limits & flags
             'daily_limit', 'monthly_limit', 'rate_limit_per_minute',
             'priority', 'is_default', 'is_active',
         ]
 
     def create(self, validated_data):
         from .services import BotCallingProviderService
-        validated_data['created_by'] = self.context['request'].user
+
+        request = self.context.get('request')
+        validated_data['created_by'] = request.user if request else None
 
         service = BotCallingProviderService()
         secret_fields = [
@@ -95,26 +110,77 @@ class BotCallingProviderConfigCreateSerializer(serializers.ModelSerializer):
         ]
 
         for field in secret_fields:
-            if field in validated_data and validated_data[field]:
+            if validated_data.get(field):
                 validated_data[field] = service._encrypt_credential(validated_data[field])
 
         return super().create(validated_data)
 
 
+# ============================================================
+#  UPDATE / PATCH SERIALIZER 🔥 FIXED
+# ============================================================
+
 class BotCallingProviderConfigUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = BotCallingProviderConfig
         fields = [
-            'name', 'bot_script',
+            'name',
+            'bot_script',
+
+            # Ubona
+            'ubona_api_key', 'ubona_api_url',
+            'ubona_account_sid', 'ubona_caller_id',
+
+            # HOA
+            'hoa_api_key', 'hoa_api_url',
+            'hoa_agent_id', 'hoa_campaign_id', 'hoa_webhook_url',
+
+            # Gnani
+            'gnani_api_key', 'gnani_api_url',
+            'gnani_bot_id', 'gnani_project_id',
+            'gnani_language', 'gnani_voice_gender',
+
+            # Twilio
+            'twilio_account_sid', 'twilio_auth_token',
+            'twilio_from_number',
+            'twilio_status_callback_url', 'twilio_voice_url',
+
+            # Limits & flags
             'daily_limit', 'monthly_limit',
-            'rate_limit_per_minute', 'priority',
-            'is_default', 'is_active',
+            'rate_limit_per_minute',
+            'priority', 'is_default', 'is_active',
         ]
 
     def update(self, instance, validated_data):
-        validated_data['updated_by'] = self.context['request'].user
-        return super().update(instance, validated_data)
+        from .services import BotCallingProviderService
 
+        request = self.context.get('request')
+        service = BotCallingProviderService()
+
+        # Encrypt secrets if present
+        secret_fields = [
+            'ubona_api_key',
+            'hoa_api_key',
+            'gnani_api_key',
+            'twilio_auth_token',
+        ]
+
+        for field in secret_fields:
+            if validated_data.get(field):
+                validated_data[field] = service._encrypt_credential(validated_data[field])
+
+        instance = super().update(instance, validated_data)
+
+        if request and request.user.is_authenticated:
+            instance.updated_by = request.user
+            instance.save(update_fields=['updated_by'])
+
+        return instance
+
+
+# ============================================================
+#  HEALTH LOG SERIALIZER
+# ============================================================
 
 class BotCallingProviderHealthLogSerializer(serializers.ModelSerializer):
     provider_name = serializers.CharField(source='provider.name', read_only=True)
@@ -131,6 +197,10 @@ class BotCallingProviderHealthLogSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'checked_at', 'created_at', 'updated_at']
 
+
+# ============================================================
+#  USAGE LOG SERIALIZER
+# ============================================================
 
 class BotCallingProviderUsageLogSerializer(serializers.ModelSerializer):
     provider_name = serializers.CharField(source='provider.name', read_only=True)
@@ -158,6 +228,10 @@ class BotCallingProviderUsageLogSerializer(serializers.ModelSerializer):
         return round(obj.total_response_time / obj.success_count, 3)
 
 
+# ============================================================
+#  TEST RESULT SERIALIZER
+# ============================================================
+
 class BotCallingProviderTestResultSerializer(serializers.ModelSerializer):
     provider_name = serializers.CharField(source='provider.name', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
@@ -174,6 +248,10 @@ class BotCallingProviderTestResultSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'tested_at']
 
 
+# ============================================================
+#  TEST REQUEST SERIALIZER
+# ============================================================
+
 class BotCallingProviderTestSerializer(serializers.Serializer):
     test_number = serializers.CharField()
 
@@ -182,6 +260,10 @@ class BotCallingProviderTestSerializer(serializers.Serializer):
             raise serializers.ValidationError("Test phone number is required")
         return value
 
+
+# ============================================================
+#  STATS SERIALIZER
+# ============================================================
 
 class BotCallingProviderStatsSerializer(serializers.Serializer):
     provider_id = serializers.IntegerField()
