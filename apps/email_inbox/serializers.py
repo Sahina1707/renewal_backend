@@ -127,7 +127,7 @@ class EmailInboxMessageSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             'id', 'message_id', 'received_at', 'read_at', 'replied_at',
-            'forwarded_at', 'created_at', 'updatedparent_at', 'created_by',
+            'forwarded_at', 'created_at', 'updated_at', 'created_by',
             'updated_by', 'is_deleted', 'deleted_at', 'deleted_by'
         ]
 
@@ -438,15 +438,16 @@ class EmailInboxListSerializer(serializers.ModelSerializer):
         model = EmailInboxMessage
         fields = [
             'id', 
+            'custom_id',
             'message_id', 
             'is_starred',
             'from_display',
             'from_email',
             'subject',
-            'snippet',          # Just a 1-line preview, NOT full body
-            'customer_type',    # VIP/Normal badge
+            'snippet',          
+            'customer_type',    
             'priority',
-            'has_attachments',  # Just a boolean icon
+            'has_attachments',  
             'status',
             'date_column',
             'due_date_column',
@@ -486,7 +487,7 @@ class EmailInboxListSerializer(serializers.ModelSerializer):
     def get_from_display(self, obj):
         return obj.from_name if obj.from_name else obj.from_email
 
-class EmailAttachmentSerializer(serializers.ModelSerializer):
+class EmailAttachmentSimpleSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmailAttachment
         fields = ['id', 'filename', 'file_path', 'file_size', 'content_type']
@@ -494,7 +495,7 @@ class EmailAttachmentSerializer(serializers.ModelSerializer):
 class EmailInboxDetailSerializer(serializers.ModelSerializer):
     # Full details for the page view
     internal_notes = serializers.SerializerMethodField()
-    attachments = EmailAttachmentSerializer(many=True, read_only=True)
+    attachments = EmailAttachmentSimpleSerializer(many=True, read_only=True)
     formatted_date = serializers.SerializerMethodField()
     thread_history = serializers.SerializerMethodField()
 
@@ -502,6 +503,7 @@ class EmailInboxDetailSerializer(serializers.ModelSerializer):
         model = EmailInboxMessage
         fields = [
             'id',
+            'custom_id',
             'message_id',
             'thread_id',
             'subject',
@@ -678,3 +680,10 @@ class RecipientImportSerializer(serializers.Serializer):
         if not data.get('csv_text') and not data.get('file'):
             raise serializers.ValidationError("Please provide either text or a file.")
         return data
+
+class CampaignPreviewSerializer(serializers.Serializer):
+    """Serializer for previewing a campaign email"""
+    template_id = serializers.UUIDField(required=False)
+    custom_subject = serializers.CharField(required=False, allow_blank=True)
+    additional_message = serializers.CharField(required=False, allow_blank=True)
+    sample_recipient = serializers.DictField(required=False, default=dict)

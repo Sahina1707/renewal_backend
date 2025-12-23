@@ -2,8 +2,8 @@ from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.conf import settings
 from django.utils import timezone
-from .utils import encrypt_credential, decrypt_credential, apply_provider_defaults
-
+from .utils import _get_fernet, encrypt_credential, decrypt_credential, apply_provider_defaults
+from cryptography.fernet import InvalidToken
 PRIORITY_CHOICES = [
     ('high', 'High'),
     ('medium', 'Medium'),
@@ -114,10 +114,6 @@ class EmailAccount(models.Model):
         apply_provider_defaults(self)
 
         if self.access_credential:
-            # We must import Fernet directly to check if the string is valid
-            from cryptography.fernet import Fernet, InvalidToken
-            from .utils import _get_fernet
-
             try:
                 f = _get_fernet()
                 f.decrypt(self.access_credential.encode())

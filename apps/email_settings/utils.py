@@ -54,9 +54,7 @@ class ConnectionResult:
 def _get_fernet() -> Fernet:
     key = getattr(settings, 'EMAIL_CREDENTIAL_KEY', None)
     if not key:
-        # Fallback for dev if key is missing, BUT strictly warn in logs
-        print("WARNING: EMAIL_CREDENTIAL_KEY not set. Generating temporary key.")
-        return Fernet(Fernet.generate_key())
+        raise ValueError("EMAIL_CREDENTIAL_KEY must be set in settings.")
     return Fernet(key.encode() if isinstance(key, str) else key)
 
 def encrypt_credential(plaintext: str) -> str:
@@ -98,7 +96,6 @@ def normalize_and_get_credential(account_obj, decrypt: bool = True) -> str:
             return candidate
     return candidate
 
-# ---------- Transport abstraction ----------
 class EmailTransport:
     def __init__(self, imap_server, imap_port, smtp_server, smtp_port,
                  email_address, credential, use_ssl_tls=True,
@@ -126,24 +123,17 @@ class EmailTransport:
             return ConnectionResult(True, "IMAP connection successful.", {})
         except Exception as e:
             return ConnectionResult(False, f"IMAP Error: {str(e)}", {"error": str(e)})
-
+    
     def check_smtp(self) -> ConnectionResult:
         try:
-            implicit_ssl = self.smtp_implicit_ssl if self.smtp_implicit_ssl is not None else self.use_ssl_tls
-            
-            if implicit_ssl and self.smtp_port == 465:
+            if self.smtp_port == 465:
                 S = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, timeout=self.timeout)
             else:
                 S = smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=self.timeout)
-                if not implicit_ssl:
-                    try:
-                        if S.has_extn('STARTTLS'):
-                            S.starttls()
-                            S.ehlo()
-                    except Exception:
-                        pass # Best effort
-
-            S.ehlo()
+                S.ehlo()
+                if S.has_extn('STARTTLS'):
+                    S.starttls()  
+                    S.ehlo()
             S.login(self.email_address, self.credential)
             S.quit()
             return ConnectionResult(True, "SMTP connection successful.", {})
