@@ -41,3 +41,4 @@ Thumbs.db
 # Backup / temp
 *.bak
 *.swp
+.settings.py
