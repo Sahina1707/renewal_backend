@@ -148,7 +148,8 @@ class Customer(BaseModel):
         ],
         default='email'
     )
-    preferred_language = models.CharField(max_length=10, default='en')
+    preferred_language = models.CharField(max_length=50, default='English')
+    document_language = models.CharField(max_length=50, default='English')
     timezone = models.CharField(max_length=50, default='Asia/Kolkata')
     
     # Communication Preferences

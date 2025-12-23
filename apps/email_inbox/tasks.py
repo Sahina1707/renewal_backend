@@ -20,10 +20,9 @@ from apps.email_settings.utils import decrypt_credential
 # Imports from Inbox App
 from .models import BulkEmailCampaign, EmailInboxMessage, EmailFolder
 from .services import EmailInboxService
+from apps.email_provider.models import EmailProviderConfig
 
 logger = logging.getLogger(__name__)
-
-# --- Helper Functions ---
 
 def generate_pdf_from_html(html_content, context_data):
     try:
@@ -85,9 +84,6 @@ def get_sending_configuration(account):
         return config
 
     # OPTION B & C: Use a Provider
-    # NOTE: Ensure this matches your actual app name for providers
-    from apps.email_provider.models import EmailProviderConfig 
-    
     provider = None
     if account.sending_method == 'specific_provider':
         provider = account.specific_provider
@@ -137,10 +133,12 @@ def send_email_with_config(config, to_email, subject, html_body, attachments):
         return False
 
 def process_imap_folder(mail, folder_name, is_incoming, account, service):
-    # ... (Keep your existing IMAP folder processing logic here) ...
-    # (It looks correct in your snippet)
     try:
-        mail.select(folder_name)
+        status, _ = mail.select(f'"{folder_name}"') # Use quotes for folder names with spaces
+        if status != 'OK':
+            logger.warning(f"Could not select folder '{folder_name}' for account {account.email_address}.")
+            return 0
+
         status, messages = mail.search(None, 'UNSEEN')
         if status != "OK" or not messages[0]: return 0
 
@@ -152,20 +150,30 @@ def process_imap_folder(mail, folder_name, is_incoming, account, service):
                 raw_email = msg_data[0][1]
                 msg = email.message_from_bytes(raw_email)
 
+                # --- FIX: Extract Message-ID to prevent duplicates ---
+                message_id_header = msg.get("Message-ID", "").strip()
+                cleaned_message_id = message_id_header.strip('<>')
+
                 subject = decode_email_header(msg.get("Subject", "(No Subject)"))
                 from_header = decode_email_header(msg.get("From", ""))
                 from_name, from_email_addr = email.utils.parseaddr(from_header)
                 
-                service.receive_email(
+                result = service.receive_email(
                     from_email=from_email_addr,
                     from_name=from_name,
                     to_email=account.email_address,
                     subject=subject,
                     html_content=extract_body(msg, 'html'),
                     text_content=extract_body(msg, 'plain'),
-                    folder_type_override='inbox' if is_incoming else 'sent'
+                    folder_type_override='inbox' if is_incoming else 'sent',
+                    message_id=cleaned_message_id
                 )
-                count += 1
+                
+                # Mark as seen to prevent re-fetching, regardless of outcome
+                mail.store(email_id, '+FLAGS', '\\Seen')
+
+                if not result.get('skipped'):
+                    count += 1
             except Exception as e:
                 logger.error(f"Error parsing email {email_id}: {e}")
         return count
@@ -262,8 +270,8 @@ def send_campaign_emails(campaign_id):
                     doc_name = f"Policy_{recipient.get('policy_number', 'Doc')}.pdf"
                     attachments.append({'name': doc_name, 'content': pdf_bytes, 'content_type': 'application/pdf'})
 
-                # Save to DB (Sent Items)
-                EmailInboxMessage.objects.create(
+# Save to DB (Sent Items)
+                email_msg = EmailInboxMessage.objects.create( # <--- ASSIGN TO 'email_msg'
                     from_email=sender_account.email_address,
                     to_emails=[recipient.get('email')],
                     subject=final_subject,
@@ -276,11 +284,15 @@ def send_campaign_emails(campaign_id):
                     created_by=campaign.created_by
                 )
 
-                # Send using Config
-                if send_email_with_config(smtp_config, recipient.get('email'), final_subject, body_content, attachments):
+                # 2. Try to send
+                is_sent = send_email_with_config(smtp_config, recipient.get('email'), final_subject, body_content, attachments)
+
+                if is_sent:
                     success_count += 1
                 else:
                     fail_count += 1
+                    email_msg.status = 'failed' 
+                    email_msg.save(update_fields=['status'])
             except Exception as e:
                 logger.error(f"Error sending to {recipient.get('email')}: {e}")
                 fail_count += 1

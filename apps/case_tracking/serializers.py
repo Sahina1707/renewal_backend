@@ -378,7 +378,8 @@ class CaseTrackingSerializer(serializers.ModelSerializer):
     
     def get_agent_name(self, obj):
         if obj.policy and obj.policy.agent:
-            return obj.policy.agent.agent_name
+            # Use get_full_name() for the best display name
+            return obj.policy.agent.get_full_name() or obj.policy.agent.username
         return None
     
     def get_priority(self, obj):
@@ -518,8 +519,9 @@ class CaseDetailSerializer(serializers.ModelSerializer):
 
 
     def get_agent_name(self, obj):
-        return obj.policy.agent_name if obj.policy and obj.policy.agent_name else None
-
+        if obj.policy and obj.policy.agent:
+            return getattr(obj.policy.agent, 'agent_name', str(obj.policy.agent))
+        return None
     def get_upload_filename(self, obj):
         try:
 
