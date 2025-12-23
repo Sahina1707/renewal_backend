@@ -34,6 +34,11 @@ def search_case_logs_by_case_number_api(request: HttpRequest) -> Response:
                 'error': 'Case not found',
                 'message': f'No case found with case number: {case_number}'
             }, status=status.HTTP_404_NOT_FOUND)
+        except RenewalCase.MultipleObjectsReturned:
+            return Response({
+                'error': 'Multiple cases found',
+                'message': f'Multiple cases found with case number: {case_number}'
+            }, status=status.HTTP_400_BAD_REQUEST)
 
         case_logs = CaseLog.objects.filter(
             renewal_case=renewal_case
@@ -47,13 +52,6 @@ def search_case_logs_by_case_number_api(request: HttpRequest) -> Response:
         ).order_by('-created_at')
 
         logs_count = case_logs.count()
-
-        if logs_count == 0:
-            response_data = {
-                'success': True,
-                'message': f'No logs found for this case ID: {renewal_case.case_number}. Please check your input and try again.'
-            }
-            return Response(response_data, status=status.HTTP_200_OK)
 
         serializer = CaseLogSerializer(case_logs, many=True)
 
@@ -71,7 +69,7 @@ def search_case_logs_by_case_number_api(request: HttpRequest) -> Response:
                 'customer_email': renewal_case.customer.email,
                 'customer_phone': renewal_case.customer.phone,
                 'policy_number': renewal_case.policy.policy_number,
-                'policy_type': renewal_case.policy.policy_type.name,
+                'policy_type': renewal_case.policy.policy_type.name if renewal_case.policy.policy_type else None,
                 'status': renewal_case.status,
                 'status_display': renewal_case.get_status_display(),  
                 'assigned_to': renewal_case.assigned_to.get_full_name() if renewal_case.assigned_to else None,
@@ -80,7 +78,7 @@ def search_case_logs_by_case_number_api(request: HttpRequest) -> Response:
             },
             'activities': serializer.data,
             'total_activities': logs_count,
-            'message': f'Found {logs_count} activities for case {renewal_case.case_number}'
+            'message': f'Found {logs_count} activities for case {renewal_case.case_number}' if logs_count > 0 else f'No activities found for case {renewal_case.case_number}'
         }
 
         return Response(response_data, status=status.HTTP_200_OK)
@@ -113,16 +111,19 @@ def search_case_logs_by_policy_number_api(request: HttpRequest) -> Response:
             'policy',
             'policy__policy_type',
             'assigned_to'
-        ).filter(policy__policy_number__iexact=policy_number)
+        ).filter(policy__policy_number__iexact=policy_number).order_by('-created_at')
 
-        if not renewal_cases.exists():
+        # Convert to list to evaluate once and avoid multiple DB hits
+        renewal_cases_list = list(renewal_cases)
+
+        if not renewal_cases_list:
             return Response({
                 'error': 'Case not found',
                 'message': f'No renewal case found for policy number: {policy_number}'
             }, status=status.HTTP_404_NOT_FOUND)
 
         case_logs = CaseLog.objects.filter(
-            renewal_case__in=renewal_cases
+            renewal_case__in=renewal_cases_list
         ).select_related(
             'renewal_case',
             'renewal_case__customer',
@@ -134,16 +135,9 @@ def search_case_logs_by_policy_number_api(request: HttpRequest) -> Response:
 
         logs_count = case_logs.count()
 
-        if logs_count == 0:
-            response_data = {
-                'success': True,
-                'message': f'No logs found for policy number: {policy_number}. Please check your input and try again.'
-            }
-            return Response(response_data, status=status.HTTP_200_OK)
-
         serializer = CaseLogSerializer(case_logs, many=True)
 
-        first_case = renewal_cases.first()
+        first_case = renewal_cases_list[0]
 
         response_data = {
             'success': True,
@@ -153,17 +147,24 @@ def search_case_logs_by_policy_number_api(request: HttpRequest) -> Response:
                 'case_found': True
             },
             'case_info': {
+                'case_id': first_case.id,
+                'case_number': first_case.case_number,
                 'policy_number': first_case.policy.policy_number,
-                'policy_type': first_case.policy.policy_type.name,
+                'policy_type': first_case.policy.policy_type.name if first_case.policy.policy_type else None,
                 'customer_name': first_case.customer.full_name,
                 'customer_email': first_case.customer.email,
                 'customer_phone': first_case.customer.phone,
-                'total_cases': renewal_cases.count(),
-                'case_numbers': [case.case_number for case in renewal_cases]
+                'status': first_case.status,
+                'status_display': first_case.get_status_display(),
+                'assigned_to': first_case.assigned_to.get_full_name() if first_case.assigned_to else None,
+                'created_at': first_case.created_at.strftime('%m/%d/%Y, %I:%M:%S %p'),
+                'updated_at': first_case.updated_at.strftime('%m/%d/%Y, %I:%M:%S %p') if first_case.updated_at else None,
+                'total_cases': len(renewal_cases_list),
+                'case_numbers': [case.case_number for case in renewal_cases_list]
             },
             'activities': serializer.data,
             'total_activities': logs_count,
-            'message': f'Found {logs_count} activities for policy {policy_number} across {renewal_cases.count()} renewal case(s)'
+            'message': f'Found {logs_count} activities for policy {policy_number} across {len(renewal_cases_list)} renewal case(s)' if logs_count > 0 else f'No activities found for policy {policy_number}'
         }
 
         return Response(response_data, status=status.HTTP_200_OK)

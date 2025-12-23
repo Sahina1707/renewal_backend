@@ -18,6 +18,9 @@ class Template(models.Model):
         ('payment', 'Payment'),
         ('claims', 'Claims'),
         ('remainder', 'Remainder'),
+        ('general', 'General'),
+        ('inquiry', 'Inquiry'),
+        ('complaint','Complaint')
     ]
 
     TAG_OPTIONS = [

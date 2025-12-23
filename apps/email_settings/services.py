@@ -1,11 +1,14 @@
 import imaplib
 import email
+from unittest import result
 import requests
+import email.utils
 from email.header import decode_header
 from django.utils import timezone
 from dateutil import parser
-from .models import EmailAccount, EmailMessage, ClassificationRule, EmailModuleSettings
-from .utils import normalize_and_get_credential
+from .models import EmailAccount, ClassificationRule, EmailModuleSettings
+from .utils import EmailTransport, normalize_and_get_credential
+from apps.email_inbox.services import EmailInboxService
 
 class EmailSyncService:
     def sync_account(self, account_id):
@@ -13,14 +16,24 @@ class EmailSyncService:
         Connects to a specific account and fetches new emails.
         """
         account = EmailAccount.objects.get(id=account_id)
-        credential = normalize_and_get_credential(account)
+        credential = normalize_and_get_credential(account,decrypt=True)
         
         if not credential:
             return {"success": False, "error": "No credentials found"}
 
         try:
+            transport = EmailTransport(
+                imap_server=account.imap_server,
+                imap_port=account.imap_port,
+                smtp_server=account.smtp_server,
+                smtp_port=account.smtp_port,
+                email_address=account.email_address,
+                credential=credential,
+                use_ssl_tls=account.use_ssl_tls
+            )
             # 1. Connect to IMAP
-            mail = imaplib.IMAP4_SSL(account.imap_server, account.imap_port)
+            # 1. Connect to IMAP
+            mail = imaplib.IMAP4_SSL(transport.imap_server, transport.imap_port, timeout=transport.timeout)
             mail.login(account.email_address, credential)
             mail.select("INBOX")
 
@@ -64,11 +77,7 @@ class EmailSyncService:
         # 1. Extract Headers
         subject = self._decode_str(msg["Subject"])
         sender = self._decode_str(msg.get("From"))
-        message_id = msg.get("Message-ID", "").strip()
-        
-        # Avoid duplicates
-        if EmailMessage.objects.filter(message_id=message_id).exists():
-            return
+        from_name, from_email = email.utils.parseaddr(sender)
 
         # 2. Extract Body
         body_text = ""
@@ -96,35 +105,22 @@ class EmailSyncService:
             except:
                 pass
 
-        # 3. Apply Classification Rules (Simple Keyword Match)
-        category = 'uncategorized'
-        priority = 'medium'
-        
-        # Check database rules for this user
-        rules = ClassificationRule.objects.filter(user=account.user, is_enabled=True)
-        search_text = (subject + " " + body_text).lower()
-        
-        for rule in rules:
-            if rule.keyword.lower() in search_text:
-                category = rule.category
-                priority = rule.priority
-                break  # Stop at first match
-
-        email_obj = EmailMessage.objects.create(
-            email_account=account,
-            message_id=message_id,
-            subject=subject[:900], 
-            sender=sender,
-            received_at=timezone.now(), 
-            body_text=body_text,
-            body_html=body_html,
-            category=category,
-            priority=priority,
-            is_read=False
+        inbox_service = EmailInboxService()
+        result=inbox_service.receive_email(
+            from_email=from_email,
+            from_name=from_name,
+            to_email=account.email_address,
+            subject=subject,
+            html_content=body_html,
+            text_content=body_text,
+            source='manual_sync'
         )
-        
-        # --- NEW: TRIGGER WEBHOOK AFTER SAVING ---
-        self._send_webhook_notification(email_obj, account.user)
+        if result and not result.get('skipped'):
+            from apps.email_inbox.models import EmailInboxMessage
+            email_obj = EmailInboxMessage.objects.filter(message_id=result.get('message_id')).first()
+            
+            if email_obj:
+                self._send_webhook_notification(email_obj, account.user)
 
     def _send_webhook_notification(self, email_obj, user):
         """

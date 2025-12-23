@@ -108,6 +108,11 @@ LOCAL_APPS = [
     'apps.case_logs_chatbot',
     'apps.teams',
     'apps.email_settings',
+    'apps.call_provider',
+    'apps.bot_calling_provider',
+    'apps.social_integration',
+    
+
     'apps.whatsapp_flow_settings',
     'apps.whatsapp_flow_management',
     # 'apps.communications',

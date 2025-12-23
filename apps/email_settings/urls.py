@@ -15,7 +15,7 @@ urlpatterns = [
     # Custom URL for the singleton Email Module Settings (e.g., /settings/general/)
     path('general/', EmailModuleSettingsAPIView.as_view(), name='general-settings'),
     path('email-accounts/<int:pk>/test-connection/', TestConnectionAPIView.as_view(), name='email-account-test-connection'),
-    path('email-accounts/<int:pk>/set-sync/', ManualSyncAPIView.as_view(), name='manual-sync'),
+    path('email-accounts/<int:pk>/sync-now/', ManualSyncAPIView.as_view(), name='manual-sync'),
     path('providers/defaults/', ProviderDefaultsAPIView.as_view(), name='provider-defaults'),
     path('test-global-connection/', GlobalTestConnectionAPIView.as_view(), name='global-test-connection'),
 ]

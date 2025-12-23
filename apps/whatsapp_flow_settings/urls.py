@@ -3,17 +3,21 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     WhatsAppConfigurationViewSet, 
     WhatsAppAccessPermissionViewSet, 
-    FlowAccessRoleViewSet,     
-    FlowAuditLogViewSet        
+    FlowAccessRoleViewSet, 
+    FlowAuditLogViewSet
 )
 
 router = DefaultRouter()
-router.register(r'settings', WhatsAppConfigurationViewSet, basename='whatsapp-settings')
-router.register(r'permissions', WhatsAppAccessPermissionViewSet, basename='whatsapp-permissions')
-router.register(r'roles', FlowAccessRoleViewSet, basename='whatsapp-roles')
-router.register(r'auditlogs', FlowAuditLogViewSet, basename='whatsapp-auditlogs')
-
+router.register(r'permissions', WhatsAppAccessPermissionViewSet, basename='permissions')
+router.register(r'roles', FlowAccessRoleViewSet, basename='roles')
+router.register(r'auditlogs', FlowAuditLogViewSet, basename='auditlogs')
 
 urlpatterns = [
+    path('settings/', WhatsAppConfigurationViewSet.as_view({
+        'get': 'list',             
+        'post': 'create',          
+        'patch': 'update_singleton'
+    })),
+
     path('', include(router.urls)),
 ]

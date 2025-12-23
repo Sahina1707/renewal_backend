@@ -24,6 +24,7 @@ from .serializers import (
 # You must ensure these external imports are correct for your project structure
 from apps.policies.models import Policy
 from apps.customers.models import Customer
+from apps.renewal_timeline.models import CommonRenewalTimelineSettings
 
 
 class PolicyTimelineListCreateView(generics.ListCreateAPIView):
@@ -520,12 +521,20 @@ def policy_timeline_complete_api(request, customer_id):
                 'coverage_amount': coverage, 
             })
         
-        # 4. Get Payment Schedules (FINAL GUARANTEED FIX)
         payment_schedules = None
         upcoming_payments_data = []
+        schedule_summary = None
         
         try:
-            schedule_summary = CustomerPaymentSchedule.objects.get(customer=customer)
+            # Use get_or_create to ensure schedule exists
+            schedule_summary, created = CustomerPaymentSchedule.objects.get_or_create(
+                customer=customer,
+                defaults={
+                    'average_payment_timing_days': 5,
+                    'preferred_payment_method': 'credit_card',
+                    'total_payments_last_12_months': 12
+                }
+            )
             
             if schedule_summary:
                 payment_schedules = CustomerPaymentScheduleSerializer(schedule_summary).data
@@ -603,22 +612,6 @@ def policy_timeline_complete_api(request, customer_id):
         except:
             pass
         
-        # 8. Get Communication Preferences
-        communication_preferences = []
-        try:
-            for pref in customer.detailed_communication_preferences.all():
-                communication_preferences.append({
-                    'communication_type': pref.get_communication_type_display(),
-                    'preferred_channel': pref.get_preferred_channel_display(),
-                    'frequency': pref.get_frequency_display(),
-                    'email_enabled': pref.email_enabled,
-                    'sms_enabled': pref.sms_enabled,
-                    'phone_enabled': pref.phone_enabled,
-                    'whatsapp_enabled': pref.whatsapp_enabled,
-                })
-        except:
-            pass
-        
         # 9. Get Policy Preferences (INCLUDING AVOIDED TYPES)
         policy_preferences = []
         try:
@@ -670,7 +663,81 @@ def policy_timeline_complete_api(request, customer_id):
                 'label': event_type_choice[1],
                 'count': count
             }
-        
+                
+        # A. Communication Preferences
+        comm_prefs_data = []
+        try:
+            for pref in customer.detailed_communication_preferences.all():
+                comm_prefs_data.append({
+                    'channel': pref.get_preferred_channel_display(),
+                    'status': 'Preferred' if getattr(pref, 'is_preferred', False) else 'Accepted',
+                    'is_enabled': True
+                })
+        except:
+            pass
+
+        # B. Renewal Timeline
+        renewal_data = None
+        try:
+            # Fetch global settings for reminders to match case_details view
+            common_settings = CommonRenewalTimelineSettings.objects.filter(is_active=True).first()
+            reminder_schedule = []
+            
+            if common_settings:
+                if common_settings.reminder_schedule:
+                    reminder_schedule = common_settings.reminder_schedule
+                elif hasattr(common_settings, 'reminder_days') and common_settings.reminder_days:
+                    for days in common_settings.reminder_days:
+                        if days == 30:
+                            reminder_schedule.append("30 days before due date (Email)")
+                        elif days == 14:
+                            reminder_schedule.append("14 days before due date (Email)")
+                        elif days == 7:
+                            reminder_schedule.append("7 days before due date (Phone)")
+                        else:
+                            reminder_schedule.append(f"{days} days before due date (Email)")
+            
+            if not reminder_schedule:
+                reminder_schedule = ["30 days before due date (Email)", "14 days before due date (Email)", "7 days before due date (Phone)"]
+
+            if schedule_summary:
+                avg_days = schedule_summary.average_payment_timing_days
+                timing_str = f"Pays {abs(avg_days)} days {'early' if avg_days >= 0 else 'late'}"
+                
+                renewal_data = {
+                    'typical_pattern': timing_str, 
+                    'avg_timing_days': avg_days,
+                    'reminder_schedule': reminder_schedule
+                }
+        except:
+            renewal_data = None
+
+        # C. Payment Methods
+        payment_method_data = None
+        try:
+            if schedule_summary:
+                payment_method_data = {
+                    'primary_method': schedule_summary.get_preferred_payment_method_display(),
+                    'auto_debit_active': schedule_summary.preferred_payment_method == 'auto_debit',
+                    'details': "Details on file" 
+                }
+        except:
+            payment_method_data = None
+
+        # D. Language Preferences
+        language_data = {
+            'preferred_language': getattr(customer, 'preferred_language', 'English'),
+            'document_language': getattr(customer, 'document_language', 'English'),
+            'primary_communication_language': getattr(customer, 'communication_language', 'English')
+        }
+
+        customer_preferences_consolidated = {
+            'communication': comm_prefs_data,
+            'renewal_timeline': renewal_data,
+            'payment_methods': payment_method_data,
+            'languages': language_data
+        }
+
         return Response({
             'success': True,
             'data': {
@@ -695,9 +762,9 @@ def policy_timeline_complete_api(request, customer_id):
                 'family_medical_history': medical_history,
                 'assets': assets_data,
                 'vehicles': vehicles_data,
-                'communication_preferences': communication_preferences,
                 'policy_preferences': policy_preferences,
                 'other_insurance_policies': other_policies,
+                'customer_preferences': customer_preferences_consolidated,
                 
                 
                 'payment_schedules': {
@@ -784,7 +851,6 @@ def policy_data_check_generic(request, policy_type_slug, customer_id):
     try:
         # 1. Fetch all comprehensive data using the existing endpoint
         raw_django_request = request._request
-        complete_response = policy_timeline_complete_api(raw_django_request, customer_id)
         complete_response = policy_timeline_complete_api(request, customer_id)
         
         if complete_response.status_code != 200:
