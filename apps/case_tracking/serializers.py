@@ -378,9 +378,9 @@ class CaseTrackingSerializer(serializers.ModelSerializer):
     
     def get_agent_name(self, obj):
         if obj.policy and obj.policy.agent:
-            # Use get_full_name() for the best display name
-            return obj.policy.agent.get_full_name() or obj.policy.agent.username
+            return obj.policy.agent.agent_name
         return None
+
     
     def get_priority(self, obj):
         """Get priority display value"""
