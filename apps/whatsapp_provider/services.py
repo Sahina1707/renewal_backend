@@ -19,6 +19,7 @@ from .models import (
     WhatsAppAccountHealthLog,
     WhatsAppAccountUsageLog,
 )
+from apps.billing.services import log_communication
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +156,7 @@ class MetaProviderService(BaseWhatsAppService):
             
             # Log the message
             phone_number = self.provider.get_primary_phone_number()
-            WhatsAppMessage.objects.create(
+            msg = WhatsAppMessage.objects.create(
                 provider=self.provider,
                 phone_number=phone_number,
                 message_id=response['messages'][0]['id'],
@@ -170,9 +171,27 @@ class MetaProviderService(BaseWhatsAppService):
                 campaign_id=kwargs.get('campaign_id')
             )
             self._update_usage_counters(phone_number)
+            
+            # --- BILLING INTEGRATION ---
+            log_communication(
+                vendor_name=self.provider.name,
+                service_type='whatsapp',
+                customer=msg.customer,
+                status='pending',
+                message_snippet=text_content[:50],
+                provider_message_id=response['messages'][0]['id']
+            )
+            
             return response
         except Exception as e:
             logger.error(f"Failed to send Meta text message: {e}")
+            log_communication(
+                vendor_name=self.provider.name,
+                service_type='whatsapp',
+                status='failed',
+                error_message=str(e),
+                message_snippet=text_content[:50]
+            )
             raise WhatsAppAPIError(str(e))
 
     def send_template_message(self, to_phone: str, template: WhatsAppMessageTemplate, template_params: List[str], **kwargs) -> Dict:
@@ -202,7 +221,7 @@ class MetaProviderService(BaseWhatsAppService):
             response = self._make_api_request(url, 'POST', data)
             
             phone_number = self.provider.get_primary_phone_number()
-            WhatsAppMessage.objects.create(
+            msg = WhatsAppMessage.objects.create(
                 provider=self.provider,
                 phone_number=phone_number,
                 message_id=response['messages'][0]['id'],
@@ -222,10 +241,28 @@ class MetaProviderService(BaseWhatsAppService):
             template.usage_count = F('usage_count') + 1
             template.last_used = timezone.now()
             template.save(update_fields=['usage_count', 'last_used'])
+            
+            # --- BILLING INTEGRATION ---
+            log_communication(
+                vendor_name=self.provider.name,
+                service_type='whatsapp',
+                customer=msg.customer,
+                status='pending',
+                message_snippet=f"Template: {template.name}",
+                provider_message_id=response['messages'][0]['id']
+            )
+            
             return response
             
         except Exception as e:
             logger.error(f"Failed to send Meta template message: {e}")
+            log_communication(
+                vendor_name=self.provider.name,
+                service_type='whatsapp',
+                status='failed',
+                error_message=str(e),
+                message_snippet=f"Template: {template.name}"
+            )
             raise WhatsAppAPIError(str(e))
 
     def health_check(self) -> Dict[str, Any]:
@@ -259,8 +296,57 @@ class MetaProviderService(BaseWhatsAppService):
             return {'status': 'unhealthy', 'error': str(e)}
 
     def handle_webhook(self, event_data: Dict[str, Any]) -> Any:
-        pass
+        # 1. Log the raw event for debugging
+        WhatsAppWebhookEvent.objects.create(
+            provider=self.provider,
+            event_type='webhook',
+            raw_data=event_data,
+            processed=False
+        )
 
+        try:
+            # Meta Webhook Structure Traversal
+            entry = event_data.get('entry', [])
+            if not entry: return {'status': 'ignored'}
+            
+            changes = entry[0].get('changes', [])
+            if not changes: return {'status': 'ignored'}
+            
+            value = changes[0].get('value', {})
+            
+            # --- Handle Status Updates (Sent, Delivered, Read, Failed) ---
+            if 'statuses' in value:
+                from apps.billing.models import CommunicationLog # Import here to avoid circular dependency
+                
+                for status_item in value['statuses']:
+                    wamid = status_item.get('id')
+                    new_status = status_item.get('status') # sent, delivered, read, failed
+                    
+                    # 1. Update Local WhatsAppMessage
+                    try:
+                        msg = WhatsAppMessage.objects.get(message_id=wamid)
+                        msg.status = new_status
+                        if new_status == 'delivered': msg.delivered_at = timezone.now()
+                        elif new_status == 'read': msg.read_at = timezone.now()
+                        elif new_status == 'failed':
+                            errors = status_item.get('errors', [])
+                            if errors:
+                                msg.error_message = errors[0].get('title')
+                        msg.save()
+                        
+                        # 2. Sync to Billing Log
+                        # Map Meta status to Billing status (delivered/failed)
+                        billing_status = 'delivered' if new_status in ['delivered', 'read'] else 'failed' if new_status == 'failed' else None
+                        
+                        if billing_status:
+                            CommunicationLog.objects.filter(provider_message_id=wamid).update(status=billing_status)
+                            
+                    except WhatsAppMessage.DoesNotExist:
+                        pass
+            return {'status': 'success'}
+        except Exception as e:
+            logger.error(f"Error processing Meta webhook: {e}")
+            raise WhatsAppAPIError(str(e))
 
 class TwilioProviderService(BaseWhatsAppService):
 
@@ -276,7 +362,7 @@ class TwilioProviderService(BaseWhatsAppService):
         try:
             message_sid = f"tw_{int(time.time())}" 
             
-            WhatsAppMessage.objects.create(
+            msg = WhatsAppMessage.objects.create(
                 provider=self.provider,
                 message_id=message_sid,
                 direction='outbound',
@@ -290,9 +376,27 @@ class TwilioProviderService(BaseWhatsAppService):
                 campaign_id=kwargs.get('campaign_id')
             )
             self._update_usage_counters()
+            
+            # --- BILLING INTEGRATION ---
+            log_communication(
+                vendor_name=self.provider.name,
+                service_type='whatsapp',
+                customer=msg.customer,
+                status='pending',
+                message_snippet=text_content[:50],
+                provider_message_id=message_sid
+            )
+            
             return {'messages': [{'id': message_sid}]}
         except Exception as e:
             logger.error(f"Failed to send Twilio message: {e}")
+            log_communication(
+                vendor_name=self.provider.name,
+                service_type='whatsapp',
+                status='failed',
+                error_message=str(e),
+                message_snippet=text_content[:50]
+            )
             raise WhatsAppAPIError(str(e))
 
     def send_template_message(self, to_phone: str, template: WhatsAppMessageTemplate, template_params: List[str], **kwargs) -> Dict:
@@ -339,7 +443,7 @@ class GupshupProviderService(BaseWhatsAppService):
         response = self._make_api_request(payload)
         message_sid = response.get('messageId')
         
-        WhatsAppMessage.objects.create(
+        msg = WhatsAppMessage.objects.create(
             provider=self.provider,
             message_id=message_sid,
             direction='outbound',
@@ -353,6 +457,16 @@ class GupshupProviderService(BaseWhatsAppService):
             campaign_id=kwargs.get('campaign_id')
         )
         self._update_usage_counters()
+        
+        # --- BILLING INTEGRATION ---
+        log_communication(
+            vendor_name=self.provider.name,
+            service_type='whatsapp',
+            customer=msg.customer,
+            status='pending',
+            message_snippet=text_content[:50],
+            provider_message_id=message_sid
+        )
         return {'messages': [{'id': message_sid}]}
 
     def health_check(self) -> Dict[str, Any]:
@@ -409,7 +523,7 @@ class Dialog360ProviderService(BaseWhatsAppService):
         response = self._make_api_request("messages", payload)
         message_sid = response.get('messages', [{}])[0].get('id')
         
-        WhatsAppMessage.objects.create(
+        msg = WhatsAppMessage.objects.create(
             provider=self.provider,
             message_id=message_sid,
             direction='outbound',
@@ -423,6 +537,16 @@ class Dialog360ProviderService(BaseWhatsAppService):
             campaign_id=kwargs.get('campaign_id')
         )
         self._update_usage_counters()
+        
+        # --- BILLING INTEGRATION ---
+        log_communication(
+            vendor_name=self.provider.name,
+            service_type='whatsapp',
+            customer=msg.customer,
+            status='pending',
+            message_snippet=text_content[:50],
+            provider_message_id=message_sid
+        )
         return {'messages': [{'id': message_sid}]}
 
     def health_check(self) -> Dict[str, Any]:

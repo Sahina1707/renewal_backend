@@ -1,17 +1,18 @@
-"""
-URL configuration for Hierarchy Management API.
-"""
-
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import HierarchyManagementViewSet
+from .views import (
+    RegionViewSet, StateViewSet, BranchViewSet, 
+    DepartmentViewSet, TeamViewSet, HierarchySummaryView
+)
 
-# Create router and register viewsets
 router = DefaultRouter()
-router.register(r'units', HierarchyManagementViewSet, basename='hierarchy-units')
-
-app_name = 'hierarchy'
+router.register(r'regions', RegionViewSet)
+router.register(r'states', StateViewSet)
+router.register(r'branches', BranchViewSet)
+router.register(r'departments', DepartmentViewSet)
+router.register(r'teams', TeamViewSet)
 
 urlpatterns = [
-    path('api/', include(router.urls)),
+    path('', include(router.urls)),
+    path('summary/', HierarchySummaryView.as_view()), # API for the Table
 ]

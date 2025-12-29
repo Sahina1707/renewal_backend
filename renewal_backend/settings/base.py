@@ -36,11 +36,16 @@ THIRD_PARTY_APPS = [
     'django_extensions',
     'django_filters',
     'storages',
+    'django_otp',
+    'django_otp.plugins.otp_totp',
 ]
 
 LOCAL_APPS = [
     'apps.core',
     'apps.users',
+    'apps.profiles',
+    'apps.billing',
+    'apps.general_settings',
     'apps.authentication',
     'apps.verification',
     'apps.whatsapp_provider',

@@ -4,7 +4,8 @@ from .views import (
     EmailProviderConfigViewSet,
     EmailProviderHealthLogViewSet,
     EmailProviderUsageLogViewSet,
-    EmailProviderTestResultViewSet
+    EmailProviderTestResultViewSet,
+    EmailWebhookView
 )
 
 router = DefaultRouter()
@@ -15,4 +16,5 @@ router.register(r'test-results', EmailProviderTestResultViewSet, basename='email
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('webhook/<str:provider_type>/', EmailWebhookView.as_view(), name='email-webhook'),
 ]
