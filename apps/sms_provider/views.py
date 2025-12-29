@@ -6,6 +6,7 @@ from rest_framework.permissions import AllowAny
 from django.http import HttpResponse
 from django.utils import timezone
 from .models import SmsProvider, SmsMessage
+from apps.billing.models import CommunicationLog
 from .serializers import (
     SmsProviderSerializer,
     SmsProviderCreateUpdateSerializer,
@@ -120,44 +121,51 @@ class SmsMessageViewSet(viewsets.ReadOnlyModelViewSet):
     search_fields = ['content', 'to_phone_number', 'message_sid']
 
 
-class TwilioWebhookView(APIView):
+class SmsWebhookView(APIView):
     """
-    Handle incoming status updates from Twilio.
-    Twilio sends data as FORM-URLENCODED, not JSON.
+    Handle incoming status updates from SMS Providers (Twilio, etc.).
     """
     permission_classes = [AllowAny] # Twilio doesn't use your JWT token
     authentication_classes = []
 
-    def post(self, request, *args, **kwargs):
-        # Twilio sends data in request.POST
-        message_sid = request.POST.get('MessageSid')
-        message_status = request.POST.get('MessageStatus') # queued, sent, delivered, undelivered, failed
-        error_code = request.POST.get('ErrorCode')
-        
-        print(f"📩 TWILIO WEBHOOK: {message_sid} -> {message_status}")
+    def post(self, request, provider_type=None):
+        if provider_type == 'twilio':
+            # Twilio sends data in request.POST (FORM-URLENCODED)
+            message_sid = request.POST.get('MessageSid')
+            message_status = request.POST.get('MessageStatus') # queued, sent, delivered, undelivered, failed
+            error_code = request.POST.get('ErrorCode')
+            
+            print(f"📩 TWILIO WEBHOOK: {message_sid} -> {message_status}")
 
-        if message_sid and message_status:
-            try:
-                # Find the message by the SID we saved earlier
-                sms_obj = SmsMessage.objects.get(message_sid=message_sid)
-                
-                # Update status
-                sms_obj.status = message_status
-                
-                if error_code:
-                    sms_obj.error_code = error_code
-                    sms_obj.error_message = "Twilio Error Code: " + str(error_code)
-                
-                # Set timestamps
-                if message_status == 'sent':
-                    sms_obj.sent_at = timezone.now()
-                elif message_status == 'delivered':
-                    sms_obj.delivered_at = timezone.now()
-                
-                sms_obj.save()
-                
-            except SmsMessage.DoesNotExist:
-                print(f"⚠️ Message SID {message_sid} not found in local DB.")
-        
-        # Twilio expects an XML response or just 200 OK
-        return HttpResponse("<Response></Response>", content_type="text/xml")
+            if message_sid and message_status:
+                try:
+                    # Find the message by the SID we saved earlier
+                    sms_obj = SmsMessage.objects.get(message_sid=message_sid)
+                    
+                    # Update status
+                    sms_obj.status = message_status
+                    
+                    if error_code:
+                        sms_obj.error_code = error_code
+                        sms_obj.error_message = "Twilio Error Code: " + str(error_code)
+                    
+                    # Set timestamps
+                    if message_status == 'sent':
+                        sms_obj.sent_at = timezone.now()
+                    elif message_status == 'delivered':
+                        sms_obj.delivered_at = timezone.now()
+                    
+                    sms_obj.save()
+                    billing_status = message_status
+                    if message_status in ['undelivered', 'failed']:
+                        billing_status = 'failed'
+                    
+                    CommunicationLog.objects.filter(provider_message_id=message_sid).update(status=billing_status)
+                    
+                except SmsMessage.DoesNotExist:
+                    print(f"⚠️ Message SID {message_sid} not found in local DB.")
+            
+            # Twilio expects an XML response or just 200 OK
+            return HttpResponse("<Response></Response>", content_type="text/xml")
+            
+        return Response(status=status.HTTP_400_BAD_REQUEST)

@@ -1,7 +1,8 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.views import APIView
 from django.db.models import Q
 from django.utils import timezone
 from datetime import timedelta
@@ -15,6 +16,7 @@ from .serializers import (
     EmailProviderStatsSerializer
 )
 from .services import EmailProviderService
+from apps.billing.models import CommunicationLog
 
 
 class EmailProviderConfigViewSet(viewsets.ModelViewSet):
@@ -336,3 +338,37 @@ class EmailProviderTestResultViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(test_email__icontains=test_email)
         
         return queryset.order_by('-tested_at')
+
+
+class EmailWebhookView(APIView):
+    """
+    Handle incoming webhooks from Email Providers (SendGrid, etc.) to update Billing Status.
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request, provider_type=None):
+        if provider_type == 'sendgrid':
+            events = request.data
+            # SendGrid sends an array of events
+            if isinstance(events, list):
+                for event in events:
+                    # SendGrid Message ID often has extra data appended, split by '.'
+                    sg_message_id = event.get('sg_message_id', '').split('.')[0]
+                    event_type = event.get('event')
+                    
+                    if sg_message_id and event_type:
+                        # Map SendGrid events to Billing Status
+                        new_status = None
+                        if event_type in ['delivered', 'open', 'click']:
+                            new_status = 'delivered'
+                        elif event_type in ['bounce', 'dropped', 'spamreport']:
+                            new_status = 'failed'
+                        
+                        if new_status:
+                            # Update the log in Billing
+                            CommunicationLog.objects.filter(
+                                provider_message_id__startswith=sg_message_id
+                            ).update(status=new_status)
+                        
+        return Response(status=status.HTTP_200_OK)

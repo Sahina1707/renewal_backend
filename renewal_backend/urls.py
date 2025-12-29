@@ -30,6 +30,12 @@ api_patterns = [
     # User management
     path('users/', include('apps.users.urls')),
 
+    # Profiles
+    path('profiles/',include('apps.profiles.urls')),
+    
+    path('billing/',include('apps.billing.urls')),
+    path('general_settings/',include('apps.general_settings.urls')),
+
     # Customer Verification endpoints
     path('verification/', include('apps.verification.urls')),
 
