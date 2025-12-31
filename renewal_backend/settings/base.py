@@ -111,7 +111,8 @@ LOCAL_APPS = [
     'apps.call_provider',
     'apps.bot_calling_provider',
     'apps.social_integration',
-    
+    'apps.dnc.apps.DncManagementConfig', 
+    "apps.clients",
 
     'apps.whatsapp_flow_settings',
     'apps.whatsapp_flow_management',

@@ -87,6 +87,8 @@ api_patterns = [
     path('call-provider/',include('apps.call_provider.urls')),
     path('bot-calling-provider/', include('apps.bot_calling_provider.urls')),
     path('social/', include('apps.social_integration.urls')),
+    path('dnc/', include('apps.dnc.urls')),
+    path("clients/", include("apps.clients.urls")),
 
 
     # WhatsApp Integration endpoints
