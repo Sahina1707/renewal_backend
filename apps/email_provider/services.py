@@ -1,6 +1,7 @@
 import logging
 import time
 from typing import List, Dict, Any, Optional, Tuple
+from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from django.utils import timezone
@@ -11,7 +12,6 @@ import boto3
 from botocore.exceptions import ClientError
 import ssl
 import urllib3
-import time
 
 # Disable SSL verification globally for SendGrid
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -21,6 +21,7 @@ from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 
 from .models import EmailProviderConfig, EmailProviderHealthLog, EmailProviderUsageLog
+from apps.billing.services import log_communication
 
 logger = logging.getLogger(__name__)
 
@@ -104,11 +105,42 @@ class EmailProviderService:
                    text_content: str = '', from_email: str = None, from_name: str = None,
                    reply_to: str = None, cc_emails: List[str] = None,
                    bcc_emails: List[str] = None, attachments: List[Tuple[str, str, str]] = None,
-                   custom_args: Dict[str, str] = None) -> Dict[str, Any]:
+                   custom_args: Dict[str, str] = None, customer=None, case=None,
+                   check_notifications: bool = False) -> Dict[str, Any]:
         """
         Send email using the specific provider attached to the service instance 
         (self.config) OR the best available provider if no config was attached.
         """
+        
+        # --- REAL-TIME NOTIFICATION CHECK ---
+        if check_notifications:
+            User = get_user_model()
+            all_recipients = (to_emails or []) + (cc_emails or []) + (bcc_emails or [])
+            
+            if all_recipients:
+                # Find users who have explicitly disabled email notifications
+                opt_out_emails = set(User.objects.filter(
+                    email__in=all_recipients, 
+                    email_notifications=False
+                ).values_list('email', flat=True))
+                
+                if opt_out_emails:
+                    logger.info(f"Blocking emails for users with notifications disabled: {opt_out_emails}")
+                    
+                    # Filter the lists
+                    to_emails = [e for e in to_emails if e not in opt_out_emails]
+                    if cc_emails:
+                        cc_emails = [e for e in cc_emails if e not in opt_out_emails]
+                    if bcc_emails:
+                        bcc_emails = [e for e in bcc_emails if e not in opt_out_emails]
+                    
+                    # If everyone was filtered out, abort early
+                    if not to_emails and not cc_emails and not bcc_emails:
+                        return {
+                            'success': False,
+                            'error': 'All recipients have disabled email notifications',
+                            'provider_name': None
+                        }
         
         # --- Provider Selection Logic ---
         if self.config:
@@ -130,7 +162,7 @@ class EmailProviderService:
         
         try:
             if provider.provider_type == 'sendgrid':
-                result = self._sendgrid(provider, to_emails, subject, html_content,
+                result = self._send_via_sendgrid(provider, to_emails, subject, html_content,
                                                  text_content, from_email, from_name, reply_to,
                                                  cc_emails, bcc_emails, attachments, custom_args)
             elif provider.provider_type == 'aws_ses':
@@ -157,6 +189,18 @@ class EmailProviderService:
             if result['success']:
                 provider.increment_usage(len(to_emails))
             
+            # --- BILLING INTEGRATION ---
+            log_communication(
+                vendor_name=provider.name,
+                service_type='email',
+                customer=customer,
+                case=case,
+                status='delivered' if result['success'] else 'failed',
+                message_snippet=subject[:50] if subject else "No Subject",
+                error_message=result.get('error'),
+                provider_message_id=result.get('message_id')
+            )
+            
             result['response_time'] = response_time
             result['provider_name'] = provider.name
             
@@ -169,6 +213,17 @@ class EmailProviderService:
             # Log failed usage
             self._log_usage(provider, len(to_emails), False, response_time)
             
+            # --- BILLING INTEGRATION (FAILURE) ---
+            log_communication(
+                vendor_name=provider.name,
+                service_type='email',
+                customer=customer,
+                case=case,
+                status='failed',
+                message_snippet=subject[:50] if subject else "No Subject",
+                error_message=str(e)[:255]
+            )
+
             return {
                 'success': False,
                 'error': str(e),

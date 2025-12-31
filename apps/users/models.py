@@ -45,6 +45,8 @@ class Role(models.Model):
     display_name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     permissions = models.JSONField(default=dict, help_text="Permission mappings for this role")
+    is_system = models.BooleanField(default=False, help_text="System roles cannot be deleted")
+    default_permissions = models.JSONField(default=dict, blank=True, help_text="Factory default permissions for reset")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -114,8 +116,26 @@ class User(AbstractUser):
         ('active', 'Active'),
         ('inactive', 'Inactive'),
         ('suspended', 'Suspended'),
-        ('pending', 'Pending Approval'),
+        ('pending', 'Pending Activation'),
     ]
+
+    DEPARTMENT_CHOICES = [
+        ('claims_processing', 'Claims Processing'),
+        ('underwriting', 'Underwriting'),
+        ('customer_service', 'Customer Service'),
+        ('sales_marketing', 'Sales & Marketing'),
+        ('it', 'Information Technology'),
+        ('finance_accounting', 'Finance & Accounting'),
+        ('legal_compliance', 'Legal & Compliance'),
+        ('management', 'Management'),
+        ('other', 'Other'),
+    ]
+    department = models.CharField(
+        max_length=100, 
+        choices=DEPARTMENT_CHOICES, 
+        blank=True,
+        default='other'
+    )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
     
     # Security settings
