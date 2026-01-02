@@ -1,9 +1,10 @@
-# serializers.py
 from rest_framework import serializers
 from .models import User, Role
+from django.contrib.auth.models import BaseUserManager
+from django.utils.crypto import get_random_string
+from django.core.mail import send_mail
+from django.conf import settings
 
-
-# serializers.py
 class RoleSerializer(serializers.ModelSerializer):
     """Serializer for Role model"""
     permissions = serializers.ListField(source='permission_list', read_only=True)
@@ -93,56 +94,19 @@ class UserSerializer(serializers.ModelSerializer):
         """
         Create User with dynamic password generation and email sending.
         """
-        # 1. Extract non-model fields
         send_email = validated_data.pop('send_welcome_email', False)
         
-        # 2. Dynamic Password Logic
-        # If admin didn't provide a password, generate a random secure one
         if 'password' not in validated_data or not validated_data['password']:
-            raw_password = BaseUserManager().make_random_password()
+            raw_password = get_random_string(length=10) 
             validated_data['password'] = raw_password
         else:
             raw_password = validated_data['password']
-
-        # 3. Create the user securely (hashing the password)
-        # We must use create_user() instead of standard create() to ensure hashing
         user = User.objects.create_user(**validated_data)
-        
-        # 4. Send Real Email if requested
         if send_email:
             self._send_welcome_email(user, raw_password)
-            
         return user
 
     def _send_welcome_email(self, user, raw_password):
-        """
-        Sends an actual email using Django's SMTP settings.
-        """
-        subject = f'Welcome to Intelipro - Your Account Details'
-        
-        # Dynamic Email Body
-        message = f"""
-        Hello {user.first_name},
-
-        Welcome to the Intelipro Insurance Policy Renewal System.
-        Your account has been successfully created by the administrator.
-
-        Here are your temporary login credentials:
-        
-        ------------------------------------------
-        Email:    {user.email}
-        Password: {raw_password}
-        ------------------------------------------
-
-        Security Note: 
-        {'You are required to change your password upon first login.' if user.force_password_change else 'We recommend changing your password after logging in.'}
-
-        Login here: {settings.FRONTEND_URL if hasattr(settings, 'FRONTEND_URL') else 'http://localhost:3000'}
-
-        Best Regards,
-        Intelipro Admin Team
-        """
-        
         try:
             send_mail(
                 subject=subject,
@@ -153,7 +117,7 @@ class UserSerializer(serializers.ModelSerializer):
             )
         except Exception as e:
             # Log the error but don't crash the user creation
-            print(f"❌ Failed to send welcome email: {str(e)}")
+            print(f" Failed to send welcome email: {str(e)}")
     
     def get_assigned_customers_count(self, obj):
         """Get count of assigned customers"""

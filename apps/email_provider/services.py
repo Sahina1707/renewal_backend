@@ -6,6 +6,7 @@ from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from django.utils import timezone
 from cryptography.fernet import Fernet
+from decimal import Decimal
 import json
 import requests
 import boto3
