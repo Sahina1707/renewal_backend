@@ -116,8 +116,7 @@ LOCAL_APPS = [
     'apps.call_provider',
     'apps.bot_calling_provider',
     'apps.social_integration',
-    'apps.feedback_settings',
-    'apps.feedback_and_surveys',
+    
 
     'apps.whatsapp_flow_settings',
     'apps.whatsapp_flow_management',
