@@ -118,6 +118,7 @@ LOCAL_APPS = [
     'apps.social_integration',
     'apps.dnc.apps.DncManagementConfig', 
     "apps.clients",
+    'apps.renewal_settings',
 
     'apps.whatsapp_flow_settings',
     'apps.whatsapp_flow_management',

@@ -95,6 +95,8 @@ api_patterns = [
     path('social/', include('apps.social_integration.urls')),
     path('dnc/', include('apps.dnc.urls')),
     path("clients/", include("apps.clients.urls")),
+    path("renewal-settings/", include("apps.renewal_settings.urls")),
+
 
 
     # WhatsApp Integration endpoints

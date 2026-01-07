@@ -5,46 +5,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('email_inbox', '0003_emailinboxmessage_custom_id'),
+        ('email_inbox', '0001_initial'),
     ]
 
-    operations = [
-        migrations.RemoveField(
-            model_name='emailfolder',
-            name='customer_type',
-        ),
-        migrations.RemoveField(
-            model_name='emailfolder',
-            name='due_date',
-        ),
-        migrations.RemoveField(
-            model_name='emailfolder',
-            name='escalated_at',
-        ),
-        migrations.RemoveField(
-            model_name='emailfolder',
-            name='escalated_by',
-        ),
-        migrations.RemoveField(
-            model_name='emailfolder',
-            name='escalation_priority',
-        ),
-        migrations.RemoveField(
-            model_name='emailfolder',
-            name='escalation_reason',
-        ),
-        migrations.RemoveField(
-            model_name='emailfolder',
-            name='is_escalated',
-        ),
-        migrations.AlterField(
-            model_name='bulkemailcampaign',
-            name='status',
-            field=models.CharField(choices=[('unread', 'Unread'), ('read', 'Read'), ('replied', 'Replied'), ('forwarded', 'Forwarded'), ('archived', 'Archived'), ('deleted', 'Deleted'), ('draft', 'Draft'), ('restored', 'Restored'), ('failed', 'Failed')], default='draft', max_length=20),
-        ),
-        migrations.AlterField(
-            model_name='emailinboxmessage',
-            name='category',
-            field=models.CharField(choices=[('general', 'General'), ('policy_renewal', 'Policy Renewal'), ('claim', 'Claim'), ('payment', 'Payment'), ('complaint', 'Complaint'), ('inquiry', 'Inquiry'), ('feedback', 'Feedback'), ('marketing', 'Marketing'), ('system', 'System'), ('refund', 'Refund'), ('appointment', 'Appointment'), ('uncategorized', 'Uncategorized')], default='uncategorized', max_length=20),
-        ),
-    ]
+    operations = []
