@@ -1,14 +1,8 @@
-"""
-User models for the Intelipro Insurance Policy Renewal System.
-Implements custom User model with role-based access control (RBAC).
-"""
-
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 from django.utils import timezone
 from django.core.validators import RegexValidator
 import uuid
-
 
 class UserManager(BaseUserManager):
     """Custom user manager for the User model"""
@@ -36,7 +30,6 @@ class UserManager(BaseUserManager):
             raise ValueError('Superuser must have is_superuser=True.')
         
         return self.create_user(email, password, **extra_fields)
-
 
 class Role(models.Model):
     """Role model for RBAC system"""

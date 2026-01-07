@@ -35,10 +35,12 @@ api_patterns = [
     
     path('billing/',include('apps.billing.urls')),
     path('general_settings/',include('apps.general_settings.urls')),
+    path('feedback_settings/',include('apps.feedback_settings.urls')),
+    path('feedback_and_surveys/',include('apps.feedback_and_surveys.urls')),
 
     # Customer Verification endpoints
     path('verification/', include('apps.verification.urls')),
-
+    
     # Core business endpoints
     path('customers/', include('apps.customers.urls')),
     path('policies/', include('apps.policies.urls')),
@@ -82,7 +84,6 @@ api_patterns = [
     path('policy-exclusions/', include('apps.policy_exclusions.urls')),
     path('policy-conditions/', include('apps.policy_conditions.urls')),
     path("teams/", include("apps.teams.urls")),
-
     
     # path('communication-provider/', include('apps.communication_provider.urls')),  
     path('email-templates/', include('apps.email_templates.urls')),

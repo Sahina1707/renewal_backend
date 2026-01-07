@@ -145,7 +145,8 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'apps.core.middleware.RequestLoggingMiddleware',
     'apps.core.middleware.TimezoneMiddleware',
-]
+    'django.middleware.locale.LocaleMiddleware',
+    'renewal_backend.settings.middleware.UserLanguageMiddleware',]
 
 ROOT_URLCONF = 'renewal_backend.urls'
 
@@ -539,4 +540,7 @@ CELERY_BEAT_SCHEDULE = {
 # GOOGLE_GMAIL_SERVICE_ACCOUNT_FILE
 
 EMAIL_CREDENTIAL_KEY = config('EMAIL_CREDENTIAL_KEY', default="YOaPFq4HU_lb-F7VG-FMM-Pv0viLuKlEKbW5HM69DmU=")
- 
+LOCALE_PATHS = (
+    os.path.join(BASE_DIR, 'locale'),
+)
+SITE_URL = config('BASE_URL', default='http://127.0.0.1:8000')
