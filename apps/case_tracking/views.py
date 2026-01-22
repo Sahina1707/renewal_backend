@@ -169,7 +169,7 @@ class CaseTrackingViewSet(viewsets.ReadOnlyModelViewSet):
                 'total_batches': len(batch_summary)
             })
 
-    @action(detail=False, methods=['patch', 'put'], url_path='quick-edit/(?P<case_id>[^/.]+)')
+    @action(detail=True, methods=['patch', 'put'], url_path='quick-edit/(?P<case_id>[^/.]+)')
     def quick_edit(self, request, case_id=None):
         try:
             case = get_object_or_404(
@@ -284,43 +284,37 @@ class CaseTrackingViewSet(viewsets.ReadOnlyModelViewSet):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=True, methods=['get'], url_path='case-logs')
-    def case_logs(self, request, case_id=None):
+    def case_logs(self, request, pk=None):
         """Get all case logs for a specific renewal case"""
-        try:
-            renewal_case = get_object_or_404(RenewalCase, id=case_id)
+        renewal_case = get_object_or_404(RenewalCase, id=pk)
 
-            case_logs = CaseLog.objects.filter(
-                renewal_case_id=case_id
-            ).select_related(
-                'renewal_case',
-                'renewal_case__customer',
-                'renewal_case__policy',
-                'created_by',
-                'updated_by'
-            ).order_by('-created_at')
+        case_logs = CaseLog.objects.filter(
+            renewal_case_id=pk
+        ).select_related(
+            'renewal_case',
+            'renewal_case__customer',
+            'renewal_case__policy',
+            'created_by',
+            'updated_by'
+        ).order_by('-created_at')
 
-            page = self.paginate_queryset(case_logs)
-            if page is not None:
-                serializer = CaseLogSerializer(page, many=True)
-                return self.get_paginated_response(serializer.data)
+        page = self.paginate_queryset(case_logs)
+        if page is not None:
+            serializer = CaseLogSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
 
-            serializer = CaseLogSerializer(case_logs, many=True)
+        serializer = CaseLogSerializer(case_logs, many=True)
 
-            return Response({
-                'renewal_case': {
-                    'id': renewal_case.id,
-                    'case_number': renewal_case.case_number,
-                    'status': renewal_case.status
-                },
-                'case_logs': serializer.data,
-                'total_logs': case_logs.count()
-            })
+        return Response({
+            'renewal_case': {
+                'id': renewal_case.id,
+                'case_number': renewal_case.case_number,
+                'status': renewal_case.status
+            },
+            'case_logs': serializer.data,
+            'total_logs': case_logs.count()
+        })
 
-        except Exception as e:
-            return Response({
-                'error': 'Failed to retrieve case logs',
-                'message': str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=True, methods=['get'], url_path='comment-history-formatted')
     def comment_history_formatted(self, request, case_id=None):
