@@ -119,6 +119,8 @@ LOCAL_APPS = [
     'apps.dnc.apps.DncManagementConfig', 
     "apps.clients",
     'apps.renewal_settings',
+    'apps.feedback_settings.apps.FeedbackSettingsConfig',
+    'apps.feedback_and_surveys.apps.FeedbackConfig',
 
     'apps.whatsapp_flow_settings',
     'apps.whatsapp_flow_management',
