@@ -1,234 +1,110 @@
-"""
-Serializers for Hierarchy Management API endpoints.
-"""
-
 from rest_framework import serializers
-from django.db.models import Sum
-from .models import HierarchyManagement
-from apps.renewals.models import RenewalCase
-from apps.users.models import User
-import re
+from django.contrib.auth import get_user_model
+from .models import Region, State, Branch, Department, Team
 
-class HierarchyManagementSerializer(serializers.ModelSerializer):
-    parent_unit_display = serializers.SerializerMethodField()
-    cases = serializers.SerializerMethodField()
-    revenue = serializers.SerializerMethodField()
-    efficiency = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = HierarchyManagement
-        fields = [
-            'id',
-            'unit_name',
-            'unit_type',
-            'description',
-            'parent_unit',
-            'parent_unit_display',
-            'manager_id',
-            'budget',
-            'target_cases',
-            'status',
-            'created_at',
-            'updated_at',
-            'created_by',
-            'updated_by',
-            'is_deleted',
-            'cases',
-            'revenue',
-            'efficiency'
-        ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'parent_unit_display', 'cases', 'revenue', 'efficiency']
-    
-    def get_parent_unit_display(self, obj):
-        return dict(obj.PARENT_UNIT_CHOICES).get(obj.parent_unit, obj.parent_unit)
-    
-    def get_cases(self, obj):
-        """Get total cases assigned to this hierarchy unit's manager"""
-        try:
-            manager_number = obj.manager_id.split('-')[1] if '-' in obj.manager_id else obj.manager_id
-            user = User.objects.filter(employee_id__icontains=manager_number).first()
-            if user:
-                return RenewalCase.objects.filter(assigned_to=user).count()
-        except (IndexError, AttributeError):
-            pass
-        return 0
-    
-    def get_revenue(self, obj):
-        """Get total revenue from renewed cases assigned to this hierarchy unit's manager"""
-        try:
-            manager_number = obj.manager_id.split('-')[1] if '-' in obj.manager_id else obj.manager_id
-            user = User.objects.filter(employee_id__icontains=manager_number).first()
-            if user:
-                result = RenewalCase.objects.filter(
-                    assigned_to=user, 
-                    status='renewed'
-                ).aggregate(total=Sum('renewal_amount'))
-                return float(result['total'] or 0)
-        except (IndexError, AttributeError):
-            pass
-        return 0.0
-    
-    def get_efficiency(self, obj):
-        """Calculate efficiency as percentage of renewed cases"""
-        try:
-            manager_number = obj.manager_id.split('-')[1] if '-' in obj.manager_id else obj.manager_id
-            user = User.objects.filter(employee_id__icontains=manager_number).first()
-            if user:
-                total_cases = RenewalCase.objects.filter(assigned_to=user).count()
-                renewed_cases = RenewalCase.objects.filter(assigned_to=user, status='renewed').count()
-                if total_cases > 0:
-                    return round((renewed_cases / total_cases) * 100, 1)
-        except (IndexError, AttributeError):
-            pass
-        return 0.0
+# Import Role model to check permissions
+try:
+    from apps.users.models import Role
+except ImportError:
+    from users.models import Role
 
+User = get_user_model()
 
-class HierarchyManagementCreateSerializer(serializers.ModelSerializer):
-    parent_unit = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+# --- BASE SERIALIZER (Shared Logic) ---
+class NodeSerializer(serializers.ModelSerializer):
+    # INPUT: Accepts Database ID (e.g., "9")
+    manager_id = serializers.CharField(write_only=True)
     
-    class Meta:
-        model = HierarchyManagement
-        fields = [
-            'unit_name',
-            'unit_type',
-            'description',
-            'parent_unit',
-            'manager_id',
-            'budget',
-            'target_cases',
-            'status'
-        ]
-    
-    def validate_parent_unit(self, value):
-        if value in ['none', '', None]:
-            return 'none'
-        
-        value = str(value).strip()
-        
-        valid_choices = [choice[0] for choice in HierarchyManagement.PARENT_UNIT_CHOICES]
-        choice_dict = dict(HierarchyManagement.PARENT_UNIT_CHOICES)
-        
-        if value in valid_choices:
-            return value
-        
-        if value in choice_dict.values():
-            for choice_value, choice_display in HierarchyManagement.PARENT_UNIT_CHOICES:
-                if choice_display == value:
-                    return choice_value
-        
-        if '(' in value and ')' in value:
-            unit_name_part = value.split('(')[0].strip()
-            unit_slug = unit_name_part.lower().replace(' ', '_').replace('-', '_')
-            if unit_slug in valid_choices:
-                return unit_slug
-        
-        value_slug = value.lower().strip().replace(' ', '_').replace('-', '_')
-        if value_slug in valid_choices:
-            return value_slug
-        
-        value_lower = value.lower().strip()
-        for choice_value, choice_display in HierarchyManagement.PARENT_UNIT_CHOICES:
-            if value_lower == choice_display.lower():
-                return choice_value
-            display_unit_name = choice_display.split('(')[0].strip().lower()
-            if value_lower == display_unit_name:
-                return choice_value
-            display_unit_slug = display_unit_name.replace(' ', '_').replace('-', '_')
-            if value_lower == display_unit_slug or value_lower.replace(' ', '_') == display_unit_slug:
-                return choice_value
-        
-        matching_unit = HierarchyManagement.objects.filter(
-            is_deleted=False,
-            unit_name__iexact=value
-        ).first()
-        
-        if matching_unit:
-            unit_slug = matching_unit.unit_name.lower().replace(' ', '_').replace('-', '_')
-            if unit_slug in valid_choices:
-                return unit_slug
-        
-        return 'none'
-    
+    # OUTPUT: Shows Manager Name (e.g., "Sahina")
+    manager_name = serializers.CharField(source='manager.first_name', read_only=True)
+
     def validate_manager_id(self, value):
-        if not re.match(r'^mgr-\d{3}$', value):
-            raise serializers.ValidationError("Manager ID must be in format mgr-XXX (e.g., mgr-002)")
-        return value
+        """
+        LOGIC:
+        1. Find User by Database ID (pk).
+        2. Check if they have a Role.
+        3. Check if Role is 'Manager' or 'Admin' (Flexible check).
+        """
+        # STEP 1: Find User by ID (Primary Key)
+        try:
+            user = User.objects.get(pk=value)
+        except User.DoesNotExist:
+            raise serializers.ValidationError(f"User with Database ID '{value}' not found.")
 
+        # STEP 2: Check Role Existence
+        if not user.role:
+             raise serializers.ValidationError(f"User '{user.first_name}' has no role assigned.")
+        
+        # STEP 3: Verify Role Name (Flexible)
+        # Allows 'manager', 'campaign_manager', 'admin', 'super_admin', etc.
+        role_name = user.role.name.lower()
+        if 'manager' not in role_name and 'admin' not in role_name:
+            raise serializers.ValidationError(
+                f"User '{user.first_name}' is a '{user.role.name}'. This role is not allowed."
+            )
 
-class HierarchyManagementListSerializer(serializers.ModelSerializer):
+        return user
 
-    parent_unit_display = serializers.SerializerMethodField()
-    unit_type_display = serializers.SerializerMethodField()
-    status_display = serializers.SerializerMethodField()
-    cases = serializers.SerializerMethodField()
-    revenue = serializers.SerializerMethodField()
-    efficiency = serializers.SerializerMethodField()
-    
+    def create(self, validated_data):
+        # LOGIC FOR CREATING (POST)
+        # Swap the raw ID for the actual User object
+        if 'manager_id' in validated_data:
+            validated_data['manager'] = validated_data.pop('manager_id')
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        # LOGIC FOR EDITING (PUT/PATCH) - THIS FIXES YOUR ERROR
+        # Swap the raw ID for the actual User object
+        if 'manager_id' in validated_data:
+            validated_data['manager'] = validated_data.pop('manager_id')
+        return super().update(instance, validated_data)
+
+# --- INDIVIDUAL SERIALIZERS (With Parent Logic) ---
+
+class RegionSerializer(NodeSerializer):
+    # Region is Root -> No parent_id
+    level = serializers.SerializerMethodField()
+    def get_level(self, obj): return "Region"
     class Meta:
-        model = HierarchyManagement
-        fields = [
-            'id',
-            'unit_name',
-            'unit_type',
-            'unit_type_display',
-            'parent_unit',
-            'parent_unit_display',
-            'manager_id',
-            'budget',
-            'target_cases',
-            'status',
-            'status_display',
-            'created_at',
-            'cases',
-            'revenue',
-            'efficiency'
-        ]
+        model = Region
+        fields = ['id', 'unit_name', 'description', 'manager_id', 'manager_name', 'budget', 'target_cases', 'status', 'level']
+
+class StateSerializer(NodeSerializer):
+    # Map parent_id -> region
+    parent_id = serializers.PrimaryKeyRelatedField(queryset=Region.objects.all(), source='region', write_only=True)
     
-    def get_parent_unit_display(self, obj):
-        return dict(obj.PARENT_UNIT_CHOICES).get(obj.parent_unit, obj.parent_unit)
+    level = serializers.SerializerMethodField()
+    def get_level(self, obj): return "State"
+    class Meta:
+        model = State
+        fields = ['id', 'unit_name', 'parent_id', 'description', 'manager_id', 'manager_name', 'budget', 'target_cases', 'status', 'level']
+
+class BranchSerializer(NodeSerializer):
+    # Map parent_id -> state
+    parent_id = serializers.PrimaryKeyRelatedField(queryset=State.objects.all(), source='state', write_only=True)
     
-    def get_unit_type_display(self, obj):
-        return obj.get_unit_type_display()
+    level = serializers.SerializerMethodField()
+    def get_level(self, obj): return "Branch"
+    class Meta:
+        model = Branch
+        fields = ['id', 'unit_name', 'parent_id', 'description', 'manager_id', 'manager_name', 'budget', 'target_cases', 'status', 'level']
+
+class DepartmentSerializer(NodeSerializer):
+    # Map parent_id -> branch
+    parent_id = serializers.PrimaryKeyRelatedField(queryset=Branch.objects.all(), source='branch', write_only=True)
     
-    def get_status_display(self, obj):
-        return obj.get_status_display()
+    level = serializers.SerializerMethodField()
+    def get_level(self, obj): return "Department"
+    class Meta:
+        model = Department
+        fields = ['id', 'unit_name', 'parent_id', 'description', 'manager_id', 'manager_name', 'budget', 'target_cases', 'status', 'level']
+
+class TeamSerializer(NodeSerializer):
+    # Map parent_id -> department
+    parent_id = serializers.PrimaryKeyRelatedField(queryset=Department.objects.all(), source='department', write_only=True)
     
-    def get_cases(self, obj):
-        """Get total cases assigned to this hierarchy unit's manager"""
-        try:
-            manager_number = obj.manager_id.split('-')[1] if '-' in obj.manager_id else obj.manager_id
-            user = User.objects.filter(employee_id__icontains=manager_number).first()
-            if user:
-                return RenewalCase.objects.filter(assigned_to=user).count()
-        except (IndexError, AttributeError):
-            pass
-        return 0
-    
-    def get_revenue(self, obj):
-        """Get total revenue from renewed cases assigned to this hierarchy unit's manager"""
-        try:
-            manager_number = obj.manager_id.split('-')[1] if '-' in obj.manager_id else obj.manager_id
-            user = User.objects.filter(employee_id__icontains=manager_number).first()
-            if user:
-                result = RenewalCase.objects.filter(
-                    assigned_to=user, 
-                    status='renewed'
-                ).aggregate(total=Sum('renewal_amount'))
-                return float(result['total'] or 0)
-        except (IndexError, AttributeError):
-            pass
-        return 0.0
-    
-    def get_efficiency(self, obj):
-        """Calculate efficiency as percentage of renewed cases"""
-        try:
-            manager_number = obj.manager_id.split('-')[1] if '-' in obj.manager_id else obj.manager_id
-            user = User.objects.filter(employee_id__icontains=manager_number).first()
-            if user:
-                total_cases = RenewalCase.objects.filter(assigned_to=user).count()
-                renewed_cases = RenewalCase.objects.filter(assigned_to=user, status='renewed').count()
-                if total_cases > 0:
-                    return round((renewed_cases / total_cases) * 100, 1)
-        except (IndexError, AttributeError):
-            pass
-        return 0.0
+    level = serializers.SerializerMethodField()
+    def get_level(self, obj): return "Team"
+    class Meta:
+        model = Team
+        fields = ['id', 'unit_name', 'parent_id', 'description', 'manager_id', 'manager_name', 'budget', 'target_cases', 'status', 'level']

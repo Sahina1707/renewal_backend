@@ -1,7 +1,8 @@
 # views.py
-from rest_framework import viewsets, status, permissions
+from rest_framework import viewsets, status, permissions, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Count, Q
 from .models import User, Role
 from .serializers import UserSerializer, UserListSerializer, RoleSerializer
@@ -12,6 +13,10 @@ class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.select_related('role').all()
     serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ['role', 'status']
+    search_fields = ['email', 'first_name', 'last_name']
+    
     
     def get_serializer_class(self):
         """Return appropriate serializer based on action"""
@@ -161,10 +166,121 @@ class UserViewSet(viewsets.ModelViewSet):
                 'avg_customers_per_agent': sum(item['total_customers'] for item in workload_data) / len(workload_data) if workload_data else 0
             }
         }, status=status.HTTP_200_OK)
-
-
+    @action(detail=False, methods=['get'])
+    def departments(self, request):
+        """
+        Return list of departments for the frontend dropdown
+        """
+        departments = [
+            {"value": key, "label": label} 
+            for key, label in User.DEPARTMENT_CHOICES
+        ]
+        return Response(departments)
+    @action(detail=False, methods=['get'])
+    def languages(self, request):
+        """
+        Returns the complete list of portal languages as shown in the UI.
+        """
+        languages = [
+            {"value": "en", "label": "English"},
+            {"value": "hi", "label": "Hindi (हिंदी)"},
+            {"value": "bn", "label": "Bengali (বাংলা)"},
+            {"value": "te", "label": "Telugu (తెలుగు)"},
+            {"value": "mr", "label": "Marathi (मराठी)"},
+            {"value": "ta", "label": "Tamil (தமிழ்)"},
+            {"value": "gu", "label": "Gujarati (ગુજરાતી)"},
+            {"value": "ml", "label": "Malayalam (മലയാളം)"},
+            {"value": "kn", "label": "Kannada (ಕನ್ನಡ)"},
+            {"value": "pa", "label": "Punjabi (ਪੰਜਾਬੀ)"},
+            {"value": "as", "label": "Assamese (অসমীয়া)"},
+            {"value": "or", "label": "Odia (ଓଡ଼ିଆ)"},
+            {"value": "ur", "label": "Urdu (اردو)"},
+        ]
+        return Response(languages)
+    
 class RoleViewSet(viewsets.ModelViewSet):
     """ViewSet for Role management"""
-    queryset = Role.objects.all()
+    queryset = Role.objects.all().order_by('id') 
     serializer_class = RoleSerializer
     permission_classes = [permissions.IsAuthenticated]
+    # pagination_class = CustomPageNumberPagination
+    @action(detail=True, methods=['post'], url_path='reset')
+    def reset_to_default(self, request, pk=None):
+        """Reset a system role to its default permissions"""
+        role = self.get_object()
+        
+        if not role.is_system:
+            return Response(
+                {'error': 'Only system roles can be reset to default.'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        role.permissions = role.default_permissions
+        role.save()
+        
+        serializer = self.get_serializer(role)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def perform_destroy(self, instance):
+        """Block deletion of System Roles"""
+        if instance.is_system:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({
+                "error": "System roles cannot be deleted. You can only reset them."
+            })
+        
+        if instance.users.exists():
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({
+                "error": f"Cannot delete role '{instance.display_name}' because users are assigned to it."
+            })
+            
+        instance.delete()
+    @action(detail=False, methods=['get'], url_path='permissions')
+    def available_permissions(self, request):
+        """
+        Returns the exact permission structure to match the UI screenshots.
+        """
+        permission_structure = {
+            "Core Pages": [
+                {"key": "dashboard", "label": "Dashboard", "description": "View main dashboard with analytics and overview"},
+                {"key": "upload_data", "label": "Upload Data", "description": "Upload policy and case data files"},
+                {"key": "case_tracking", "label": "Case Tracking", "description": "View and manage active cases"},
+                {"key": "closed_cases", "label": "Closed Cases", "description": "View and manage closed cases"},
+                {"key": "policy_timeline", "label": "Policy Timeline", "description": "View policy timeline and history"},
+                {"key": "case_logs", "label": "Case Logs", "description": "View system and case logs"},
+                {"key": "claims_management", "label": "Claims Management", "description": "Manage insurance claims processing"},
+                {"key": "policy_servicing", "label": "Policy Servicing", "description": "Manage policy servicing and maintenance"},
+                {"key": "new_business", "label": "New Business", "description": "Handle new business applications and processing"},
+                {"key": "medical_management", "label": "Medical Management", "description": "Manage medical underwriting and assessments"},
+            ],
+            "Email Pages": [
+                {"key": "email_inbox", "label": "Email Inbox", "description": "Access email inbox and management"},
+                {"key": "email_dashboard", "label": "Email Dashboard", "description": "View email analytics and dashboard"},
+                {"key": "email_analytics", "label": "Email Analytics", "description": "View detailed email analytics and reports"},
+                {"key": "bulk_email", "label": "Bulk Email", "description": "Send bulk emails and campaigns"},
+            ],
+            "Marketing Pages": [
+                {"key": "campaigns", "label": "Campaigns", "description": "Manage marketing campaigns"},
+                {"key": "template_manager", "label": "Template Manager", "description": "Manage email and document templates"},
+            ],
+            "Survey Pages": [
+                {"key": "feedback_surveys", "label": "Feedback & Surveys", "description": "Manage customer feedback and surveys"},
+                {"key": "survey_designer", "label": "Survey Designer", "description": "Create and design custom surveys"},
+            ],
+            "Communication Pages": [
+                {"key": "whatsapp_flow", "label": "WhatsApp Flow", "description": "Manage automated WhatsApp messaging flows"},
+            ],
+            "Renewal Pages": [
+                {"key": "email_manager", "label": "Email Manager", "description": "Manage email communications for policy renewals"},
+                {"key": "whatsapp_manager", "label": "WhatsApp Manager", "description": "Manage WhatsApp communications for policy renewals"},
+            ],
+            "Admin Pages": [
+                {"key": "settings", "label": "Settings", "description": "Access system settings and configuration"},
+                {"key": "billing", "label": "Billing", "description": "View billing information and invoices"},
+                {"key": "user_management", "label": "User Management", "description": "Manage users and permissions"},
+            ],
+            "Personal Pages": [
+                {"key": "profile", "label": "Profile", "description": "Manage personal profile and account settings"},
+            ]
+        }
+        return Response(permission_structure)

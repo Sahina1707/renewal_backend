@@ -7,6 +7,7 @@ from twilio.base.exceptions import TwilioRestException
 from django.conf import settings
 
 from .models import SmsProvider, SmsMessage
+from apps.billing.services import log_communication
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +24,15 @@ class BaseSmsService:
         # In a real implementation, you would decrypt credentials here
         self.credentials = provider_model.credentials
 
-    def send_sms(self, to_phone: str, message: str, from_number: str = None, **kwargs) -> Dict[str, Any]:
+    def send_sms(self, to_phone: str, message: str, from_number: str = None, check_notifications: bool = False, **kwargs) -> Dict[str, Any]:
         """Send an SMS message."""
         raise NotImplementedError("This method must be implemented by a subclass.")
+
+    def _is_sms_blocked(self, to_phone: str) -> bool:
+        """Check if the user with this phone number has disabled SMS notifications."""
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        return User.objects.filter(phone=to_phone, sms_notifications=False).exists()
 
     def _log_message(self, sid: str, to_phone: str, from_number: str, content: str, status: str, **kwargs):
         """Helper to log the sent message."""
@@ -39,9 +46,27 @@ class BaseSmsService:
             campaign=kwargs.get('campaign'),
             contact=kwargs.get('contact')
         )
+        
+        # --- BILLING INTEGRATION ---
+        log_communication(
+            vendor_name=self.provider.name,
+            service_type='sms',
+            customer=kwargs.get('customer'),
+            case=kwargs.get('case'),
+            status=status,
+            cost=kwargs.get('cost'),
+            message_snippet=content[:50] if content else "",
+            error_message=kwargs.get('error_message'),
+            provider_message_id=sid
+        )
 
 class TwilioSmsService(BaseSmsService):
-    def send_sms(self, to_phone: str, message: str, from_number: str = None, **kwargs) -> Dict[str, Any]:
+    def send_sms(self, to_phone: str, message: str, from_number: str = None, check_notifications: bool = False, **kwargs) -> Dict[str, Any]:
+        # --- REAL-TIME NOTIFICATION CHECK ---
+        if check_notifications and self._is_sms_blocked(to_phone):
+            logger.info(f"SMS blocked for {to_phone} due to user settings.")
+            return {'sid': None, 'status': 'blocked', 'error': 'User disabled SMS notifications'}
+
         # Use the 'From' number from credentials if not provided
         sender = from_number or self.credentials.get('twilio_from_number')
         messaging_service_sid = self.credentials.get('twilio_messaging_service_sid')
@@ -63,10 +88,20 @@ class TwilioSmsService(BaseSmsService):
             else:
                 raise SmsApiException("Twilio provider requires a 'From Number' or a 'Messaging Service SID'.")
 
+            # Try to capture cost if available
+            cost = None
+            if response.price:
+                try:
+                    cost = abs(float(response.price))
+                except:
+                    pass
+            kwargs['cost'] = cost
+
             self._log_message(response.sid, to_phone, sender or messaging_service_sid, message, response.status, **kwargs)
             return {'sid': response.sid, 'status': response.status}
         except TwilioRestException as e:
             logger.error(f"Twilio API Error: {e}")
+            self._log_message(f"failed-twilio-{to_phone}", to_phone, sender or messaging_service_sid or "unknown", message, 'failed', error_message=str(e), **kwargs)
             raise SmsApiException(f"Twilio Error: {e.msg}")
 
     def health_check(self):
@@ -81,7 +116,12 @@ class TwilioSmsService(BaseSmsService):
             return {'status': 'disconnected', 'error': str(e)}
 
 class Msg91SmsService(BaseSmsService):
-    def send_sms(self, to_phone: str, message: str, from_number: str = None, **kwargs) -> Dict[str, Any]:
+    def send_sms(self, to_phone: str, message: str, from_number: str = None, check_notifications: bool = False, **kwargs) -> Dict[str, Any]:
+        # --- REAL-TIME NOTIFICATION CHECK ---
+        if check_notifications and self._is_sms_blocked(to_phone):
+            logger.info(f"SMS blocked for {to_phone} due to user settings.")
+            return {'sid': None, 'status': 'blocked', 'error': 'User disabled SMS notifications'}
+
         # 1. Get Credentials
         auth_key = self.credentials.get('msg91_auth_key')
         sender_id = self.credentials.get('msg91_sender_id')
@@ -142,7 +182,12 @@ class Msg91SmsService(BaseSmsService):
             return {'status': 'disconnected', 'error': str(e)}
 
 class AwsSnsSmsService(BaseSmsService):
-    def send_sms(self, to_phone: str, message: str, from_number: str = None, **kwargs) -> Dict[str, Any]:
+    def send_sms(self, to_phone: str, message: str, from_number: str = None, check_notifications: bool = False, **kwargs) -> Dict[str, Any]:
+        # --- REAL-TIME NOTIFICATION CHECK ---
+        if check_notifications and self._is_sms_blocked(to_phone):
+            logger.info(f"SMS blocked for {to_phone} due to user settings.")
+            return {'sid': None, 'status': 'blocked', 'error': 'User disabled SMS notifications'}
+
         # 1. Get Credentials
         access_key = self.credentials.get('aws_sns_access_key_id')
         secret_key = self.credentials.get('aws_sns_secret_access_key')
@@ -196,7 +241,12 @@ class AwsSnsSmsService(BaseSmsService):
             return {'status': 'disconnected', 'error': str(e)}
 
 class TextLocalSmsService(BaseSmsService):
-    def send_sms(self, to_phone: str, message: str, from_number: str = None, **kwargs) -> Dict[str, Any]:
+    def send_sms(self, to_phone: str, message: str, from_number: str = None, check_notifications: bool = False, **kwargs) -> Dict[str, Any]:
+        # --- REAL-TIME NOTIFICATION CHECK ---
+        if check_notifications and self._is_sms_blocked(to_phone):
+            logger.info(f"SMS blocked for {to_phone} due to user settings.")
+            return {'sid': None, 'status': 'blocked', 'error': 'User disabled SMS notifications'}
+
         # 1. Get Credentials
         api_key = self.credentials.get('textlocal_api_key')
         sender = self.credentials.get('textlocal_sender', 'TXTLCL')
