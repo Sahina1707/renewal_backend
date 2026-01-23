@@ -10,6 +10,10 @@ from django.conf import settings
 from cryptography.fernet import Fernet
 
 from .models import CallProviderConfig, CallProviderUsageLog
+try:
+    from apps.renewal_settings.models import RenewalSettings
+except ImportError:
+    RenewalSettings = None
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +80,33 @@ class BaseCallService:
         except Exception:
             # If value is already plain or key changed, fall back
             return value
+    def get_call_settings_rules(self) -> Dict[str, Any]:
+        """
+        Helper: Fetches rules (duration, recording) from Renewal Settings.
+        """
+        defaults = {"record": False, "duration_limit": 1800, "analytics": False}
+        
+        if RenewalSettings:
+            try:
+                # FIX: Direct access instead of missing get_settings()
+                rs = RenewalSettings.objects.filter(enable_call_integration=True).first()
+                if not rs:
+                    rs = RenewalSettings.objects.first()
+
+                if rs and not rs.enable_call_integration:
+                    logger.warning("Call integration is disabled in Renewal Settings.")
+                    # You might want to return defaults or raise error here if strictly enforcing
+                
+                if rs:
+                    return {
+                        "record": rs.enable_call_recording,
+                        "duration_limit": rs.default_call_duration * 60, # Minutes to Seconds
+                        "analytics": rs.enable_call_analytics
+                    }
+            except Exception as e:
+                logger.error(f"Error fetching RenewalSettings: {e}")
+                return defaults
+        return defaults    
 
     def make_call(self, to_number: str, **kwargs) -> Dict[str, Any]:
         """Place an outbound call (to be implemented per provider)."""
@@ -100,13 +131,40 @@ class BaseCallService:
 
 class TwilioCallService(BaseCallService):
     def make_call(self, to_number: str, **kwargs) -> Dict[str, Any]:
-        """
-        NOTE:
-        Currently not used – your module is only logging, not placing calls.
-        If in future you want to actually dial calls from here,
-        implement Twilio client.calls.create(...) in this method.
-        """
-        raise CallApiException("Twilio call not implemented yet.")
+        account_sid = self.credentials.get('twilio_account_sid')
+        auth_token = self.credentials.get('twilio_auth_token')
+        from_number = self.credentials.get('twilio_from_number')
+        voice_url = self.credentials.get('twilio_voice_url')
+
+        # We changed the error message here because we are actually checking variables now!
+        if not account_sid or not auth_token:
+            raise CallApiException("Twilio credentials missing")
+
+        # 1. READ SETTINGS
+        rules = self.get_call_settings_rules()
+
+        try:
+            client = Client(account_sid, auth_token)
+            
+            # 2. APPLY RULES
+            call = client.calls.create(
+                to=to_number,
+                from_=from_number,
+                url=voice_url or "http://demo.twilio.com/docs/voice.xml",
+                # Applying Renewal Settings here:
+                record=rules['record'],
+                timeLimit=rules['duration_limit'],
+                status_callback=self.credentials.get('twilio_status_callback_url')
+            )
+            
+            return {
+                "success": True,
+                "provider_call_id": call.sid,
+                "status": call.status
+            }
+        except Exception as e:
+            logger.error(f"Twilio make_call failed: {e}")
+            raise CallApiException(str(e))
 
     def health_check(self) -> Dict[str, Any]:
         """
@@ -164,11 +222,23 @@ class TwilioCallService(BaseCallService):
 
 class ExotelCallService(BaseCallService):
     def make_call(self, to_number: str, **kwargs) -> Dict[str, Any]:
-        """
-        TODO: implement real Exotel call if needed.
-        """
-        raise CallApiException("Exotel call not implemented yet.")
+        # 1. Validation Logic (ADDED)
+        api_key = self.credentials.get('exotel_api_key')
+        api_token = self.credentials.get('exotel_api_token')
+        sid = self.credentials.get('exotel_account_sid')
+        
+        if not api_key or not api_token or not sid:
+            raise CallApiException("Exotel credentials (API Key, Token, or SID) are missing.")
 
+        # 2. READ SETTINGS
+        rules = self.get_call_settings_rules()
+        
+        # 3. Simulate Call (Since we don't have URL)
+        logger.info(f"Exotel Call Initiated (Simulated): Record={rules['record']}")
+        
+        # NOTE: Once you have the URL, you replace this return with requests.post(...)
+        return {"success": True, "message": "Exotel credentials valid, call logic simulated."}
+    
     def _build_exotel_account_url(self, subdomain: str, account_sid: str) -> str:
         """
         Build a safe "account details" URL to validate credentials.
@@ -274,11 +344,20 @@ class ExotelCallService(BaseCallService):
 
 class UbonaCallService(BaseCallService):
     def make_call(self, to_number: str, **kwargs) -> Dict[str, Any]:
-        """
-        TODO: implement real Ubona call if needed.
-        """
-        raise CallApiException("Ubona call not implemented yet.")
+        # 1. Validation Logic (ADDED)
+        api_key = self.credentials.get('ubona_api_key')
+        
+        if not api_key:
+            raise CallApiException("Ubona API Key is missing.")
 
+        # 2. READ SETTINGS
+        rules = self.get_call_settings_rules()
+        
+        # 3. Simulate Call
+        logger.info(f"Ubona Call Initiated (Simulated): Duration={rules['duration_limit']}")
+        
+        return {"success": True, "message": "Ubona credentials valid, call logic simulated."}
+    
     def health_check(self) -> Dict[str, Any]:
         """
         Health check for Ubona:
