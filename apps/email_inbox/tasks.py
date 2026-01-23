@@ -13,7 +13,6 @@ from django.utils import timezone
 from django.template import Template, Context
 from celery import shared_task
 
-# Imports from Settings App
 from apps.email_settings.models import EmailAccount, EmailModuleSettings
 from apps.email_settings.utils import decrypt_credential
 
@@ -64,15 +63,11 @@ def extract_body(msg, content_type_pref):
     return content
 
 def get_sending_configuration(account):
-    """
-    Determines the correct SMTP/API credentials based on the Account's 'sending_method'.
-    """
     config = {
         'from_email': account.email_address,
         'use_tls': True
     }
 
-    # OPTION A: Use Account's own SMTP
     if account.sending_method == 'smtp':
         config.update({
             'host': account.smtp_server,
@@ -83,7 +78,6 @@ def get_sending_configuration(account):
         config['use_tls'] = account.use_ssl_tls
         return config
 
-    # OPTION B & C: Use a Provider
     provider = None
     if account.sending_method == 'specific_provider':
         provider = account.specific_provider
@@ -93,7 +87,6 @@ def get_sending_configuration(account):
     if not provider:
         raise ValueError(f"No provider found for sending method: {account.sending_method}")
 
-    # Map Provider fields to config
     config.update({
         'host': provider.smtp_host,
         'port': provider.smtp_port,
@@ -104,9 +97,6 @@ def get_sending_configuration(account):
     return config
 
 def send_email_with_config(config, to_email, subject, html_body, attachments):
-    """
-    Generic sender that works with the config dictionary.
-    """
     try:
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
@@ -134,7 +124,7 @@ def send_email_with_config(config, to_email, subject, html_body, attachments):
 
 def process_imap_folder(mail, folder_name, is_incoming, account, service):
     try:
-        status, _ = mail.select(f'"{folder_name}"') # Use quotes for folder names with spaces
+        status, _ = mail.select(f'"{folder_name}"') 
         if status != 'OK':
             logger.warning(f"Could not select folder '{folder_name}' for account {account.email_address}.")
             return 0
@@ -150,7 +140,6 @@ def process_imap_folder(mail, folder_name, is_incoming, account, service):
                 raw_email = msg_data[0][1]
                 msg = email.message_from_bytes(raw_email)
 
-                # --- FIX: Extract Message-ID to prevent duplicates ---
                 message_id_header = msg.get("Message-ID", "").strip()
                 cleaned_message_id = message_id_header.strip('<>')
 
@@ -169,7 +158,6 @@ def process_imap_folder(mail, folder_name, is_incoming, account, service):
                     message_id=cleaned_message_id
                 )
                 
-                # Mark as seen to prevent re-fetching, regardless of outcome
                 mail.store(email_id, '+FLAGS', '\\Seen')
 
                 if not result.get('skipped'):
@@ -179,10 +167,6 @@ def process_imap_folder(mail, folder_name, is_incoming, account, service):
         return count
     except Exception as e:
         return 0
-
-# ==========================================
-# TASKS
-# ==========================================
 
 @shared_task(name="apps.email_inbox.tasks.fetch_new_emails")
 def fetch_new_emails():
@@ -270,8 +254,7 @@ def send_campaign_emails(campaign_id):
                     doc_name = f"Policy_{recipient.get('policy_number', 'Doc')}.pdf"
                     attachments.append({'name': doc_name, 'content': pdf_bytes, 'content_type': 'application/pdf'})
 
-# Save to DB (Sent Items)
-                email_msg = EmailInboxMessage.objects.create( # <--- ASSIGN TO 'email_msg'
+                email_msg = EmailInboxMessage.objects.create(
                     from_email=sender_account.email_address,
                     to_emails=[recipient.get('email')],
                     subject=final_subject,

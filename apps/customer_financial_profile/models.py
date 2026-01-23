@@ -3,7 +3,6 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 from apps.core.models import BaseModel
 from apps.customers.models import Customer
 
-
 class CustomerFinancialProfile(BaseModel):
     
     INCOME_SOURCE_CHOICES = [
@@ -138,8 +137,7 @@ class CustomerFinancialProfile(BaseModel):
         if not self.annual_income:
             return 0
         
-        # Recommended premium is typically 10-15% of annual income
-        base_percentage = 0.12  # 12%
+        base_percentage = 0.12  
         
         # Adjust based on risk profile
         risk_multipliers = {

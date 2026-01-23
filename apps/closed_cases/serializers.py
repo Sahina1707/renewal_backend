@@ -6,20 +6,15 @@ from apps.channels.models import Channel
 from apps.files_upload.models import FileUpload
 from apps.uploads.models import FileUpload as UploadsFileUpload
 from django.contrib.auth import get_user_model
-
 User = get_user_model()
-
 class ClosedCasesListSerializer(serializers.ModelSerializer):
     """Serializer for closed cases list view"""
-    
-    # Customer fields
     customer_name = serializers.SerializerMethodField()
     customer_profile = serializers.SerializerMethodField()
     customer_mobile = serializers.SerializerMethodField()
     customer_email = serializers.SerializerMethodField()
     customer_language = serializers.SerializerMethodField()
     
-    # Policy fields
     policy_number = serializers.SerializerMethodField()
     policy_type_name = serializers.SerializerMethodField()
     policy_category = serializers.SerializerMethodField()
@@ -27,17 +22,14 @@ class ClosedCasesListSerializer(serializers.ModelSerializer):
     expiry_date = serializers.SerializerMethodField()
     policy_status = serializers.SerializerMethodField()
     
-    # Channel and Agent fields
     channel_name = serializers.SerializerMethodField()
     channel_type = serializers.SerializerMethodField()
     agent_name = serializers.SerializerMethodField()
     
-    # Batch and Upload fields
     batch_id = serializers.CharField(source='batch_code', read_only=True)
     upload_date = serializers.SerializerMethodField()
     upload_filename = serializers.SerializerMethodField()
     
-    # Additional fields
     calls_count = serializers.SerializerMethodField()
     renewal_date = serializers.SerializerMethodField()
     closed_date = serializers.SerializerMethodField()
@@ -173,7 +165,6 @@ class ClosedCasesListSerializer(serializers.ModelSerializer):
     
     def get_last_action(self, obj):
         return obj.last_contact_date if obj.last_contact_date else obj.updated_at
-
 
 class ClosedCasesDetailSerializer(serializers.ModelSerializer):
     """Detailed serializer for individual closed case view"""

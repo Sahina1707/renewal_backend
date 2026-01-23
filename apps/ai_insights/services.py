@@ -8,7 +8,6 @@ from django.utils import timezone
 from django.db.models import Sum, Count, Q, Avg
 from django.contrib.auth import get_user_model
 
-# OpenAI imports
 try:
     import openai
     OPENAI_AVAILABLE = True
@@ -24,7 +23,6 @@ from apps.policies.models import Policy
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
-
 
 class AIService:
     

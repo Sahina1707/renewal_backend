@@ -2,8 +2,6 @@ from rest_framework import serializers
 from decimal import Decimal
 from django.utils import timezone
 from .models import PaymentSchedule
-
-
 class PaymentScheduleSerializer(serializers.ModelSerializer):
     """Serializer for PaymentSchedule model"""
     
@@ -123,14 +121,12 @@ class PaymentScheduleCreateSerializer(serializers.ModelSerializer):
     
     def validate(self, data):
         """Validate the payment schedule data"""
-        # Validate amount due
         amount_due = data.get('amount_due')
         if amount_due and amount_due <= 0:
             raise serializers.ValidationError(
                 "Amount due must be greater than zero."
             )
         
-        # Validate installment numbers
         installment_number = data.get('installment_number', 1)
         total_installments = data.get('total_installments', 1)
         
@@ -149,7 +145,6 @@ class PaymentScheduleCreateSerializer(serializers.ModelSerializer):
                 "Installment number cannot exceed total installments."
             )
         
-        # Validate late fee
         late_fee_amount = data.get('late_fee_amount', Decimal('0.00'))
         late_fee_percentage = data.get('late_fee_percentage', Decimal('0.00'))
         
@@ -163,7 +158,6 @@ class PaymentScheduleCreateSerializer(serializers.ModelSerializer):
                 "Late fee percentage must be between 0 and 100."
             )
         
-        # Validate early payment discount
         early_payment_discount = data.get('early_payment_discount', Decimal('0.00'))
         early_payment_days = data.get('early_payment_days', 0)
         
@@ -182,28 +176,24 @@ class PaymentScheduleCreateSerializer(serializers.ModelSerializer):
                 "Early payment days cannot be negative."
             )
         
-        # Validate grace period
         grace_period_days = data.get('grace_period_days', 0)
         if grace_period_days < 0:
             raise serializers.ValidationError(
                 "Grace period days cannot be negative."
             )
         
-        # Validate max retry attempts
         max_retry_attempts = data.get('max_retry_attempts', 3)
         if max_retry_attempts < 0:
             raise serializers.ValidationError(
                 "Max retry attempts cannot be negative."
             )
         
-        # Validate due date
         due_date = data.get('due_date')
         if due_date and due_date < timezone.now().date():
             raise serializers.ValidationError(
                 "Due date cannot be in the past."
             )
         
-        # Validate auto payment method
         auto_payment_enabled = data.get('auto_payment_enabled', False)
         auto_payment_method = data.get('auto_payment_method', '')
         
@@ -213,8 +203,6 @@ class PaymentScheduleCreateSerializer(serializers.ModelSerializer):
             )
         
         return data
-
-
 class PaymentScheduleUpdateSerializer(serializers.ModelSerializer):
     """Serializer for updating PaymentSchedule"""
     
@@ -253,14 +241,12 @@ class PaymentScheduleUpdateSerializer(serializers.ModelSerializer):
         """Validate the payment schedule update data"""
         instance = self.instance
         
-        # Validate amount due
         amount_due = data.get('amount_due', instance.amount_due if instance else Decimal('0.00'))
         if amount_due <= 0:
             raise serializers.ValidationError(
                 "Amount due must be greater than zero."
             )
         
-        # Validate processed amount
         processed_amount = data.get('processed_amount', instance.processed_amount if instance else Decimal('0.00'))
         if processed_amount < 0:
             raise serializers.ValidationError(
@@ -272,7 +258,6 @@ class PaymentScheduleUpdateSerializer(serializers.ModelSerializer):
                 "Processed amount cannot exceed amount due."
             )
         
-        # Validate late fee
         late_fee_amount = data.get('late_fee_amount', instance.late_fee_amount if instance else Decimal('0.00'))
         late_fee_percentage = data.get('late_fee_percentage', instance.late_fee_percentage if instance else Decimal('0.00'))
         
@@ -286,7 +271,6 @@ class PaymentScheduleUpdateSerializer(serializers.ModelSerializer):
                 "Late fee percentage must be between 0 and 100."
             )
         
-        # Validate early payment discount
         early_payment_discount = data.get('early_payment_discount', instance.early_payment_discount if instance else Decimal('0.00'))
         
         if early_payment_discount < 0:
@@ -300,7 +284,6 @@ class PaymentScheduleUpdateSerializer(serializers.ModelSerializer):
             )
         
         return data
-
 
 class PaymentScheduleListSerializer(serializers.ModelSerializer):
     """Serializer for listing PaymentSchedule with minimal data"""
@@ -334,7 +317,6 @@ class PaymentScheduleListSerializer(serializers.ModelSerializer):
             'status_display',
             'created_at',
         ]
-
 
 class PaymentScheduleSummarySerializer(serializers.ModelSerializer):
     """Serializer for payment schedule summary and analytics"""
@@ -432,7 +414,6 @@ class PaymentFailureSerializer(serializers.Serializer):
         default=True,
         help_text="Whether to schedule automatic retry"
     )
-
 
 class AutoPaymentSerializer(serializers.Serializer):
     """Serializer for auto payment settings"""

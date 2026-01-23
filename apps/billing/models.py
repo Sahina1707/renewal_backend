@@ -84,9 +84,6 @@ class Vendor(models.Model):
         return self.name
 
 class CommunicationLog(models.Model):
-    """
-    Records every single message sent. Used for 'Delivery Status' and 'Stats' tabs.
-    """
     STATUS_CHOICES = [
         ('delivered', 'Delivered'),
         ('failed', 'Failed'),
@@ -118,7 +115,6 @@ class CommunicationLog(models.Model):
     vendor = models.ForeignKey(Vendor, on_delete=models.SET_NULL, null=True)
     type = models.CharField(max_length=50, choices=UsageCharge.SERVICE_TYPES)
     
-    # Details for the "Delivery Status" table
     customer_name = models.CharField(max_length=100)
     message_snippet = models.CharField(max_length=255) 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
@@ -132,9 +128,6 @@ class CommunicationLog(models.Model):
         ordering = ['-timestamp']
 
 class Campaign(models.Model):
-    """
-    For the 'Bulk Campaigns' toggle in the Delivery Status tab (Video 1:26)
-    """
     name = models.CharField(max_length=100) 
     type = models.CharField(max_length=50, choices=UsageCharge.SERVICE_TYPES)
     total_recipients = models.IntegerField()

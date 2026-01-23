@@ -4,10 +4,7 @@ from apps.renewals.models import RenewalCase
 from .models import CaseLog
 
 User = get_user_model()
-
 class CaseLogSerializer(serializers.ModelSerializer):
-    """Serializer for case logs - used in search functionality"""
-
     renewal_case_number = serializers.CharField(source='renewal_case.case_number', read_only=True)
     sub_status = serializers.CharField(source='get_sub_status_display', read_only=True)
     current_work_step = serializers.CharField(source='get_current_work_step_display', read_only=True)
@@ -43,10 +40,7 @@ class CaseLogSerializer(serializers.ModelSerializer):
             return obj.updated_by.get_full_name() or obj.updated_by.username
         return None
 
-
 class CaseCommentSerializer(serializers.ModelSerializer):
-    """Serializer for case comments using CaseLog model"""
-    
     comment_type = serializers.SerializerMethodField()
     is_internal = serializers.SerializerMethodField()
     is_important = serializers.SerializerMethodField()
@@ -80,8 +74,6 @@ class CaseCommentSerializer(serializers.ModelSerializer):
 
 
 class CaseCommentCreateSerializer(serializers.ModelSerializer):
-    """Serializer for creating case comments using CaseLog model"""
-    
     comment = serializers.CharField(required=True)
     comment_type = serializers.CharField(required=False, allow_blank=True)
     is_internal = serializers.BooleanField(required=False, default=False)

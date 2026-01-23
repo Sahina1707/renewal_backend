@@ -8,7 +8,6 @@ from .serializers import (
     CustomerCommunicationPreferenceListSerializer
 )
 
-
 class CustomerCommunicationPreferenceViewSet(viewsets.ModelViewSet):
     queryset = CustomerCommunicationPreference.objects.filter(is_deleted=False)
     pagination_class = StandardResultsSetPagination
@@ -25,27 +24,22 @@ class CustomerCommunicationPreferenceViewSet(viewsets.ModelViewSet):
         """Filter queryset based on query parameters"""
         queryset = self.queryset.select_related('customer')
         
-        # Filter by customer
         customer_id = self.request.query_params.get('customer_id')
         if customer_id:
             queryset = queryset.filter(customer_id=customer_id)
         
-        # Filter by communication type
         communication_type = self.request.query_params.get('communication_type')
         if communication_type:
             queryset = queryset.filter(communication_type=communication_type)
         
-        # Filter by preferred channel
         preferred_channel = self.request.query_params.get('preferred_channel')
         if preferred_channel:
             queryset = queryset.filter(preferred_channel=preferred_channel)
         
-        # Filter by active status
         is_active = self.request.query_params.get('is_active')
         if is_active is not None:
             queryset = queryset.filter(is_active=is_active.lower() == 'true')
         
-        # Search functionality
         search = self.request.query_params.get('search')
         if search:
             queryset = queryset.filter(

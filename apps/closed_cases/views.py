@@ -235,7 +235,6 @@ class ClosedCasesViewSet(viewsets.ReadOnlyModelViewSet):
             'exported_at': timezone.now().isoformat()
         })
 
-
 class ClosedCasesCombinedDataAPIView(APIView):
     
     def get(self, request, case_number=None):
@@ -750,7 +749,6 @@ def closed_cases_timeline_view(request, case_number):
             'data': None
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
 class ClosedCasesCommentListView(generics.ListCreateAPIView):
     
     permission_classes = [permissions.IsAuthenticated]
@@ -832,8 +830,6 @@ class ClosedCasesCommentListView(generics.ListCreateAPIView):
             'message': 'Comment created successfully',
             'data': response_serializer.data
         }, status=status.HTTP_201_CREATED)
-
-
 class ClosedCasesCommentDetailView(generics.RetrieveUpdateDestroyAPIView):
     
     permission_classes = [permissions.IsAuthenticated]
@@ -890,13 +886,7 @@ class ClosedCasesCommentDetailView(generics.RetrieveUpdateDestroyAPIView):
         
         instance.delete(user=self.request.user)
 
-
 class ClosedCasesUpdateStatusView(generics.UpdateAPIView):
-    """
-    Update case status API for CLOSED/RENEWED cases only
-    Reuses the same structure as case_history.UpdateCaseStatusView
-    Only works for cases with status='renewed'
-    """
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = 'case_number'
     
@@ -922,7 +912,6 @@ class ClosedCasesUpdateStatusView(generics.UpdateAPIView):
         
         case_number = self.kwargs['case_number']
         
-        # Query RenewalCase with status='renewed' filter
         case = RenewalCase.objects.filter(
             case_number__iexact=case_number,
             status='renewed',
@@ -936,7 +925,6 @@ class ClosedCasesUpdateStatusView(generics.UpdateAPIView):
                 'data': None
             }, status=status.HTTP_404_NOT_FOUND)
         
-        # Check permissions
         if not (request.user.is_staff or 
                 case.assigned_to == request.user or 
                 case.created_by == request.user):
@@ -946,12 +934,10 @@ class ClosedCasesUpdateStatusView(generics.UpdateAPIView):
                 'data': None
             }, status=status.HTTP_403_FORBIDDEN)
         
-        # Validate and update
         serializer = self.get_serializer(case, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
         
-        # Refresh instance to get updated values
         case.refresh_from_db()
         
         return Response({
@@ -970,12 +956,7 @@ class ClosedCasesUpdateStatusView(generics.UpdateAPIView):
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def get_closed_case_outstanding_summary_api(request, case_id):
-    """
-    Get outstanding amounts summary for a closed/renewed case.
-    Only works for cases with status 'completed' or 'renewed'.
-    """
     try:
-        # Handle both integer ID and case_number
         if case_id.isdigit():
             renewal_case = RenewalCase.objects.filter(
                 id=int(case_id),
@@ -994,14 +975,12 @@ def get_closed_case_outstanding_summary_api(request, case_id):
             else:
                 actual_case_id = None
         
-        # Validate case exists and is closed/renewed
         if not renewal_case:
             return Response({
                 'success': False,
                 'error': 'Case Not Renewed'
             }, status=status.HTTP_404_NOT_FOUND)
         
-        # Get outstanding summary using the existing service
         outstanding_data = OutstandingAmountsService.get_outstanding_summary(actual_case_id)
         
         if outstanding_data is None:
@@ -1010,7 +989,6 @@ def get_closed_case_outstanding_summary_api(request, case_id):
                 'error': 'Failed to calculate outstanding amounts'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
-        # Serialize the data
         serializer = OutstandingAmountsSummarySerializer(outstanding_data)
         
         return Response({
@@ -1029,17 +1007,12 @@ def get_closed_case_outstanding_summary_api(request, case_id):
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def get_closed_case_customer_insights_api(request, case_number):
-    """
-    Get customer insights for a closed/renewed case.
-    Only works for cases with status 'completed' or 'renewed'.
-    """
     try:
         force_recalculate = request.query_params.get('force_recalculate', 'false').lower() == 'true'
         
         sections = request.query_params.get('sections', '').split(',')
         sections = [s.strip() for s in sections if s.strip()]
         
-        # Validate case exists and is closed/renewed
         renewal_case = RenewalCase.objects.filter(
             case_number=case_number,
             status__in=['completed', 'renewed'],
@@ -1055,7 +1028,6 @@ def get_closed_case_customer_insights_api(request, case_number):
         
         customer = renewal_case.customer
         
-        # Get customer insights using the existing service
         service = CustomerInsightsService()
         insights_data = service.get_customer_insights(customer.id, force_recalculate)
         
@@ -1066,7 +1038,6 @@ def get_closed_case_customer_insights_api(request, case_number):
                 'data': None
             }, status=status.HTTP_404_NOT_FOUND)
         
-        # Filter sections if requested
         if sections:
             filtered_data = {
                 'customer_info': insights_data['customer_info'],
@@ -1080,7 +1051,6 @@ def get_closed_case_customer_insights_api(request, case_number):
             
             insights_data = filtered_data
         
-        # Serialize the data
         serializer = CustomerInsightsResponseSerializer(insights_data)
         
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -1096,12 +1066,7 @@ def get_closed_case_customer_insights_api(request, case_number):
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def get_closed_case_communication_history_api(request, case_number):
-    """
-    Get communication history for a closed/renewed case.
-    Only works for cases with status 'completed' or 'renewed'.
-    """
     try:
-        # Validate case exists and is closed/renewed
         renewal_case = RenewalCase.objects.filter(
             case_number=case_number,
             status__in=['completed', 'renewed'],
@@ -1116,11 +1081,9 @@ def get_closed_case_communication_history_api(request, case_number):
         
         customer = renewal_case.customer
         
-        # Get communication history using the existing service
         service = CustomerInsightsService()
         history_data = service.get_communication_history(customer)
         
-        # Serialize the data
         serializer = CommunicationHistoryResponseSerializer(history_data)
         
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -1136,12 +1099,7 @@ def get_closed_case_communication_history_api(request, case_number):
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def get_closed_case_claims_history_api(request, case_number):
-    """
-    Get claims history for a closed/renewed case.
-    Only works for cases with status 'completed' or 'renewed'.
-    """
     try:
-        # Validate case exists and is closed/renewed
         renewal_case = RenewalCase.objects.filter(
             case_number=case_number,
             status__in=['completed', 'renewed'],
@@ -1156,11 +1114,9 @@ def get_closed_case_claims_history_api(request, case_number):
         
         customer = renewal_case.customer
         
-        # Get claims history using the existing service
         service = CustomerInsightsService()
         history_data = service.get_claims_history(customer)
         
-        # Serialize the data
         serializer = ClaimsHistoryResponseSerializer(history_data)
         
         return Response(serializer.data, status=status.HTTP_200_OK)

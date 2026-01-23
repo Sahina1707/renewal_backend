@@ -7,7 +7,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
 @shared_task(bind=True, max_retries=3)
 def send_email_task(self, subject, message, recipient_list, from_email=None):
     try:
@@ -24,15 +23,10 @@ def send_email_task(self, subject, message, recipient_list, from_email=None):
         
     except Exception as exc:
         logger.error(f"Error sending email: {str(exc)}")
-        # Retry with exponential backoff
         raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
-
 
 @shared_task
 def cleanup_expired_sessions():
-    """
-    Clean up expired user sessions.
-    """
     try:
         from apps.users.models import UserSession
         
@@ -49,12 +43,8 @@ def cleanup_expired_sessions():
         logger.error(f"Error cleaning up sessions: {str(e)}")
         raise
 
-
 @shared_task
 def cleanup_expired_password_reset_tokens():
-    """
-    Clean up expired password reset tokens.
-    """
     try:
         from apps.users.models import PasswordResetToken
         
@@ -74,9 +64,6 @@ def cleanup_expired_password_reset_tokens():
 
 @shared_task
 def cleanup_old_audit_logs():
-    """
-    Clean up old audit logs (older than 1 year).
-    """
     try:
         from apps.core.models import AuditLog
         
@@ -95,9 +82,6 @@ def cleanup_old_audit_logs():
 
 @shared_task
 def process_file_upload(file_id):
-    """
-    Process uploaded files (virus scan, metadata extraction, etc.).
-    """
     try:
         from apps.uploads.models import FileUpload, FileProcessingQueue
         
@@ -105,24 +89,20 @@ def process_file_upload(file_id):
         file_upload.status = 'processing'
         file_upload.save()
         
-        # Create processing tasks
         tasks = []
         
-        # Virus scan
         tasks.append(FileProcessingQueue.objects.create(
             file=file_upload,
             task_type='virus_scan',
             priority=1
         ))
         
-        # Metadata extraction
         tasks.append(FileProcessingQueue.objects.create(
             file=file_upload,
             task_type='metadata_extract',
             priority=2
         ))
         
-        # Generate thumbnails for images
         if file_upload.is_image:
             tasks.append(FileProcessingQueue.objects.create(
                 file=file_upload,
@@ -135,7 +115,6 @@ def process_file_upload(file_id):
         
     except Exception as e:
         logger.error(f"Error processing file upload {file_id}: {str(e)}")
-        # Mark file as failed
         try:
             file_upload = FileUpload.objects.get(id=file_id)
             file_upload.status = 'failed'
@@ -148,9 +127,6 @@ def process_file_upload(file_id):
 
 @shared_task
 def update_customer_metrics():
-    """
-    Update customer metrics and statistics.
-    """
     try:
         from apps.customers.models import Customer
         
@@ -171,14 +147,10 @@ def update_customer_metrics():
 
 @shared_task
 def send_policy_renewal_reminders():
-    """
-    Send policy renewal reminders to customers.
-    """
     try:
         from apps.policies.models import Policy
         from datetime import date
         
-        # Get policies expiring in 30 days
         reminder_date = date.today() + timedelta(days=30)
         expiring_policies = Policy.objects.filter(
             policy_end_date=reminder_date,
@@ -188,7 +160,6 @@ def send_policy_renewal_reminders():
         
         sent_count = 0
         for policy in expiring_policies:
-            # Send renewal reminder
             send_email_task.delay(
                 subject=f"Policy Renewal Reminder - {policy.policy_number}",
                 message=f"Dear {policy.customer.full_name}, your policy {policy.policy_number} is expiring on {policy.policy_end_date}. Please contact us for renewal.",
@@ -216,7 +187,6 @@ def generate_daily_report():
         
         today = timezone.now().date()
         
-        # Gather statistics
         stats = {
             'date': today.isoformat(),
             'customers': {
@@ -250,7 +220,6 @@ def generate_daily_report():
             }
         }
         
-        # Send report to administrators
         admin_emails = User.objects.filter(
             is_superuser=True,
             is_active=True
@@ -295,8 +264,6 @@ def backup_database():
     Create database backup (placeholder - implement based on your backup strategy).
     """
     try:
-        # This is a placeholder task
-        # Implement actual backup logic based on your requirements
         logger.info("Database backup task executed (placeholder)")
         return "Database backup completed"
         

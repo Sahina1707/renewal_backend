@@ -12,12 +12,7 @@ from .serializers import CustomerCommunicationPreferenceSerializer
 from apps.renewal_timeline.models import CommonRenewalTimelineSettings
 from apps.customer_payments.models import CustomerPayment
 from apps.policy_timeline.models import CustomerPaymentSchedule
-
-
 class CombinedPolicyDataAPIView(APIView):
-    """
-    API View to fetch combined policy data from multiple tables using nested serializers
-    """ 
     def get(self, request, case_id=None, case_number=None):
 
         try:
@@ -103,9 +98,6 @@ class CombinedPolicyDataAPIView(APIView):
                 'message': f'Error retrieving combined policy data: {str(e)}',
                 'data': None
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-
-# Preferences
 
 class CustomerCommunicationPreferencesAPIView(APIView):
     def get(self, request, case_number):
@@ -119,10 +111,6 @@ class CustomerCommunicationPreferencesAPIView(APIView):
         
 
 class CustomerPreferencesSummaryAPIView(APIView):
-    """Combine data from Customer, Communication Preferences, Renewal Timeline, and Payments.
-    Does not change any existing logic; read-only aggregation for the Preferences page.
-    """
-
     def get(self, request, case_id=None, case_ref=None):
         try:
             if case_id is None and case_ref is None:
@@ -141,7 +129,6 @@ class CustomerPreferencesSummaryAPIView(APIView):
                 renewal_case = get_object_or_404(RenewalCase, id=case_id)
             customer = renewal_case.customer if hasattr(renewal_case, 'customer') and renewal_case.customer else renewal_case.policy.customer
 
-            # Customer basics
             customer_info = {
                 'id': customer.id,
                 'customer_code': getattr(customer, 'customer_code', None),
@@ -168,7 +155,6 @@ class CustomerPreferencesSummaryAPIView(APIView):
 
             renewal_timeline = None
             common_timeline_settings = CommonRenewalTimelineSettings.objects.filter(is_active=True).first()
-            # Try to get specific customer behavior
             payment_schedule, created = CustomerPaymentSchedule.objects.get_or_create(
                 customer=customer,
                 defaults={

@@ -4,7 +4,6 @@ from django.core.exceptions import ValidationError
 from apps.core.models import BaseModel
 from decimal import Decimal
 
-
 class DistributionChannel(BaseModel):
     """
     Model to manage distribution partners, agents, and sales channels.

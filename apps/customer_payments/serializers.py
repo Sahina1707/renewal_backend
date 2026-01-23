@@ -1,7 +1,3 @@
-"""
-Serializers for Customer Payments app.
-"""
-
 from rest_framework import serializers
 from decimal import Decimal
 from .models import CustomerPayment
@@ -118,7 +114,6 @@ class CustomerPaymentCreateSerializer(serializers.ModelSerializer):
     
     def validate(self, data):
         """Validate the payment data"""
-        # Validate payment amount
         payment_amount = data.get('payment_amount')
         if payment_amount and payment_amount <= 0:
             raise serializers.ValidationError(
@@ -174,7 +169,6 @@ class CustomerPaymentCreateSerializer(serializers.ModelSerializer):
         payment.calculate_net_amount()
         payment.save()
         return payment
-
 
 class CustomerPaymentUpdateSerializer(serializers.ModelSerializer):
     """Serializer for updating CustomerPayment"""

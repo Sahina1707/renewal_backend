@@ -1,18 +1,10 @@
-"""
-Customer Vehicle models for the Intelipro Insurance Policy Renewal System.
-"""
-
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from decimal import Decimal
 from apps.core.models import BaseModel
 from apps.customer_assets.models import CustomerAssets
 
-
 class CustomerVehicle(BaseModel):
-    """
-    Customer vehicle information including vehicle details and valuation.
-    """
     
     VEHICLE_TYPE_CHOICES = [
         ('car', 'Car'),
@@ -44,7 +36,6 @@ class CustomerVehicle(BaseModel):
         ('poor', 'Poor'),
     ]
     
-    # Foreign Key to CustomerAssets
     customer_assets = models.ForeignKey(
         CustomerAssets,
         on_delete=models.CASCADE,
@@ -52,7 +43,6 @@ class CustomerVehicle(BaseModel):
         help_text="Customer assets this vehicle belongs to"
     )
     
-    # Vehicle Information
     vehicle_name = models.CharField(
         max_length=100,
         help_text="Name/Brand of the vehicle"
@@ -87,7 +77,6 @@ class CustomerVehicle(BaseModel):
         help_text="Current condition of the vehicle"
     )
     
-    # Financial Information
     value = models.DecimalField(
         max_digits=12,
         decimal_places=2,
@@ -104,7 +93,6 @@ class CustomerVehicle(BaseModel):
         help_text="Original purchase price of the vehicle"
     )
     
-    # Additional Details
     registration_number = models.CharField(
         max_length=20,
         blank=True,
@@ -168,7 +156,6 @@ class CustomerVehicle(BaseModel):
         """Calculate a vehicle score based on various factors"""
         score = 0
         
-        # Score based on vehicle type
         type_scores = {
             'car': 8,
             'suv': 9,
@@ -206,15 +193,15 @@ class CustomerVehicle(BaseModel):
             score += 2
         
         # Score based on value
-        if self.value >= 1000000:  # 10 lakh+
+        if self.value >= 1000000:  
             score += 10
-        elif self.value >= 500000:  # 5 lakh+
+        elif self.value >= 500000:  
             score += 8
-        elif self.value >= 200000:  # 2 lakh+
+        elif self.value >= 200000:  
             score += 6
-        elif self.value >= 100000:  # 1 lakh+
+        elif self.value >= 100000:  
             score += 4
         else:
             score += 2
         
-        return min(score, 40)  # Cap at 40
+        return min(score, 40)  

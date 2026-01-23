@@ -8,13 +8,12 @@ from apps.templates.models import Template
 from apps.files_upload.models import FileUpload
 from apps.target_audience.models import TargetAudience
 from apps.email_provider.models import EmailProviderConfig
-# Try to import SMS Provider
+from django.utils import timezone
 try:
     from apps.sms_provider.models import SmsProvider
 except ImportError:
     SmsProvider = None
 
-# Try to import WhatsApp Provider (NEW)
 try:
     from apps.whatsapp_provider.models import WhatsAppProvider
 except ImportError:
@@ -26,9 +25,7 @@ import json
 from datetime import timedelta
 
 User = get_user_model()
-
 class CampaignType(BaseModel):
-    """Types of campaigns (Renewal, Welcome, Follow-up, etc.)"""
     name = models.CharField(max_length=100, unique=True)
     code = models.CharField(max_length=20, unique=True)
     description = models.TextField(blank=True)
@@ -41,7 +38,6 @@ class CampaignType(BaseModel):
     def __str__(self):
         return self.name
 class Campaign(BaseModel):
-    """Main campaign model"""
     CAMPAIGN_STATUS_CHOICES = [
         ('draft', 'Draft'),
         ('scheduled', 'Scheduled'),
@@ -70,7 +66,6 @@ class Campaign(BaseModel):
     description = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=CAMPAIGN_STATUS_CHOICES, default='active')
     upload = models.ForeignKey(FileUpload,on_delete=models.SET_NULL,null=True,blank=True,related_name='campaigns')
-    # Campaign Settings
     channels = models.JSONField(default=list, help_text="List of communication channels")
     target_audience = models.ForeignKey(TargetAudience,on_delete=models.SET_NULL, null=True, blank=True, related_name='campaigns'
     )
@@ -83,7 +78,6 @@ class Campaign(BaseModel):
         help_text="Specific provider for Email channel. If null, uses system default."
     )
 
-    # Dynamic SMS Provider Field
     if SmsProvider:
         sms_provider = models.ForeignKey(
             SmsProvider,
@@ -94,7 +88,6 @@ class Campaign(BaseModel):
             help_text="Specific provider for SMS channel. If null, uses system default."
         )
 
-    # Dynamic WhatsApp Provider Field (NEW)
     if WhatsAppProvider:
         whatsapp_provider = models.ForeignKey(
             WhatsAppProvider,
@@ -105,8 +98,6 @@ class Campaign(BaseModel):
             help_text="Specific provider for WhatsApp channel. If null, uses system default."
         )
 
-
-    # Scheduling
     schedule_type = models.CharField(max_length=20, choices=[
         ('immediate', 'Immediate'),
         ('schedule later', 'Scheduled Later'),
@@ -118,7 +109,6 @@ class Campaign(BaseModel):
     is_recurring = models.BooleanField(default=False)
     recurrence_pattern = models.JSONField(default=dict, blank=True)
     
-    # Advanced Scheduling
     enable_advanced_scheduling = models.BooleanField(
         default=False,
         help_text="Enable multi-channel communication intervals"
@@ -129,14 +119,11 @@ class Campaign(BaseModel):
         help_text="Configuration for advanced scheduling intervals"
     )
     
-    # Content
     subject_line = models.CharField(max_length=200, blank=True)
     
-    # Personalization
     use_personalization = models.BooleanField(default=True)
     personalization_fields = models.JSONField(default=list, blank=True)
     
-    # Tracking
     target_count = models.PositiveIntegerField(default=0)
     sent_count = models.PositiveIntegerField(default=0)
     delivered_count = models.PositiveIntegerField(default=0)
@@ -144,7 +131,6 @@ class Campaign(BaseModel):
     clicked_count = models.PositiveIntegerField(default=0)
     total_responses = models.PositiveIntegerField(default=0)
     
-    # System Fields
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='created_campaigns')
     assigned_to = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_campaigns')
     
@@ -160,10 +146,6 @@ class Campaign(BaseModel):
         return f"{self.name} ({self.status})"
 
     def get_simplified_status(self):
-        """
-        Get simplified status for frontend display
-        Maps complex statuses to Active/Paused
-        """
         if self.status in ['active', 'scheduled']:
             return 'active'
         elif self.status == 'paused':
@@ -174,10 +156,6 @@ class Campaign(BaseModel):
             return 'paused'
 
     def set_simplified_status(self, simplified_status):
-        """
-        Set status based on simplified frontend status
-        Maps Active/Paused to appropriate complex statuses
-        """
         if simplified_status == 'active':
             if self.status == 'paused':
                 self.status = 'active'
@@ -189,7 +167,6 @@ class Campaign(BaseModel):
         self.save(update_fields=['status'])
 
     def update_campaign_statistics(self):
-        """Update campaign statistics based on recipient data"""
         recipients = self.recipients.all()
 
         self.sent_count = recipients.filter(
@@ -317,29 +294,22 @@ class CampaignRecipient(BaseModel):
         ('unsubscribed', 'Unsubscribed'),
     ]
 
-
-    # Core relationships
     campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name='recipients')
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='campaign_recipients')
     policy = models.ForeignKey(Policy, on_delete=models.SET_NULL, null=True, blank=True, related_name='campaign_recipients')
 
-    # Channel-specific delivery tracking
     email_status = models.CharField(max_length=20, choices=DELIVERY_STATUS_CHOICES, default='pending')
     whatsapp_status = models.CharField(max_length=20, choices=DELIVERY_STATUS_CHOICES, default='pending')
     sms_status = models.CharField(max_length=20, choices=DELIVERY_STATUS_CHOICES, default='pending')
 
-    # Channel-specific engagement tracking
     email_engagement = models.CharField(max_length=20, choices=ENGAGEMENT_STATUS_CHOICES, default='not_opened')
     whatsapp_engagement = models.CharField(max_length=20, choices=ENGAGEMENT_STATUS_CHOICES, default='not_opened')
     sms_engagement = models.CharField(max_length=20, choices=ENGAGEMENT_STATUS_CHOICES, default='not_opened')
 
-    # Unique tracking ID for secure tracking
     tracking_id = models.CharField(max_length=64, unique=True, blank=True)
     
-    # Provider message ID for SendGrid/Email provider tracking
     provider_message_id = models.CharField(max_length=255, blank=True, null=True, help_text="Message ID from email provider (SendGrid, SES, etc.)")
 
-    # Delivery timestamps
     email_sent_at = models.DateTimeField(null=True, blank=True)
     email_delivered_at = models.DateTimeField(null=True, blank=True)
     whatsapp_sent_at = models.DateTimeField(null=True, blank=True)
@@ -347,7 +317,6 @@ class CampaignRecipient(BaseModel):
     sms_sent_at = models.DateTimeField(null=True, blank=True)
     sms_delivered_at = models.DateTimeField(null=True, blank=True)
 
-    # Engagement timestamps
     email_opened_at = models.DateTimeField(null=True, blank=True)
     email_clicked_at = models.DateTimeField(null=True, blank=True)
     email_replied_at = models.DateTimeField(null=True, blank=True)
@@ -355,19 +324,16 @@ class CampaignRecipient(BaseModel):
     whatsapp_replied_at = models.DateTimeField(null=True, blank=True)
     sms_replied_at = models.DateTimeField(null=True, blank=True)
 
-    # Error tracking
     email_error_message = models.TextField(blank=True)
     whatsapp_error_message = models.TextField(blank=True)
     sms_error_message = models.TextField(blank=True)
     retry_count = models.PositiveIntegerField(default=0)
     max_retries = models.PositiveIntegerField(default=3)
 
-    # Personalized content for each channel
     email_content = models.JSONField(default=dict, blank=True, help_text="Personalized email content")
     whatsapp_content = models.JSONField(default=dict, blank=True, help_text="Personalized WhatsApp content")
     sms_content = models.JSONField(default=dict, blank=True, help_text="Personalized SMS content")
 
-    # Response tracking
     has_responded = models.BooleanField(default=False)
     response_channel = models.CharField(max_length=20, choices=Campaign.CHANNEL_CHOICES, blank=True)
     response_type = models.CharField(max_length=30, choices=[
@@ -384,14 +350,11 @@ class CampaignRecipient(BaseModel):
     response_notes = models.TextField(blank=True)
     response_received_at = models.DateTimeField(null=True, blank=True)
 
-    # Campaign effectiveness tracking
     conversion_achieved = models.BooleanField(default=False, help_text="Did this recipient convert (renew/purchase)?")
     conversion_value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, help_text="Value of conversion")
     conversion_date = models.DateTimeField(null=True, blank=True)
 
-    # Additional metadata
     recipient_metadata = models.JSONField(default=dict, blank=True, help_text="Additional recipient-specific data")
-
     class Meta:
         db_table = 'campaign_recipients'
         unique_together = ['campaign', 'customer']
@@ -421,7 +384,6 @@ class CampaignRecipient(BaseModel):
 
     @property
     def primary_status(self):
-        """Get the primary delivery status based on campaign channels"""
         if 'email' in self.campaign.channels:
             return self.email_status
         elif 'whatsapp' in self.campaign.channels:
@@ -432,20 +394,17 @@ class CampaignRecipient(BaseModel):
 
     @property
     def is_delivered(self):
-        """Check if message was delivered on any channel"""
         return (self.email_status == 'delivered' or
                 self.whatsapp_status == 'delivered' or
                 self.sms_status == 'delivered')
 
     @property
     def is_engaged(self):
-        """Check if recipient engaged with any channel"""
         return (self.email_engagement in ['opened', 'clicked', 'replied'] or
                 self.whatsapp_engagement in ['opened', 'clicked', 'replied'] or
                 self.sms_engagement in ['opened', 'clicked', 'replied'])
 
     def mark_sent(self, channel, timestamp=None):
-        """Mark message as sent for specific channel"""
         from django.utils import timezone
         if timestamp is None:
             timestamp = timezone.now()
@@ -462,8 +421,6 @@ class CampaignRecipient(BaseModel):
         self.save()
 
     def mark_delivered(self, channel, timestamp=None):
-        """Mark message as delivered for specific channel"""
-        from django.utils import timezone
         if timestamp is None:
             timestamp = timezone.now()
 
@@ -479,8 +436,6 @@ class CampaignRecipient(BaseModel):
         self.save()
 
     def mark_opened(self, channel, timestamp=None):
-        """Mark message as opened for specific channel"""
-        from django.utils import timezone
         if timestamp is None:
             timestamp = timezone.now()
 
@@ -524,10 +479,8 @@ class CampaignTemplate(BaseModel):
     subject = models.CharField(max_length=200, blank=True)
     content = models.TextField()
     
-    # Template variables
     variables = models.JSONField(default=list, help_text="List of template variables")
     
-    # Usage tracking
     usage_count = models.PositiveIntegerField(default=0)
     last_used = models.DateTimeField(null=True, blank=True)
     
@@ -540,7 +493,6 @@ class CampaignTemplate(BaseModel):
     
     def __str__(self):
         return f"{self.name} ({self.template_type})"
-
 class CampaignSchedule(BaseModel):
     """Scheduled campaign executions"""
     SCHEDULE_STATUS_CHOICES = [
@@ -555,12 +507,10 @@ class CampaignSchedule(BaseModel):
     scheduled_at = models.DateTimeField()
     status = models.CharField(max_length=20, choices=SCHEDULE_STATUS_CHOICES, default='pending')
     
-    # Execution details
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     recipients_processed = models.PositiveIntegerField(default=0)
     
-    # Error handling
     error_message = models.TextField(blank=True)
     retry_count = models.PositiveIntegerField(default=0)
     max_retries = models.PositiveIntegerField(default=3)
@@ -573,10 +523,8 @@ class CampaignSchedule(BaseModel):
         return f"{self.campaign.name} - {self.scheduled_at}"
 
 class CampaignAnalytics(BaseModel):
-    """Detailed campaign analytics"""
     campaign = models.OneToOneField(Campaign, on_delete=models.CASCADE, related_name='analytics')
     
-    # Channel-wise statistics
     email_sent = models.PositiveIntegerField(default=0)
     email_delivered = models.PositiveIntegerField(default=0)
     email_opened = models.PositiveIntegerField(default=0)
@@ -592,7 +540,6 @@ class CampaignAnalytics(BaseModel):
     sms_delivered = models.PositiveIntegerField(default=0)
     sms_replied = models.PositiveIntegerField(default=0)
     
-    # Response tracking
     total_responses = models.PositiveIntegerField(default=0)
     interested_responses = models.PositiveIntegerField(default=0)
     not_interested_responses = models.PositiveIntegerField(default=0)
@@ -600,14 +547,12 @@ class CampaignAnalytics(BaseModel):
     complaints = models.PositiveIntegerField(default=0)
     unsubscribes = models.PositiveIntegerField(default=0)
     
-    # Cost tracking
     total_cost = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     cost_per_recipient = models.DecimalField(max_digits=8, decimal_places=4, default=Decimal('0.0000'))
 
-    # ROI metrics
     conversions = models.PositiveIntegerField(default=0)
     revenue_generated = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
-    
+
     class Meta:
         db_table = 'campaign_analytics'
     
@@ -631,16 +576,13 @@ class CampaignFeedback(BaseModel):
     rating = models.PositiveIntegerField(null=True, blank=True, help_text="Rating from 1-5")
     feedback_text = models.TextField()
     
-    # Response details
     channel_received = models.CharField(max_length=20, choices=Campaign.CHANNEL_CHOICES)
     received_at = models.DateTimeField(auto_now_add=True)
     
-    # Follow-up
     is_resolved = models.BooleanField(default=False)
     resolution_notes = models.TextField(blank=True)
     resolved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     resolved_at = models.DateTimeField(null=True, blank=True)
-    
     class Meta:
         db_table = 'campaign_feedback'
         ordering = ['-received_at']
@@ -663,20 +605,16 @@ class CampaignAutomation(BaseModel):
     trigger_type = models.CharField(max_length=30, choices=TRIGGER_TYPE_CHOICES)
     campaign_template = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name='automations')
     
-    # Trigger conditions
     trigger_conditions = models.JSONField(default=dict)
     
-    # Timing
     delay_days = models.PositiveIntegerField(default=0)
     delay_hours = models.PositiveIntegerField(default=0)
     
-    # Status
     is_active = models.BooleanField(default=True)
     total_triggered = models.PositiveIntegerField(default=0)
     last_triggered = models.DateTimeField(null=True, blank=True)
     
     created_by = models.ForeignKey(User, on_delete=models.CASCADE)
-    
     class Meta:
         db_table = 'campaign_automations'
         ordering = ['name']
@@ -685,9 +623,7 @@ class CampaignAutomation(BaseModel):
         return f"{self.name} ({self.trigger_type})"
 
 
-class CampaignScheduleInterval(BaseModel):
-    """Advanced scheduling intervals for multi-channel campaigns"""
-    
+class CampaignScheduleInterval(BaseModel):    
     CHANNEL_CHOICES = [
         ('email', 'Email'),
         ('whatsapp', 'WhatsApp'),
@@ -710,7 +646,6 @@ class CampaignScheduleInterval(BaseModel):
         ('always', 'Always send (regardless of previous response)'),
     ]
     
-    # Core relationships
     campaign = models.ForeignKey(
         Campaign, 
         on_delete=models.CASCADE, 
@@ -725,16 +660,6 @@ class CampaignScheduleInterval(BaseModel):
         related_name='campaign_schedules',
         help_text="Template to use for this interval"
     )
-    # communication_provider = models.ForeignKey(
-    #     EmailProviderConfig,
-    #     on_delete=models.SET_NULL,
-    #     null=True,
-    #     blank=True,
-    #     related_name='campaign_schedules',
-    #     help_text="Communication provider for this interval"
-    # )
-    
-    # Schedule configuration
     sequence_order = models.PositiveIntegerField(
         default=1,
         help_text="Order of this interval in the sequence (1, 2, 3, etc.)"
@@ -755,13 +680,11 @@ class CampaignScheduleInterval(BaseModel):
         help_text="Delay unit (minutes, hours, days, weeks)"
     )
     
-    # Trigger conditions
     trigger_conditions = models.JSONField(
         default=list,
         help_text="List of trigger conditions for this interval"
     )
     
-    # Status and tracking
     is_active = models.BooleanField(
         default=True,
         help_text="Whether this schedule interval is active"
@@ -780,7 +703,6 @@ class CampaignScheduleInterval(BaseModel):
         blank=True,
         help_text="When this interval was actually sent"
     )
-    
     class Meta:
         db_table = 'campaign_schedule_intervals'
         ordering = ['campaign', 'sequence_order']
@@ -826,8 +748,6 @@ class CampaignScheduleInterval(BaseModel):
         """Check if this interval should be sent for a specific recipient"""
         if not self.is_active or self.is_sent:
             return False
-        
-        # Check trigger conditions
         for condition in self.trigger_conditions:
             if condition == 'no_response':
                 previous_intervals = CampaignScheduleInterval.objects.filter(

@@ -22,11 +22,7 @@ from apps.whatsapp_provider.models import WhatsAppProvider
 from apps.sms_provider.models import SmsMessage 
 from apps.whatsapp_provider.models import WhatsAppMessage
 
-
 class ProviderOptionsView(APIView):
-    """
-    Populates the Dropdowns
-    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -39,7 +35,6 @@ class ProviderOptionsView(APIView):
             "sms_providers": SMSOptionSerializer(sms_opts, many=True).data,
             "whatsapp_providers": WhatsAppOptionSerializer(wa_opts, many=True).data
         })
-
 class CampaignSettingsView(generics.RetrieveUpdateAPIView):
     serializer_class = CampaignSettingSerializer
     permission_classes = [IsAuthenticated]
@@ -50,26 +45,15 @@ class CampaignSettingsView(generics.RetrieveUpdateAPIView):
         return obj
 
     def delete(self, request, *args, **kwargs):
-        """
-        LOGIC FOR 'RESET TO DEFAULTS' BUTTON
-        When frontend sends a DELETE request to this endpoint, 
-        we delete the user's custom settings and create a fresh default one.
-        """
         instance = self.get_object()
-        instance.delete() # Delete current settings
-        
-        # Create fresh settings with default values (defined in models.py)
+        instance.delete() 
         new_settings = CampaignSetting.objects.create(user=request.user)
-        
-        # Return the new default settings to the frontend
         serializer = self.get_serializer(new_settings)
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
 class DownloadReportView(APIView):
     permission_classes = [IsAuthenticated]
 
     def _get_sms_report_data(self,request):
-        """Fetches and formats SMS campaign statistics."""
         sms_stats = SmsMessage.objects.filter(provider__created_by=request.user).values('campaign__name').annotate(
             total=Count('id'),
             delivered=Count('id', filter=Q(status='delivered')),
@@ -85,13 +69,12 @@ class DownloadReportView(APIView):
                 "total_sent": item['total'],
                 "delivered": item['delivered'],
                 "failed": item['failed'],
-                "engagement": "N/A",  # Engagement not typically tracked for SMS
-                "status": "Completed"  # Logic can be added to check if pending > 0
+                "engagement": "N/A",  
+                "status": "Completed"
             })
         return report_data
 
     def _get_whatsapp_report_data(self,request):
-        """Fetches and formats WhatsApp campaign statistics."""
         wa_stats = WhatsAppMessage.objects.filter(
         provider__created_by=request.user).values('campaign__name').annotate(
         total=Count('id'),
@@ -108,7 +91,7 @@ class DownloadReportView(APIView):
                 "total_sent": item['total'],
                 "delivered": item['delivered'],
                 "failed": item['failed'],
-                "engagement": item['read'],  # Using 'Read' count as engagement
+                "engagement": item['read'],
                 "status": "Completed"
             })
         return report_data
@@ -122,8 +105,6 @@ class DownloadReportView(APIView):
                 {"error": "Campaign settings not found for this user."},
                 status=status.HTTP_404_NOT_FOUND
             )
-
-        # Fetch and combine data from all channels
         report_data = self._get_sms_report_data(request) + self._get_whatsapp_report_data(request)
 
         if not report_data:
@@ -132,7 +113,6 @@ class DownloadReportView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # Define headers to ensure consistency
         headers = ["campaign_name", "channel", "total_sent", "delivered", "failed", "engagement", "status"]
 
         if export_format == 'JSON':

@@ -9,12 +9,8 @@ from apps.policy_coverages.models import PolicyCoverage
 from apps.policy_additional_benefits.models import PolicyAdditionalBenefit
 from apps.policy_exclusions.models import PolicyExclusion
 from apps.customer_communication_preferences.models import CustomerCommunicationPreference
-
-# OverView & Policy
-
 class CustomerDocumentSerializer(serializers.ModelSerializer):
     customer_name = serializers.SerializerMethodField()
-    
     class Meta:
         model = CustomerFile
         exclude = ['customer']
@@ -25,14 +21,10 @@ class CustomerDocumentSerializer(serializers.ModelSerializer):
             name = f"{obj.customer.first_name} {obj.customer.last_name}".strip()
             return name if name else obj.customer.customer_code
         return None
-
-
 class CustomerFinancialProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomerFinancialProfile
         exclude = ['customer']
-
-
 class PolicyCoverageSerializer(serializers.ModelSerializer):
     additional_benefits = serializers.SerializerMethodField()
 
@@ -43,8 +35,6 @@ class PolicyCoverageSerializer(serializers.ModelSerializer):
     def get_additional_benefits(self, obj):
         benefits = PolicyAdditionalBenefit.objects.filter(policy_coverages=obj)
         return PolicyAdditionalBenefitSerializer(benefits, many=True).data
-
-
 class PolicyAdditionalBenefitSerializer(serializers.ModelSerializer):
     class Meta:
         model = PolicyAdditionalBenefit
@@ -125,7 +115,6 @@ class PolicySerializer(serializers.ModelSerializer):
         serializer = PolicyTypeSerializer(obj.policy_type, context={'policy': obj})
         return serializer.data
 
-
 class CustomerSerializer(serializers.ModelSerializer):
     documents = CustomerDocumentSerializer(many=True, read_only=True, source='customer_files')
     financial_profile = CustomerFinancialProfileSerializer(read_only=True)
@@ -135,8 +124,6 @@ class CustomerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Customer
         fields = '__all__'
-
-
 
 class CustomerCommunicationPreferenceSerializer(serializers.ModelSerializer):
     class Meta:

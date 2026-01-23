@@ -2,12 +2,8 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import CaseHistory
 from apps.renewals.models import RenewalCase
-
 User = get_user_model()
-
 class CaseHistorySerializer(serializers.ModelSerializer):
-    """Serializer for case history entries."""
-    
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
     created_by_email = serializers.CharField(source='created_by.email', read_only=True)
     action_display = serializers.CharField(source='get_action_display', read_only=True)
@@ -28,12 +24,7 @@ class CaseHistorySerializer(serializers.ModelSerializer):
             'created_by_email',
         ]
         read_only_fields = ['id', 'created_at', 'created_by']
-
-
 class CaseSerializer(serializers.ModelSerializer):
-    """Serializer for case details with history and comments."""
-    
-    # Map RenewalCase fields to expected case history fields
     handling_agent_name = serializers.SerializerMethodField()
     case_creation_method = serializers.SerializerMethodField()
     created_date = serializers.SerializerMethodField()
@@ -46,11 +37,7 @@ class CaseSerializer(serializers.ModelSerializer):
     started_at = serializers.DateTimeField(source='created_at', read_only=True)
     closed_at = serializers.SerializerMethodField()
     processing_days = serializers.SerializerMethodField()
-    
-    # Nested serializers for related data
     history = CaseHistorySerializer(source='case_history', many=True, read_only=True)
-    
-    # Computed fields
     is_closed = serializers.SerializerMethodField()
     is_active = serializers.SerializerMethodField()
     
@@ -85,29 +72,23 @@ class CaseSerializer(serializers.ModelSerializer):
             'updated_by',
         ]
     
-  
-    
     def get_handling_agent_name(self, obj):
-        """Get handling agent name from policy_agents table"""
         if obj.policy and obj.policy.agent:
             return obj.policy.agent.agent_name
         return None
     
     def get_case_creation_method(self, obj):
-        """Determine how the case was created based on batch_code"""
         if obj.batch_code:
             return f"Case uploaded via bulk upload (Batch: {obj.batch_code})"
         else:
             return "Case created by agent"
     
     def get_created_date(self, obj):
-        """Format created_at as readable date and time"""
         if obj.created_at:
             return obj.created_at.strftime('%d/%m/%Y, %I:%M:%S %p')
         return None
     
     def get_current_status(self, obj):
-        """Get current work step from the last case log entry"""
         from apps.case_logs.models import CaseLog
         last_case_log = CaseLog.objects.filter(
             renewal_case=obj, 
@@ -119,7 +100,6 @@ class CaseSerializer(serializers.ModelSerializer):
         return None
     
     def get_processing_time(self, obj):
-        """Calculate processing time in days from case creation to now"""
         if obj.created_at:
             from django.utils import timezone
             now = timezone.now()
@@ -132,13 +112,11 @@ class CaseSerializer(serializers.ModelSerializer):
         return None
     
     def get_closed_at(self, obj):
-        """Get closed date"""
         if obj.status in ['completed', 'renewed', 'cancelled', 'expired']:
             return obj.updated_at
         return None
     
     def get_processing_days(self, obj):
-        """Calculate processing days"""
         if obj.created_at:
             from django.utils import timezone
             now = timezone.now()
@@ -151,15 +129,12 @@ class CaseSerializer(serializers.ModelSerializer):
         return 0
     
     def get_is_closed(self, obj):
-        """Check if case is closed"""
         return obj.status in ['completed', 'renewed', 'cancelled', 'expired']
     
     def get_is_active(self, obj):
-        """Check if case is active"""
         return obj.status not in ['completed', 'renewed', 'cancelled', 'expired']
     
     def create(self, validated_data):
-        """Create a new case and set the created_by field."""
         validated_data['created_by'] = self.context['request'].user
         case = super().create(validated_data)
         
@@ -173,7 +148,6 @@ class CaseSerializer(serializers.ModelSerializer):
         return case
     
     def update(self, instance, validated_data):
-        """Update case and track changes in history."""
         old_status = instance.status
         old_agent = instance.handling_agent
         
@@ -213,8 +187,6 @@ class CaseSerializer(serializers.ModelSerializer):
 
 
 class CaseListSerializer(serializers.ModelSerializer):
-    """Simplified serializer for case list views."""
-    
     case_id = serializers.CharField(source='case_number', read_only=True)
     title = serializers.SerializerMethodField()
     handling_agent_name = serializers.SerializerMethodField()
@@ -246,7 +218,6 @@ class CaseListSerializer(serializers.ModelSerializer):
         ]
     
     def get_title(self, obj):
-        """Get case title from customer and policy info"""
         if obj.customer and obj.policy:
             return f"Renewal for {obj.customer.full_name} - {obj.policy.policy_number}"
         elif obj.customer:
@@ -255,13 +226,11 @@ class CaseListSerializer(serializers.ModelSerializer):
             return f"Renewal Case {obj.case_number}"
     
     def get_handling_agent_name(self, obj):
-        """Get handling agent name"""
         if obj.assigned_to:
             return obj.assigned_to.get_full_name()
         return None
     
     def get_processing_days(self, obj):
-        """Calculate processing days"""
         if obj.created_at:
             from django.utils import timezone
             now = timezone.now()
@@ -274,16 +243,12 @@ class CaseListSerializer(serializers.ModelSerializer):
         return 0
     
     def get_comments_count(self, obj):
-        """Get count of comments for this case."""
         return obj.case_comments.filter(is_deleted=False).count()
     
     def get_history_count(self, obj):
-        """Get count of history entries for this case."""
         return obj.case_history.filter(is_deleted=False).count()
 
-
 class CaseStatusUpdateSerializer(serializers.ModelSerializer):
-    """Serializer for updating case status."""
     class Meta:
         model = RenewalCase
         fields = ['status']
@@ -306,13 +271,11 @@ class CaseStatusUpdateSerializer(serializers.ModelSerializer):
         return instance
 
 class CaseAssignmentSerializer(serializers.ModelSerializer):
-    """Serializer for assigning cases to agents."""
     class Meta:
         model = RenewalCase
         fields = ['handling_agent']
     
     def update(self, instance, validated_data):
-        """Update case assignment and create history entry."""
         old_agent = instance.handling_agent
         instance.handling_agent = validated_data['handling_agent']
         instance.save()
@@ -336,10 +299,7 @@ class CaseAssignmentSerializer(serializers.ModelSerializer):
         
         return instance
 
-
-class CaseTimelineSummarySerializer(serializers.ModelSerializer):
-    """Simplified serializer for timeline view - Journey Summary section"""
-    
+class CaseTimelineSummarySerializer(serializers.ModelSerializer):    
     case_started = serializers.SerializerMethodField()
     current_status = serializers.SerializerMethodField()
     handling_agent = serializers.SerializerMethodField()
@@ -357,23 +317,19 @@ class CaseTimelineSummarySerializer(serializers.ModelSerializer):
         ]
     
     def get_case_started(self, obj):
-        """Format case started date as DD/MM/YYYY"""
         if obj.created_at:
             return obj.created_at.strftime('%d/%m/%Y')
         return None
     
     def get_current_status(self, obj):
-        """Get current status display"""
         return obj.get_status_display() if obj.status else None
     
     def get_handling_agent(self, obj):
-        """Get handling agent name"""
         if obj.assigned_to:
             return obj.assigned_to.get_full_name() or obj.assigned_to.username
         return None
     
     def get_processing_time(self, obj):
-        """Calculate processing time in days"""
         if obj.created_at:
             from django.utils import timezone
             now = timezone.now()
@@ -386,8 +342,6 @@ class CaseTimelineSummarySerializer(serializers.ModelSerializer):
         return None
     
     def get_journey_progress(self, obj):
-        """Get journey progress steps based on status"""
-        # Define status progression
         status_order = ['uploaded', 'assigned', 'in_progress', 'pending', 'renewed', 'completed']
         current_index = status_order.index(obj.status) if obj.status in status_order else -1
         
@@ -404,10 +358,7 @@ class CaseTimelineSummarySerializer(serializers.ModelSerializer):
         
         return progress
 
-
 class CaseTimelineHistorySerializer(serializers.ModelSerializer):
-    """Simplified serializer for timeline history events"""
-    
     event_type = serializers.CharField(source='get_action_display', read_only=True)
     event_description = serializers.CharField(source='description', read_only=True)
     event_date = serializers.SerializerMethodField()
@@ -444,9 +395,6 @@ class CaseTimelineHistorySerializer(serializers.ModelSerializer):
 
 
 class UpdateCaseStatusSerializer(serializers.ModelSerializer):
-    """Serializer for updating case status, follow-up date, follow-up time, and remarks."""
-    
-    # Map user-friendly status names to database values
     STATUS_MAPPING = {
         'Open': 'uploaded',
         'In Progress': 'in_progress',
@@ -476,13 +424,10 @@ class UpdateCaseStatusSerializer(serializers.ModelSerializer):
         fields = ['status', 'follow_up_date', 'follow_up_time', 'remarks']
     
     def validate_status(self, value):
-        """Validate and map status to database value"""
-        # Check if it's already a valid database value
         valid_db_values = [choice[0] for choice in RenewalCase.STATUS_CHOICES]
         if value in valid_db_values:
             return value
         
-        # Map user-friendly name to database value
         mapped_value = self.STATUS_MAPPING.get(value)
         if not mapped_value:
             valid_options = list(self.STATUS_MAPPING.keys()) + valid_db_values
@@ -492,40 +437,33 @@ class UpdateCaseStatusSerializer(serializers.ModelSerializer):
         return mapped_value
     
     def validate_remarks(self, value):
-        """Validate remarks - minimum 10 characters if provided"""
         if value and value.strip() and len(value.strip()) < 10:
             raise serializers.ValidationError("Remarks must be at least 10 characters long.")
         return value
     
     def update(self, instance, validated_data):
-        """Update case status, follow-up date, follow-up time, and remarks, and create history entry."""
         from .models import CaseHistory
         
         old_status = instance.status
         status_changed = False
         
-        # Update status
         if 'status' in validated_data:
             new_status = validated_data['status']
             if old_status != new_status:
                 instance.status = new_status
                 status_changed = True
         
-        # Update follow-up date
         if 'follow_up_date' in validated_data:
             instance.follow_up_date = validated_data['follow_up_date']
         
-        # Update follow-up time
         if 'follow_up_time' in validated_data:
             instance.follow_up_time = validated_data['follow_up_time']
         
-        # Update remarks
         if 'remarks' in validated_data:
             instance.remarks = validated_data['remarks']
         
         instance.save()
         
-        # Create history entry if status changed
         if status_changed:
             CaseHistory.objects.create(
                 case=instance,
@@ -536,7 +474,6 @@ class UpdateCaseStatusSerializer(serializers.ModelSerializer):
                 created_by=self.context['request'].user
             )
         
-        # Create history entry for follow-up update if date/time changed
         if 'follow_up_date' in validated_data or 'follow_up_time' in validated_data:
             follow_up_info = []
             if instance.follow_up_date:
@@ -552,7 +489,6 @@ class UpdateCaseStatusSerializer(serializers.ModelSerializer):
                     created_by=self.context['request'].user
                 )
         
-        # Create history entry for remarks if updated
         if 'remarks' in validated_data and validated_data['remarks']:
             CaseHistory.objects.create(
                 case=instance,

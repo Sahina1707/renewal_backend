@@ -13,14 +13,6 @@ def log_communication(
     message_snippet=None,
     provider_message_id=None
 ):
-    """
-    Central logging function. Call this from apps/sms, apps/email, etc.
-    
-    :param cost: The REAL cost returned by the provider API (e.g., Twilio price). 
-                 If None, falls back to Vendor.cost_per_message.
-    """
-    # 1. Find or Create the Vendor
-    # This auto-registers new vendors (e.g., 'Twilio', 'SendGrid') on the fly.
     vendor, _ = Vendor.objects.get_or_create(
         name=vendor_name, 
         defaults={
@@ -48,7 +40,6 @@ def log_communication(
         provider_message_id=provider_message_id
     )
 
-    # 4. Update Aggregated Usage (For the "Billing Details" Tab)
     today = timezone.now().date()
     period, _ = BillingPeriod.objects.get_or_create(
         month=today.month,
@@ -64,9 +55,6 @@ def log_communication(
             'count': 0
         }
     )
-    
-    # Calculate Running Average for Rate to ensure Total Cost is accurate
-    # Current Total + New Cost = New Total
     current_total_cost = usage_charge.count * usage_charge.rate_per_unit
     new_total_cost = current_total_cost + final_cost
     

@@ -38,7 +38,7 @@ class CustomerFinancialProfileSerializer(serializers.ModelSerializer):
         return obj.calculate_recommended_premium()
     
     def validate_customer(self, value):
-        if self.instance is None:  # Creating new profile
+        if self.instance is None:  
             if CustomerFinancialProfile.objects.filter(customer=value, is_deleted=False).exists():
                 raise serializers.ValidationError(
                     "Customer already has a financial profile."

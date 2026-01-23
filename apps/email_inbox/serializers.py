@@ -141,10 +141,6 @@ class EmailInboxMessageCreateSerializer(serializers.ModelSerializer):
             'reply_to', 'subject', 'html_content', 'text_content', 'category',
             'priority', 'sentiment', 'folder', 'is_starred', 'is_important',
             'tags', 'thread_id', 
-            #   'parent',
-            #  'assigned_to',
-            #    'raw_headers',
-            # 'raw_body'
         ]
     
     def create(self, validated_data):
@@ -461,10 +457,8 @@ class EmailInboxListSerializer(serializers.ModelSerializer):
         # Get raw content
         body = obj.text_content or obj.html_content or ""
         
-        # FIX: Remove HTML tags so it looks clean in the UI
         clean_body = strip_tags(body)
         
-        # Remove extra whitespace/newlines
         clean_body = " ".join(clean_body.split())
         
         if len(clean_body) > 100:
@@ -524,13 +518,13 @@ class EmailInboxDetailSerializer(serializers.ModelSerializer):
             'customer_type',
             'priority',
             'status',
-            'category',       # <--- Make sure this is here for the dropdown
+            'category',       
             'folder',
             
             # Related Data
             'attachments',     
             'internal_notes',
-            'thread_history'  # <--- Add this
+            'thread_history'
         ]
 
     def get_formatted_date(self, obj):
@@ -546,20 +540,14 @@ class EmailInboxDetailSerializer(serializers.ModelSerializer):
         } for note in obj.internal_notes.all().order_by('-created_at')]
 
     def get_thread_history(self, obj):
-        """
-        Fetches other emails in the same conversation thread,
-        excluding the current one being viewed.
-        """
         if not obj.thread_id:
             return []
 
-        # Find other messages with same thread_id
         threads = EmailInboxMessage.objects.filter(
             thread_id=obj.thread_id, 
             is_deleted=False
         ).exclude(id=obj.id).order_by('-received_at') 
 
-        # Return a simplified list for the UI
         return [{
             'id': t.id,
             'subject': t.subject,
@@ -579,7 +567,7 @@ class BulkEmailCampaignSerializer(serializers.ModelSerializer):
         fields = [
             'id', 
             'name', 
-            'template_id',          # This input field causes the TypeError
+            'template_id',          
             'subject_template', 
             'body_html_template',
             'custom_subject', 
@@ -609,20 +597,11 @@ class BulkEmailCampaignSerializer(serializers.ModelSerializer):
             'recipients_data': {'required': True}
         }
 
-    # --- FIX FOR TypeError: BulkEmailCampaign() got unexpected keyword arguments: 'template_id' ---
     def create(self, validated_data):
-        # 1. Pop the non-model field from the dictionary
         template_id = validated_data.pop('template_id', None)
-        
-        # 2. Pop the calculated fields which might be None if user didn't input them 
-        # (This avoids passing None to mandatory ModelFields, although your fields are now null=True)
-        # We don't need this step as the content is populated in validate()
-
-        # 3. Create the model instance using the remaining validated data
         return super().create(validated_data)
 
     def validate(self, data):
-        # Your existing template lookup logic MUST remain here to populate subject/body
         template_id = data.get('template_id')
         
         if template_id:
@@ -639,20 +618,15 @@ class BulkEmailCampaignSerializer(serializers.ModelSerializer):
             except Exception as e:
                 raise serializers.ValidationError(f"Invalid Template ID: {str(e)}")
         
-        # Final Safety Check
         if not data.get('subject_template') or not data.get('body_html_template'):
              raise serializers.ValidationError("Template content missing.")
 
-        # Validate schedule time
         from django.utils import timezone
         if data.get('scheduled_at') and data['scheduled_at'] < timezone.now():
              raise serializers.ValidationError({"scheduled_at": "Scheduled time cannot be in the past."})
 
         return data
 class EmailAuditLogSerializer(serializers.ModelSerializer):
-    """
-    Serializer for the Audit Trail history.
-    """
     performed_by_name = serializers.CharField(source='performed_by.get_full_name', read_only=True)
     
     subtitle = serializers.SerializerMethodField()
@@ -667,13 +641,7 @@ class EmailAuditLogSerializer(serializers.ModelSerializer):
         
         return f"{name} • {time_diff} ago"
 class RecipientImportSerializer(serializers.Serializer):
-    """
-    Handles the 'Bulk Import' modal data. 
-    Accepts raw CSV text or a file and returns structured JSON.
-    """
-    # Option 1: Copy-pasted text from the modal
     csv_text = serializers.CharField(required=False, allow_blank=True, help_text="Raw text from the import modal")
-    # Option 2: File upload
     file = serializers.FileField(required=False, help_text="CSV or Excel file")
 
     def validate(self, data):

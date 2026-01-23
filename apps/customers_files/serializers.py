@@ -96,23 +96,19 @@ class CustomerFileSerializer(serializers.ModelSerializer):
                 unique_filename = f"{uuid.uuid4()}{file_extension}"
                 validated_data['file_path'] = f"/uploads/documents/{unique_filename}"
             
-            # Extract PAN number if it's an image file and pan_number not already provided
             file_type = validated_data.get('file_type', '')
             if not validated_data.get('pan_number') and file_type and 'image' in file_type.lower():
                 try:
-                    # Save uploaded file temporarily for OCR processing
                     file_extension = os.path.splitext(uploaded_file.name)[1]
                     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=file_extension)
                     temp_file_path = temp_file.name
                     
-                    # Write uploaded file content to temp file
                     for chunk in uploaded_file.chunks():
                         temp_file.write(chunk)
                     temp_file.close()
                     
                     logger.info(f"Processing image for PAN extraction: {temp_file_path}")
                     
-                    # Extract PAN number using OCR
                     result = extract_pan_from_image(temp_file_path)
                     
                     if result.get('success') and result.get('pan_number'):
@@ -123,9 +119,7 @@ class CustomerFileSerializer(serializers.ModelSerializer):
                         
                 except Exception as e:
                     logger.error(f"Error during PAN extraction: {str(e)}")
-                    # Continue without PAN number - don't fail the upload
                 finally:
-                    # Clean up temp file
                     if temp_file_path and os.path.exists(temp_file_path):
                         try:
                             os.remove(temp_file_path)

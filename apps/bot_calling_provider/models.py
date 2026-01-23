@@ -1,10 +1,9 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from .models import BotCallingProviderHealthLog 
 
 User = get_user_model()
-
-
 class BotCallingProviderConfig(models.Model):
     """Configuration for bot-calling providers."""
 
@@ -35,14 +34,12 @@ class BotCallingProviderConfig(models.Model):
     )
     provider_type = models.CharField(max_length=30, choices=PROVIDER_CHOICES)
 
-    # ---------- COMMON SCRIPT ----------
     bot_script = models.TextField(
         blank=True,
         null=True,
         help_text="Bot script / prompt used by this provider",
     )
 
-    # ---------- UBONA BOT CALLING ----------
     ubona_api_key = models.CharField(
         max_length=255,
         blank=True,
@@ -67,7 +64,6 @@ class BotCallingProviderConfig(models.Model):
         help_text="Ubona Bot Caller ID",
     )
 
-    # ---------- HOUSE OF AGENTS ----------
     hoa_api_key = models.CharField(
         max_length=255,
         blank=True,
@@ -97,7 +93,6 @@ class BotCallingProviderConfig(models.Model):
         help_text="House of Agents Webhook URL",
     )
 
-    # ---------- GNANI.AI BOT ----------
     gnani_api_key = models.CharField(
         max_length=255,
         blank=True,
@@ -134,7 +129,6 @@ class BotCallingProviderConfig(models.Model):
         help_text="Voice gender (e.g. male/female)",
     )
 
-    # ---------- TWILIO VOICE BOT ----------
     twilio_account_sid = models.CharField(
         max_length=255,
         blank=True,
@@ -164,7 +158,6 @@ class BotCallingProviderConfig(models.Model):
         help_text="Twilio Voice URL / TwiML URL for bot",
     )
 
-    # ---------- RATE LIMITING (common) ----------
     daily_limit = models.PositiveIntegerField(
         default=1000,
         help_text="Daily bot call limit",
@@ -178,7 +171,6 @@ class BotCallingProviderConfig(models.Model):
         help_text="Rate limit per minute",
     )
 
-    # ---------- CONFIG / FLAGS ----------
     priority = models.PositiveIntegerField(
         choices=PRIORITY_CHOICES,
         default=1,
@@ -187,7 +179,6 @@ class BotCallingProviderConfig(models.Model):
     is_default = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
 
-    # ---------- HEALTH / STATUS ----------
     last_health_check = models.DateTimeField(blank=True, null=True)
     status = models.CharField(
         max_length=20,
@@ -196,13 +187,11 @@ class BotCallingProviderConfig(models.Model):
         help_text="Connection status (connected / disconnected / error / unknown)",
     )
 
-    # ---------- USAGE ----------
     calls_made_today = models.PositiveIntegerField(default=0)
     calls_made_this_month = models.PositiveIntegerField(default=0)
     last_reset_daily = models.DateField(default=timezone.now)
     last_reset_monthly = models.DateField(default=timezone.now)
 
-    # ---------- AUDIT ----------
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(
@@ -238,8 +227,6 @@ class BotCallingProviderConfig(models.Model):
     def __str__(self):
         return f"{self.name} ({self.get_provider_type_display()})"
 
-    # ---------- helper methods (same style as CallProviderConfig) ----------
-
     def update_status(
         self,
         is_healthy: bool,
@@ -248,10 +235,6 @@ class BotCallingProviderConfig(models.Model):
         test_type: str = "health_check",
         user=None,
     ):
-        """
-        Update the connection/health status and create a health log.
-        """
-        from .models import BotCallingProviderHealthLog  # local import like in call_provider
 
         self.last_health_check = timezone.now()
 
@@ -303,10 +286,7 @@ class BotCallingProviderConfig(models.Model):
         self.is_active = False
         self.save(update_fields=["is_deleted", "deleted_at", "is_active"])
 
-
 class BotCallingProviderHealthLog(models.Model):
-    """Log of health / connection checks for bot-calling providers"""
-
     id = models.BigAutoField(primary_key=True)
     provider = models.ForeignKey(
         BotCallingProviderConfig,
@@ -348,7 +328,6 @@ class BotCallingProviderHealthLog(models.Model):
         blank=True,
         related_name="deleted_bot_calling_health_logs",
     )
-
     class Meta:
         db_table = "bot_calling_provider_health_logs"
         ordering = ["-checked_at"]
@@ -359,10 +338,7 @@ class BotCallingProviderHealthLog(models.Model):
         status = "Healthy" if self.is_healthy else "Error"
         return f"{self.provider.name} - {status} ({self.checked_at})"
 
-
 class BotCallingProviderUsageLog(models.Model):
-    """Log of call volume usage for bot calling providers"""
-
     id = models.BigAutoField(primary_key=True)
     provider = models.ForeignKey(
         BotCallingProviderConfig,
@@ -413,11 +389,7 @@ class BotCallingProviderUsageLog(models.Model):
 
     def __str__(self):
         return f"{self.provider.name} - {self.calls_made} calls ({self.logged_at})"
-
-
 class BotCallingProviderTestResult(models.Model):
-    """Test results for bot calling provider configurations"""
-
     STATUS_CHOICES = [
         ("pending", "Pending"),
         ("success", "Success"),

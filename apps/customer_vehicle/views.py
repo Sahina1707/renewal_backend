@@ -1,7 +1,3 @@
-"""
-Views for Customer Vehicle app.
-"""
-
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from django.db.models import Q
@@ -12,11 +8,7 @@ from .serializers import (
     CustomerVehicleListSerializer
 )
 
-
 class CustomerVehicleViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for Customer Vehicle with only store and list functionality.
-    """
     queryset = CustomerVehicle.objects.filter(is_deleted=False)
     pagination_class = StandardResultsSetPagination
 
@@ -143,7 +135,6 @@ class CustomerVehicleViewSet(viewsets.ModelViewSet):
                 'errors': {}
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    # Disable other actions to keep only store and list
     def retrieve(self, request, *args, **kwargs):
         return Response({
             'success': False,
@@ -167,5 +158,3 @@ class CustomerVehicleViewSet(viewsets.ModelViewSet):
             'success': False,
             'message': 'Delete action not available'
         }, status=status.HTTP_405_METHOD_NOT_ALLOWED)
-
-

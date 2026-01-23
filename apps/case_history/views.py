@@ -22,8 +22,6 @@ from .serializers import (
     UpdateCaseStatusSerializer,
 )
 from apps.case_logs.serializers import CaseLogSerializer, CaseCommentSerializer, CaseCommentCreateSerializer
-
-
 class CaseListView(generics.ListCreateAPIView):
     queryset = Case.objects.filter(is_deleted=False)
     permission_classes = [permissions.IsAuthenticated]
@@ -45,8 +43,6 @@ class CaseListView(generics.ListCreateAPIView):
             queryset = queryset.filter(handling_agent=self.request.user)
         
         return queryset
-
-
 class CaseDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = CaseSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -64,8 +60,6 @@ class CaseDetailView(generics.RetrieveUpdateDestroyAPIView):
     def perform_destroy(self, instance):
         """Soft delete the case."""
         instance.delete(user=self.request.user)
-
-
 class CaseHistoryListView(generics.ListAPIView):
     serializer_class = CaseHistorySerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -85,8 +79,6 @@ class CaseHistoryListView(generics.ListAPIView):
             return CaseHistory.objects.none()
         
         return CaseHistory.objects.filter(case=case, is_deleted=False)
-
-
 class CaseCommentListView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter]
@@ -108,8 +100,6 @@ class CaseCommentListView(generics.ListCreateAPIView):
                 case.handling_agent == self.request.user or 
                 case.created_by == self.request.user):
             return CaseLog.objects.none()
-        
-        # Filter CaseLog entries that have comments (used for comments API)
         return CaseLog.objects.filter(renewal_case=case, is_deleted=False).exclude(comment='').exclude(comment__isnull=True)
     
     def perform_create(self, serializer):
@@ -123,8 +113,6 @@ class CaseCommentListView(generics.ListCreateAPIView):
             raise PermissionDenied("You don't have permission to add comments to this case.")
         
         serializer.save(renewal_case=case)
-
-
 class CaseCommentDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = CaseCommentSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -139,8 +127,6 @@ class CaseCommentDetailView(generics.RetrieveUpdateDestroyAPIView):
                 case.handling_agent == self.request.user or 
                 case.created_by == self.request.user):
             return CaseLog.objects.none()
-        
-        # Filter CaseLog entries that have comments (used for comments API)
         return CaseLog.objects.filter(renewal_case=case, is_deleted=False).exclude(comment='').exclude(comment__isnull=True)
     
     def perform_update(self, serializer):
@@ -164,7 +150,6 @@ class CaseCommentDetailView(generics.RetrieveUpdateDestroyAPIView):
         
         instance.delete(user=self.request.user)
 
-
 class CaseStatusUpdateView(generics.UpdateAPIView):
     serializer_class = CaseStatusUpdateSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -178,8 +163,6 @@ class CaseStatusUpdateView(generics.UpdateAPIView):
             queryset = queryset.filter(handling_agent=self.request.user)
         
         return queryset
-
-
 class UpdateCaseStatusView(generics.UpdateAPIView):
     serializer_class = UpdateCaseStatusSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -198,8 +181,6 @@ class UpdateCaseStatusView(generics.UpdateAPIView):
         """Handle PUT/PATCH request to update case status and related fields."""
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
-        
-        # Check permissions
         if not (request.user.is_staff or 
                 instance.assigned_to == request.user or 
                 instance.created_by == request.user):
@@ -220,8 +201,6 @@ class UpdateCaseStatusView(generics.UpdateAPIView):
                 'remarks': instance.remarks,
             }
         }, status=status.HTTP_200_OK)
-
-
 class CaseAssignmentView(generics.UpdateAPIView):
     serializer_class = CaseAssignmentSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -264,7 +243,6 @@ class CaseCloseView(APIView):
         serializer = CaseSerializer(case, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def case_timeline_view(request, case_number):
@@ -285,7 +263,6 @@ def case_timeline_view(request, case_number):
     from datetime import timedelta
     system_events = []
     
-    # 1. Case Created event
     if case.created_at:
         case_created_exists = history.filter(action='case_created').exists()
         if not case_created_exists:
@@ -370,7 +347,6 @@ def case_timeline_view(request, case_number):
         'case_history': all_history,
         'case_logs': case_logs_serializer.data,
     })
-
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])

@@ -13,11 +13,7 @@ from .serializers import (
     DistributionChannelCreateSerializer,
 )
 
-
 class DistributionChannelViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for managing distribution channels with full CRUD operations.
-    """
     queryset = DistributionChannel.objects.select_related('channel', 'created_by', 'updated_by').filter(is_deleted=False)
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]

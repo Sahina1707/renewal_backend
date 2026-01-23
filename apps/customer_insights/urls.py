@@ -1,12 +1,6 @@
-"""
-URL configuration for Customer Insights app.
-Simplified design with consolidated endpoints.
-"""
-
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import CustomerInsightsViewSet
-
 
 router = DefaultRouter()
 router.register(r'customer_insights', CustomerInsightsViewSet, basename='customer-insights')

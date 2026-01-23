@@ -14,7 +14,6 @@ from .models import Campaign, CampaignRecipient, CampaignType
 from .serializers import (
     CampaignSerializer, CampaignCreateSerializer
 )
-# FIXED: Removed send_campaign_emails_async from imports
 from .services import EmailCampaignService 
 from apps.core.pagination import StandardResultsSetPagination
 from apps.files_upload.models import FileUpload
@@ -44,14 +43,10 @@ class CampaignViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def test_action(self, request):
-        """Test action to verify ViewSet actions work"""
         return Response({"message": "Test action works!", "status": "success"})
 
     @action(detail=False, methods=['post'], url_path='create-from-file')
     def create_from_file(self, request):
-        """
-        Create a campaign based on uploaded policy file with target audience filtering
-        """
         try:
             serializer = CampaignCreateSerializer(data=request.data, context={'request': request})
 
@@ -103,12 +98,10 @@ class CampaignViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def simple_test(self, request):
-        """Simple test endpoint"""
         return Response({"message": "Simple test works!", "status": "success"})
 
     @action(detail=False, methods=['get'])
     def get_file_uploads(self, request):
-        """Get available file uploads for campaign creation"""
         try:
             file_uploads = FileUpload.objects.filter(
                 upload_status='completed'
@@ -126,7 +119,6 @@ class CampaignViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def get_campaign_types(self, request):
-        """Get available campaign types"""
         try:
             campaign_types = CampaignType.objects.all().values('id', 'name', 'description')
             
@@ -142,7 +134,6 @@ class CampaignViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def get_email_templates(self, request):
-        """Get available email templates"""
         try:
             templates = Template.objects.filter(
                 template_type='email'
@@ -160,7 +151,6 @@ class CampaignViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def get_campaign_metrics(self, request, pk=None):
-        """Get detailed campaign metrics and engagement statistics"""
         try:
             campaign = self.get_object()
 
@@ -204,7 +194,6 @@ class CampaignViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def update_statistics(self, request, pk=None):
-        """Manually update campaign statistics"""
         try:
             campaign = self.get_object()
 
@@ -244,7 +233,6 @@ class CampaignViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def recipient_status(self, request, pk=None):
-        """Get detailed recipient status for debugging"""
         try:
             campaign = self.get_object()
             recipients = campaign.recipients.all()
@@ -295,7 +283,6 @@ class CampaignViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def force_update_counts(self, request, pk=None):
-        """Force update campaign counts - SIMPLE METHOD"""
         try:
             campaign = self.get_object()
 
@@ -349,7 +336,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
         try:
             campaign = self.get_object()
 
-            if campaign.status not in ['draft', 'scheduled', 'running']: # Allowing running for testing
+            if campaign.status not in ['draft', 'scheduled', 'running']: 
                 return Response(
                     {"error": "Campaign emails can only be sent for draft, scheduled or running campaigns"},
                     status=status.HTTP_400_BAD_REQUEST
@@ -732,7 +719,6 @@ class EmailTrackingView(View):
         except Exception as e:
             logger.error(f"Error tracking email open: {str(e)}")
             return response
-
 
 @method_decorator(csrf_exempt, name='dispatch')
 class EmailClickTrackingView(View):

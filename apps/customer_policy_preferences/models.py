@@ -1,14 +1,8 @@
-"""
-Customer Policy Preferences models for the Intelipro Insurance Policy Renewal System.
-"""
-
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from apps.core.models import BaseModel
 from apps.customers.models import Customer
 from apps.renewals.models import RenewalCase
-
-
 class CustomerPolicyPreference(BaseModel):
     """
     Customer policy preferences for renewal and insurance selection.

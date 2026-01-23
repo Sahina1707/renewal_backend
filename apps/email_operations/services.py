@@ -22,9 +22,7 @@ class EmailOperationsService:
         Enhance email content to improve deliverability and avoid spam filters
         Always enhance content to make it look professional and avoid spam
         """
-        # Always enhance HTML content with professional structure
         if not html_content or html_content.strip() == '':
-            # If no HTML content, create from text content
             html_content = f"""
             <!DOCTYPE html>
             <html>
@@ -57,7 +55,6 @@ class EmailOperationsService:
             </html>
             """
         else:
-            # Enhance existing HTML content with professional wrapper
             html_content = f"""
             <!DOCTYPE html>
             <html>
@@ -90,7 +87,6 @@ class EmailOperationsService:
             </html>
             """
         
-        # Always enhance text content with professional structure
         if not text_content or text_content.strip() == '':
             text_content = """
 Welleazy Team
@@ -108,7 +104,6 @@ Unsubscribe: https://welleazy.com/unsubscribe
 Privacy Policy: https://welleazy.com/privacy
             """.strip()
         else:
-            # Enhance existing text content with professional wrapper
             text_content = f"""
 Welleazy Team
 Your trusted insurance partner
@@ -158,18 +153,14 @@ Privacy Policy: https://welleazy.com/privacy
             Dict with success status and message details
         """
         try:
-            # Generate unique message ID
             import uuid
             message_id = f"msg_{uuid.uuid4().hex[:12]}_{int(timezone.now().timestamp())}"
             
-            # Enhance email content for better deliverability
             enhanced_html, enhanced_text = self._enhance_email_content_for_deliverability(
                 html_content, text_content, subject
             )
             
-            # Get default reply_to from provider if not provided
             if not reply_to:
-                # Get the active provider's reply_to as default
                 try:
                     from apps.email_provider.models import EmailProviderConfig
                     provider = EmailProviderConfig.objects.filter(
@@ -181,7 +172,6 @@ Privacy Policy: https://welleazy.com/privacy
                 except:
                     pass
             
-            # Create email message record
             email_message = EmailMessage.objects.create(
                 message_id=message_id,
                 to_emails=to_emails,
@@ -216,7 +206,6 @@ Privacy Policy: https://welleazy.com/privacy
                     'scheduled_at': scheduled_at
                 }
             
-            # Send immediately using SendGrid only (no fallback)
             result = self._send_email_message(email_message)
             
             return {

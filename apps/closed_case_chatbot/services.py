@@ -3,13 +3,7 @@ from datetime import datetime, timedelta
 from django.db.models import Q, Count, Avg
 from django.utils import timezone
 from .models import ClosedCaseChatbot, ClosedCaseChatbotMessage, ClosedCaseChatbotAnalytics
-
-
 class ClosedCaseChatbotService:
-    """
-    Service class for handling closed case chatbot business logic
-    """
-    
     @staticmethod
     def create_chatbot_session(case_data):
         """
@@ -35,9 +29,6 @@ class ClosedCaseChatbotService:
     
     @staticmethod
     def get_chatbot_by_case_id(case_id):
-        """
-        Get chatbot session by case ID
-        """
         try:
             return ClosedCaseChatbot.objects.get(case_id=case_id)
         except ClosedCaseChatbot.DoesNotExist:
@@ -45,9 +36,7 @@ class ClosedCaseChatbotService:
     
     @staticmethod
     def get_chatbot_by_session_id(session_id):
-        """
-        Get chatbot session by session ID
-        """
+       
         try:
             return ClosedCaseChatbot.objects.get(chatbot_session_id=session_id)
         except ClosedCaseChatbot.DoesNotExist:
@@ -55,9 +44,7 @@ class ClosedCaseChatbotService:
     
     @staticmethod
     def send_message(chatbot_session, message_type, content, is_helpful=None):
-        """
-        Send a message in the chatbot conversation
-        """
+       
         message_data = {
             'chatbot_session': chatbot_session,
             'message_type': message_type,
@@ -74,9 +61,7 @@ class ClosedCaseChatbotService:
     
     @staticmethod
     def get_conversation_history(chatbot_session, limit=None):
-        """
-        Get conversation history for a chatbot session
-        """
+       
         messages = chatbot_session.messages.all().order_by('timestamp')
         
         if limit:
@@ -86,27 +71,21 @@ class ClosedCaseChatbotService:
     
     @staticmethod
     def deactivate_chatbot(chatbot_session):
-        """
-        Deactivate a chatbot session
-        """
+        
         chatbot_session.is_active = False
         chatbot_session.save()
         return chatbot_session
     
     @staticmethod
     def reactivate_chatbot(chatbot_session):
-        """
-        Reactivate a chatbot session
-        """
+       
         chatbot_session.is_active = True
         chatbot_session.save()
         return chatbot_session
     
     @staticmethod
     def search_closed_cases(search_terms):
-        """
-        Search closed cases by multiple criteria
-        """
+       
         if not search_terms:
             return ClosedCaseChatbot.objects.none()
         
@@ -125,43 +104,28 @@ class ClosedCaseChatbotService:
     
     @staticmethod
     def get_active_chatbots():
-        """
-        Get all active chatbot sessions
-        """
+        
         return ClosedCaseChatbot.objects.filter(is_active=True)
     
     @staticmethod
     def get_inactive_chatbots():
-        """
-        Get all inactive chatbot sessions
-        """
+        
         return ClosedCaseChatbot.objects.filter(is_active=False)
     
     @staticmethod
     def get_chatbots_by_category(category):
-        """
-        Get chatbots by insurance category
-        """
+       
         return ClosedCaseChatbot.objects.filter(category__icontains=category)
     
     @staticmethod
     def get_chatbots_by_profile_type(profile_type):
-        """
-        Get chatbots by customer profile type
-        """
+        
         return ClosedCaseChatbot.objects.filter(profile_type=profile_type)
 
-
 class ClosedCaseChatbotAnalyticsService:
-    """
-    Service class for handling closed case chatbot analytics
-    """
-    
     @staticmethod
     def record_metric(chatbot_session, metric_name, metric_value, metric_date=None):
-        """
-        Record a metric for a chatbot session
-        """
+       
         if metric_date is None:
             metric_date = timezone.now().date()
         
@@ -177,16 +141,12 @@ class ClosedCaseChatbotAnalyticsService:
     
     @staticmethod
     def get_session_analytics(chatbot_session):
-        """
-        Get all analytics for a specific chatbot session
-        """
+       
         return chatbot_session.analytics.all().order_by('-metric_date')
     
     @staticmethod
     def get_metric_summary(metric_name, start_date=None, end_date=None):
-        """
-        Get summary statistics for a specific metric
-        """
+       
         queryset = ClosedCaseChatbotAnalytics.objects.filter(metric_name=metric_name)
         
         if start_date:
@@ -203,9 +163,7 @@ class ClosedCaseChatbotAnalyticsService:
     
     @staticmethod
     def get_daily_interaction_stats(days=30):
-        """
-        Get daily interaction statistics for the last N days
-        """
+       
         end_date = timezone.now().date()
         start_date = end_date - timedelta(days=days)
         
@@ -228,9 +186,6 @@ class ClosedCaseChatbotAnalyticsService:
     
     @staticmethod
     def get_category_wise_stats():
-        """
-        Get statistics grouped by insurance category
-        """
         return ClosedCaseChatbot.objects.values('category').annotate(
             total_cases=Count('id'),
             active_cases=Count('id', filter=Q(is_active=True)),
@@ -239,9 +194,6 @@ class ClosedCaseChatbotAnalyticsService:
     
     @staticmethod
     def get_profile_type_stats():
-        """
-        Get statistics grouped by customer profile type
-        """
         return ClosedCaseChatbot.objects.values('profile_type').annotate(
             total_cases=Count('id'),
             active_cases=Count('id', filter=Q(is_active=True)),
@@ -250,9 +202,6 @@ class ClosedCaseChatbotAnalyticsService:
     
     @staticmethod
     def get_language_wise_stats():
-        """
-        Get statistics grouped by language preference
-        """
         return ClosedCaseChatbot.objects.values('language').annotate(
             total_cases=Count('id'),
             active_cases=Count('id', filter=Q(is_active=True)),
@@ -261,10 +210,6 @@ class ClosedCaseChatbotAnalyticsService:
 
 
 class ClosedCaseChatbotMessageService:
-    """
-    Service class for handling chatbot message operations
-    """
-    
     @staticmethod
     def get_recent_messages(chatbot_session, limit=10):
         """

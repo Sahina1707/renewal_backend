@@ -2,14 +2,10 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
 from django.utils.safestring import mark_safe
-
 from .models import CaseHistory
 from apps.renewals.models import RenewalCase as Case
-
 @admin.register(Case)
-class CaseAdmin(admin.ModelAdmin):
-    """Admin interface for Case model."""
-    
+class CaseAdmin(admin.ModelAdmin):    
     list_display = [
         'case_number', 'get_title', 'status', 'assigned_to', 
         'customer', 'get_processing_days', 'created_at'
@@ -68,8 +64,6 @@ class CaseAdmin(admin.ModelAdmin):
         return super().get_queryset(request).select_related(
             'assigned_to', 'customer', 'policy', 'created_by', 'updated_by'
         )
-
-
 @admin.register(CaseHistory)
 class CaseHistoryAdmin(admin.ModelAdmin):
     """Admin interface for CaseHistory model."""

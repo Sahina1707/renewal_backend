@@ -12,7 +12,7 @@ from drf_spectacular.utils import extend_schema, OpenApiResponse
 from rest_framework.exceptions import ValidationError  
 import uuid
 import traceback
-
+from apps.users.models import UserSession
 from apps.users.models import User, PasswordResetToken
 from .serializers import (
     CustomTokenObtainPairSerializer,
@@ -23,81 +23,7 @@ from .serializers import (
     UserProfileSerializer,
     LoginResponseSerializer 
 )
-
-
-# class CustomTokenObtainPairView(TokenObtainPairView):
-#     """Custom login view with JWT token generation"""
-    
-#     serializer_class = CustomTokenObtainPairSerializer
-    
-#     @extend_schema(
-#         summary="User Login",
-#         description="Authenticate user and return JWT tokens with user profile data",
-#         request=CustomTokenObtainPairSerializer,
-#         responses={
-#             200: OpenApiResponse(
-#                 response=LoginResponseSerializer,
-#                 description="Login successful"
-#             ),
-#             400: OpenApiResponse(description="Invalid credentials"),
-#             401: OpenApiResponse(description="Authentication failed"),
-#         },
-#         tags=["Authentication"]
-#     )
-#     def post(self, request, *args, **kwargs):
-#         serializer = self.get_serializer(data=request.data)
-        
-#         try:
-#             serializer.is_valid(raise_exception=True)
-#         except Exception as e:
-#             return Response({
-#                 'success': False,
-#                 'message': 'Login failed',
-#                 'errors': serializer.errors
-#             }, status=status.HTTP_400_BAD_REQUEST)
-        
-#         user = serializer.validated_data['user']
-#         tokens = serializer.validated_data
-        
-#         # Create user session record
-#         from apps.users.models import UserSession
-#         session_expires = timezone.now() + timezone.timedelta(
-#             minutes=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds() / 60
-#         )
-        
-#         UserSession.objects.create(
-#             user=user,
-#             session_key=request.session.session_key or str(uuid.uuid4()),
-#             ip_address=self.get_client_ip(request),
-#             user_agent=request.META.get('HTTP_USER_AGENT', ''),
-#             expires_at=session_expires
-#         )
-        
-#         # Prepare response
-#         user_serializer = UserProfileSerializer(user)
-        
-#         return Response({
-#             'success': True,
-#             'message': 'Login successful',
-#             'data': {
-#                 'access': tokens['access'],
-#                 'refresh': tokens['refresh'],
-#                 'user': user_serializer.data
-#             }
-#         }, status=status.HTTP_200_OK)
-    
-#     def get_client_ip(self, request):
-#         """Get client IP address"""
-#         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-#         if x_forwarded_for:
-#             ip = x_forwarded_for.split(',')[0]
-#         else:
-#             ip = request.META.get('REMOTE_ADDR')
-#         return ip
-
-class CustomTokenObtainPairView(TokenObtainPairView):
-    """Custom login view with JWT token generation"""
-    
+class CustomTokenObtainPairView(TokenObtainPairView):    
     serializer_class = CustomTokenObtainPairSerializer
     
     @extend_schema(
@@ -119,8 +45,6 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 
         try:
             serializer.is_valid(raise_exception=True)
-            
-            # Make sure 'user' exists in validated_data before accessing it
             if 'user' not in serializer.validated_data:
                 return Response({
                     'success': False,
@@ -138,9 +62,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 
             tokens = serializer.validated_data
 
-            # Create user session record
-            from apps.users.models import UserSession
-            import uuid
+           
             
             session_expires = timezone.now() + timezone.timedelta(
                 minutes=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds() / 60
@@ -178,7 +100,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             }, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             import traceback
-            traceback.print_exc()  # Shows full traceback in terminal
+            traceback.print_exc()
             return Response({
                 "status_code": 500,
                 "errors": "Internal server error",
@@ -215,14 +137,12 @@ class LogoutView(APIView):
                 token = RefreshToken(refresh_token)
                 token.blacklist()
             
-            # Deactivate user sessions
             from apps.users.models import UserSession
             UserSession.objects.filter(
                 user=request.user,
                 is_active=True
             ).update(is_active=False)
             
-            # Django logout
             logout(request)
             
             return Response({
@@ -238,9 +158,7 @@ class LogoutView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
 
-class UserRegistrationView(APIView):
-    """User registration view"""
-    
+class UserRegistrationView(APIView):    
     permission_classes = [permissions.AllowAny] 
     
     @extend_schema(
@@ -276,9 +194,7 @@ class UserRegistrationView(APIView):
         }, status=status.HTTP_400_BAD_REQUEST)
 
 
-class PasswordChangeView(APIView):
-    """Password change view for authenticated users"""
-    
+class PasswordChangeView(APIView):    
     permission_classes = [permissions.IsAuthenticated]
     
     @extend_schema(
@@ -312,7 +228,6 @@ class PasswordChangeView(APIView):
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 
-
 class PasswordResetRequestView(APIView):
     """Password reset request view"""
     
@@ -337,14 +252,10 @@ class PasswordResetRequestView(APIView):
             try:
                 user = User.objects.get(email=email, is_active=True)
                 
-                # Create password reset token
                 reset_token = PasswordResetToken.objects.create(
                     user=user,
                     expires_at=timezone.now() + timezone.timedelta(hours=24)
                 )
-                
-                # TODO: Send email with reset token
-                # This would integrate with email service
                 
                 return Response({
                     'success': True,
@@ -352,7 +263,6 @@ class PasswordResetRequestView(APIView):
                 }, status=status.HTTP_200_OK)
                 
             except User.DoesNotExist:
-                # Don't reveal if email exists for security
                 return Response({
                     'success': True,
                     'message': 'If the email exists, a reset link has been sent'
@@ -364,10 +274,7 @@ class PasswordResetRequestView(APIView):
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 
-
-class PasswordResetConfirmView(APIView):
-    """Password reset confirmation view"""
-    
+class PasswordResetConfirmView(APIView):    
     permission_classes = [permissions.AllowAny]
     
     @extend_schema(
@@ -399,14 +306,12 @@ class PasswordResetConfirmView(APIView):
                         'message': 'Reset token has expired'
                     }, status=status.HTTP_400_BAD_REQUEST)
                 
-                # Reset password
                 user = reset_token.user
                 user.set_password(new_password)
                 user.password_changed_at = timezone.now()
                 user.force_password_change = False
                 user.save(update_fields=['password', 'password_changed_at', 'force_password_change'])
                 
-                # Mark token as used
                 reset_token.mark_as_used(
                     ip_address=request.META.get('REMOTE_ADDR')
                 )
@@ -428,10 +333,7 @@ class PasswordResetConfirmView(APIView):
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 
-
 class UserProfileView(APIView):
-    """User profile view"""
-    
     permission_classes = [permissions.IsAuthenticated]
     
     @extend_schema(
@@ -493,9 +395,7 @@ class UserProfileView(APIView):
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
-def check_auth_status(request):
-    """Check if user is authenticated and return basic info"""
-    
+def check_auth_status(request):    
     return Response({
         'success': True,
         'authenticated': True,

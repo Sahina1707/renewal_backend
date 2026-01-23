@@ -1,12 +1,6 @@
-"""
-Serializers for Customer Vehicle app.
-"""
-
 from rest_framework import serializers
 from .models import CustomerVehicle
 from apps.customer_assets.models import CustomerAssets
-
-
 class CustomerVehicleSerializer(serializers.ModelSerializer):
     """Serializer for CustomerVehicle model"""
     
@@ -42,7 +36,6 @@ class CustomerVehicleSerializer(serializers.ModelSerializer):
             'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
-
 
 class CustomerVehicleCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating CustomerVehicle"""

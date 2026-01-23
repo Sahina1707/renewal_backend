@@ -7,14 +7,12 @@ from django.utils import timezone
 from apps.users.models import User, Role
 from rest_framework.exceptions import ValidationError
 from rest_framework_simplejwt.tokens import RefreshToken
-
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     email = serializers.EmailField(write_only=True)
     password = serializers.CharField(write_only=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Remove username field completely
         if 'username' in self.fields:
             self.fields.pop('username')
 
@@ -62,13 +60,10 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return x_forwarded_for.split(',')[0] if x_forwarded_for else request.META.get('REMOTE_ADDR')
 
 
-class UserRegistrationSerializer(serializers.ModelSerializer):
-    """Serializer for user registration"""
-    
+class UserRegistrationSerializer(serializers.ModelSerializer):    
     password = serializers.CharField(write_only=True, validators=[validate_password])
     password_confirm = serializers.CharField(write_only=True)
     role_name = serializers.CharField(write_only=True, required=False)
-    
     class Meta:
         model = User
         fields = [
@@ -77,15 +72,12 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         ]
     
     def validate(self, attrs):
-        """Validate registration data"""
         if attrs['password'] != attrs['password_confirm']:
             raise serializers.ValidationError("Passwords don't match.")
         
-        # Check if email already exists
         if User.objects.filter(email=attrs['email']).exists():
             raise serializers.ValidationError("User with this email already exists.")
         
-        # Validate role if provided, otherwise use default
         role_name = attrs.pop('role_name', None)
         if role_name:
             try:
@@ -94,18 +86,15 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             except Role.DoesNotExist:
                 raise serializers.ValidationError(f"Role '{role_name}' not found.")
         else:
-            # Assign default role (agent) if no role specified
             try:
                 default_role = Role.objects.get(name='agent')
                 attrs['role'] = default_role
             except Role.DoesNotExist:
-                # If agent role doesn't exist, try to get any available role
                 try:
                     default_role = Role.objects.first()
                     if default_role:
                         attrs['role'] = default_role
                 except Exception:
-                    # If no roles exist, continue without role (fallback)
                     pass
         
         attrs.pop('password_confirm')
@@ -129,11 +118,9 @@ class PasswordChangeSerializer(serializers.Serializer):
         """Validate password change data"""
         user = self.context['request'].user
         
-        # Check current password
         if not user.check_password(attrs['current_password']):
             raise serializers.ValidationError("Current password is incorrect.")
         
-        # Check new passwords match
         if attrs['new_password'] != attrs['confirm_password']:
             raise serializers.ValidationError("New passwords don't match.")
         
@@ -147,8 +134,6 @@ class PasswordChangeSerializer(serializers.Serializer):
         user.force_password_change = False
         user.save(update_fields=['password', 'password_changed_at', 'force_password_change'])
         return user
-
-
 class PasswordResetRequestSerializer(serializers.Serializer):
     """Serializer for password reset request"""
     
@@ -162,10 +147,7 @@ class PasswordResetRequestSerializer(serializers.Serializer):
             pass
         return value
 
-
-class PasswordResetConfirmSerializer(serializers.Serializer):
-    """Serializer for password reset confirmation"""
-    
+class PasswordResetConfirmSerializer(serializers.Serializer):    
     token = serializers.UUIDField()
     new_password = serializers.CharField(write_only=True, validators=[validate_password])
     confirm_password = serializers.CharField(write_only=True)
@@ -177,9 +159,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         return attrs
 
 
-class UserProfileSerializer(serializers.ModelSerializer):
-    """Serializer for user profile data"""
-    
+class UserProfileSerializer(serializers.ModelSerializer):    
     role_name = serializers.CharField(source='role.name', read_only=True)
     role_display_name = serializers.CharField(source='role.display_name', read_only=True)
     permissions = serializers.SerializerMethodField()
@@ -199,13 +179,9 @@ class UserProfileSerializer(serializers.ModelSerializer):
         """Get user permissions"""
         return obj.get_permissions()
 
-
-class LoginResponseSerializer(serializers.Serializer):
-    """Serializer for login response"""
-    
+class LoginResponseSerializer(serializers.Serializer):    
     access = serializers.CharField()
     refresh = serializers.CharField()
     user = UserProfileSerializer()
-    
     class Meta:
-        fields = ['access', 'refresh', 'user'] 
+        fields = ['access', 'refresh', 'user']

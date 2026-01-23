@@ -1,14 +1,11 @@
 import logging
 import time
 from typing import Dict, Any, Type, Optional
-
 import requests
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
-
 from django.conf import settings
 from cryptography.fernet import Fernet
-
 from .models import CallProviderConfig, CallProviderUsageLog
 try:
     from apps.renewal_settings.models import RenewalSettings
@@ -17,90 +14,54 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
-# ============================================================
-#  EXCEPTION
-# ============================================================
-
 class CallApiException(Exception):
-    """Custom exception for CALL API errors."""
     pass
 
-
-# ============================================================
-#  BASE CLASS
-# ============================================================
-
 class BaseCallService:
-    """
-    Abstract base class for all CALL provider services.
-    Uses CallProviderConfig instead of SmsProvider.
-    """
-
     def __init__(self, provider_model: CallProviderConfig):
         self.provider = provider_model
-        # Encryption key (same idea as WhatsApp service)
         self.encryption_key = getattr(settings, "CALL_ENCRYPTION_KEY", None)
-
-        # Build a credentials dict (secrets decrypted here)
         self.credentials = {
-            # Twilio
             "twilio_account_sid": provider_model.twilio_account_sid,
             "twilio_auth_token": self._decrypt(provider_model.twilio_auth_token),
             "twilio_from_number": provider_model.twilio_from_number,
             "twilio_status_callback_url": provider_model.twilio_status_callback_url,
             "twilio_voice_url": provider_model.twilio_voice_url,
-
-            # Exotel
             "exotel_api_key": self._decrypt(provider_model.exotel_api_key),
             "exotel_api_token": self._decrypt(provider_model.exotel_api_token),
             "exotel_account_sid": provider_model.exotel_account_sid,
-            "exotel_subdomain": provider_model.exotel_subdomain,  # e.g. api.exotel.com
+            "exotel_subdomain": provider_model.exotel_subdomain,  
             "exotel_caller_id": provider_model.exotel_caller_id,
-
-            # Ubona
             "ubona_api_key": self._decrypt(provider_model.ubona_api_key),
-            "ubona_api_url": provider_model.ubona_api_url,        # base or health URL
+            "ubona_api_url": provider_model.ubona_api_url,
             "ubona_account_sid": provider_model.ubona_account_sid,
             "ubona_caller_id": provider_model.ubona_caller_id,
         }
 
-    # ---------- encryption helpers (decrypt only here) ----------
-
     def _decrypt(self, value: str) -> str:
-        """
-        Decrypt a credential using CALL_ENCRYPTION_KEY.
-        If decryption fails or key is missing, returns original value.
-        """
         if not self.encryption_key or not value:
             return value
         try:
             fernet = Fernet(self.encryption_key.encode())
             return fernet.decrypt(value.encode()).decode()
         except Exception:
-            # If value is already plain or key changed, fall back
             return value
     def get_call_settings_rules(self) -> Dict[str, Any]:
-        """
-        Helper: Fetches rules (duration, recording) from Renewal Settings.
-        """
         defaults = {"record": False, "duration_limit": 1800, "analytics": False}
         
         if RenewalSettings:
             try:
-                # FIX: Direct access instead of missing get_settings()
                 rs = RenewalSettings.objects.filter(enable_call_integration=True).first()
                 if not rs:
                     rs = RenewalSettings.objects.first()
 
                 if rs and not rs.enable_call_integration:
                     logger.warning("Call integration is disabled in Renewal Settings.")
-                    # You might want to return defaults or raise error here if strictly enforcing
                 
                 if rs:
                     return {
                         "record": rs.enable_call_recording,
-                        "duration_limit": rs.default_call_duration * 60, # Minutes to Seconds
+                        "duration_limit": rs.default_call_duration * 60,
                         "analytics": rs.enable_call_analytics
                     }
             except Exception as e:
@@ -109,25 +70,10 @@ class BaseCallService:
         return defaults    
 
     def make_call(self, to_number: str, **kwargs) -> Dict[str, Any]:
-        """Place an outbound call (to be implemented per provider)."""
         raise NotImplementedError("This method must be implemented by a subclass.")
 
     def health_check(self) -> Dict[str, Any]:
-        """
-        Must be implemented in subclasses.
-
-        healthy:
-            {'status': 'connected', 'details': 'Credentials valid'}
-
-        unhealthy (missing/invalid credentials, API failure):
-            {'status': 'unhealthy', 'error': 'Some error message'}
-        """
         raise NotImplementedError("This method must be implemented by a subclass.")
-
-
-# ============================================================
-#  TWILIO CALL SERVICE
-# ============================================================
 
 class TwilioCallService(BaseCallService):
     def make_call(self, to_number: str, **kwargs) -> Dict[str, Any]:
@@ -136,22 +82,18 @@ class TwilioCallService(BaseCallService):
         from_number = self.credentials.get('twilio_from_number')
         voice_url = self.credentials.get('twilio_voice_url')
 
-        # We changed the error message here because we are actually checking variables now!
         if not account_sid or not auth_token:
             raise CallApiException("Twilio credentials missing")
 
-        # 1. READ SETTINGS
         rules = self.get_call_settings_rules()
 
         try:
             client = Client(account_sid, auth_token)
             
-            # 2. APPLY RULES
             call = client.calls.create(
                 to=to_number,
                 from_=from_number,
                 url=voice_url or "http://demo.twilio.com/docs/voice.xml",
-                # Applying Renewal Settings here:
                 record=rules['record'],
                 timeLimit=rules['duration_limit'],
                 status_callback=self.credentials.get('twilio_status_callback_url')
@@ -167,17 +109,9 @@ class TwilioCallService(BaseCallService):
             raise CallApiException(str(e))
 
     def health_check(self) -> Dict[str, Any]:
-        """
-        Health check rules:
-        - Missing credentials           => status = 'unhealthy'
-        - Invalid credentials (401/403) => status = 'unhealthy'
-        - Other Twilio/API errors       => status = 'unhealthy'
-        - Valid credentials + API OK    => status = 'connected'
-        """
         account_sid = self.credentials.get('twilio_account_sid')
         auth_token = self.credentials.get('twilio_auth_token')
 
-        # Missing configuration => unhealthy
         if not account_sid or not auth_token:
             return {
                 'status': 'unhealthy',
@@ -186,7 +120,6 @@ class TwilioCallService(BaseCallService):
 
         try:
             client = Client(account_sid, auth_token)
-            # This will fail if SID/token are invalid
             client.api.v2010.accounts(account_sid).fetch()
 
             return {
@@ -214,15 +147,8 @@ class TwilioCallService(BaseCallService):
                 'status': 'unhealthy',
                 'error': str(e),
             }
-
-
-# ============================================================
-#  EXOTEL CALL SERVICE (with real API validation)
-# ============================================================
-
 class ExotelCallService(BaseCallService):
     def make_call(self, to_number: str, **kwargs) -> Dict[str, Any]:
-        # 1. Validation Logic (ADDED)
         api_key = self.credentials.get('exotel_api_key')
         api_token = self.credentials.get('exotel_api_token')
         sid = self.credentials.get('exotel_account_sid')
@@ -230,44 +156,19 @@ class ExotelCallService(BaseCallService):
         if not api_key or not api_token or not sid:
             raise CallApiException("Exotel credentials (API Key, Token, or SID) are missing.")
 
-        # 2. READ SETTINGS
         rules = self.get_call_settings_rules()
-        
-        # 3. Simulate Call (Since we don't have URL)
         logger.info(f"Exotel Call Initiated (Simulated): Record={rules['record']}")
         
-        # NOTE: Once you have the URL, you replace this return with requests.post(...)
         return {"success": True, "message": "Exotel credentials valid, call logic simulated."}
     
     def _build_exotel_account_url(self, subdomain: str, account_sid: str) -> str:
-        """
-        Build a safe "account details" URL to validate credentials.
-
-        We use a simple GET on the account details as a health check:
-        - 200 OK   => credentials valid
-        - 401/403  => invalid credentials
-        """
-        # If subdomain already contains scheme (http/https)
         if subdomain and subdomain.startswith("http"):
             base = subdomain.rstrip("/")
         else:
-            # Fallback: build with https://<subdomain>
-            # Typical values: api.exotel.com / api.in.exotel.com
             base = f"https://{subdomain or 'api.exotel.com'}"
-
-        # Exotel v1 base pattern: https://api.exotel.com/v1/Accounts/<sid>.json
         return f"{base}/v1/Accounts/{account_sid}.json"
 
     def health_check(self) -> Dict[str, Any]:
-        """
-        Health check for Exotel (real API validation):
-
-        - Missing mandatory fields          => status 'unhealthy'
-        - GET on account details endpoint:
-            - 200 OK                        => status 'connected'
-            - 401/403 (unauthorized/forbid) => status 'unhealthy' (invalid creds)
-            - Any other error               => status 'unhealthy'
-        """
         try:
             api_key = self.credentials.get('exotel_api_key')
             api_token = self.credentials.get('exotel_api_token')
@@ -286,8 +187,6 @@ class ExotelCallService(BaseCallService):
                 missing.append("Subdomain")
             if not caller_id:
                 missing.append("Caller ID")
-
-            # Missing config => unhealthy
             if missing:
                 return {
                     'status': 'unhealthy',
@@ -305,20 +204,17 @@ class ExotelCallService(BaseCallService):
                     'error': f"Failed to reach Exotel API: {e}",
                 }
 
-            # Handle HTTP status codes
             if resp.status_code == 200:
                 return {
                     'status': 'connected',
                     'details': 'Exotel credentials valid',
                 }
             elif resp.status_code in (401, 403):
-                # Unauthorized / Forbidden => invalid credentials or account access
                 return {
                     'status': 'unhealthy',
                     'error': f"Invalid Exotel credentials or access forbidden (HTTP {resp.status_code}).",
                 }
             else:
-                # Other errors -> unhealthy with response info
                 try:
                     body = resp.json()
                 except Exception:
@@ -336,38 +232,20 @@ class ExotelCallService(BaseCallService):
                 'status': 'unhealthy',
                 'error': str(e),
             }
-
-
-# ============================================================
-#  UBONA CALL SERVICE (with generic API validation)
-# ============================================================
-
 class UbonaCallService(BaseCallService):
     def make_call(self, to_number: str, **kwargs) -> Dict[str, Any]:
-        # 1. Validation Logic (ADDED)
         api_key = self.credentials.get('ubona_api_key')
         
         if not api_key:
             raise CallApiException("Ubona API Key is missing.")
 
-        # 2. READ SETTINGS
         rules = self.get_call_settings_rules()
         
-        # 3. Simulate Call
         logger.info(f"Ubona Call Initiated (Simulated): Duration={rules['duration_limit']}")
         
         return {"success": True, "message": "Ubona credentials valid, call logic simulated."}
     
     def health_check(self) -> Dict[str, Any]:
-        """
-        Health check for Ubona:
-
-        - Missing mandatory fields      => status 'unhealthy'
-        - Calls configured ubona_api_url as health/validation endpoint:
-            - 200 OK                    => status 'connected'
-            - 401/403                   => status 'unhealthy' (invalid key / auth)
-            - Any other error           => status 'unhealthy'
-        """
         try:
             api_key = self.credentials.get('ubona_api_key')
             api_url = self.credentials.get('ubona_api_url')
@@ -433,17 +311,7 @@ class UbonaCallService(BaseCallService):
                 'status': 'unhealthy',
                 'error': str(e),
             }
-
-
-# ============================================================
-#  FACTORY + PUBLIC SERVICE (CallProviderService)
-# ============================================================
-
 class CallProviderService:
-    """
-    Factory + helper for CALL providers.
-    """
-
     PROVIDER_MAP: Dict[str, Type[BaseCallService]] = {
         'twilio': TwilioCallService,
         'exotel': ExotelCallService,
@@ -453,13 +321,7 @@ class CallProviderService:
     def __init__(self):
         self.encryption_key = getattr(settings, "CALL_ENCRYPTION_KEY", None)
 
-    # ---------- encryption for serializers ----------
-
     def _encrypt_credential(self, value: str) -> str:
-        """
-        Encrypt a credential using CALL_ENCRYPTION_KEY.
-        If encryption fails or key missing, returns original value.
-        """
         if not self.encryption_key or not value:
             return value
         try:
@@ -468,17 +330,10 @@ class CallProviderService:
         except Exception:
             return value
 
-    # ---------- factory helpers ----------
-
     def _get_provider_class(self, provider_type: str) -> Optional[Type[BaseCallService]]:
-        """Returns the correct service class based on the provider type."""
         return self.PROVIDER_MAP.get(provider_type)
 
     def get_service_instance(self, provider_id: int = None) -> BaseCallService:
-        """
-        Gets an instance of the correct provider service.
-        If provider_id is None, fetch the 'default' provider.
-        """
         try:
             if provider_id:
                 provider_model = CallProviderConfig.objects.get(
@@ -507,17 +362,9 @@ class CallProviderService:
             raise CallApiException(f"Provider type {provider_model.provider_type} is not supported.")
 
         return ProviderClass(provider_model)
-
-    # --------------------------------------------------------
-    #  TEST PROVIDER (play button)
-    # --------------------------------------------------------
     def test_provider(self, provider: CallProviderConfig, test_number: str) -> Dict[str, Any]:
-        """
-        Called when you click the play button.
-        For now: just simulate a call.
-        """
         start = time.time()
-        time.sleep(0.2)  # simulate network delay
+        time.sleep(0.2)  
         elapsed = round(time.time() - start, 3)
 
         return {
@@ -525,15 +372,7 @@ class CallProviderService:
             'message': f"Test call simulated for {test_number} using {provider.name}",
             'response_time': elapsed,
         }
-
-    # --------------------------------------------------------
-    #  HEALTH CHECK (used by /health_check and /health_status)
-    # --------------------------------------------------------
     def check_provider_health(self, provider: CallProviderConfig, user=None) -> Dict[str, Any]:
-        """
-        Build correct service, call health_check(), update provider status,
-        create health log, and return a summary dict.
-        """
         start = time.time()
 
         try:
@@ -570,10 +409,6 @@ class CallProviderService:
             'details': details,
             'response_time': response_time,
         }
-
-    # --------------------------------------------------------
-    #  GENERIC USAGE LOG HELPER (ALL PROVIDERS)
-    # --------------------------------------------------------
     @staticmethod
     def log_usage_for_provider(
         provider: CallProviderConfig,
@@ -583,12 +418,6 @@ class CallProviderService:
         duration: Optional[float] = None,
         extra: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """
-        Create a CallProviderUsageLog + increment provider counters.
-
-        Works for Twilio, Exotel, Ubona – any provider. Call this from
-        webhooks or other code whenever a call finishes.
-        """
         data: Dict[str, Any] = extra.copy() if extra else {}
         data.setdefault("status", status)
 

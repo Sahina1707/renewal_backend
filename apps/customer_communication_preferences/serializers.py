@@ -93,7 +93,6 @@ class CustomerCommunicationPreferenceCreateSerializer(serializers.ModelSerialize
     
     def validate(self, data):
         """Custom validation for communication preferences"""
-        # Check if customer already has preference for this communication type
         customer = data.get('customer')
         communication_type = data.get('communication_type')
         

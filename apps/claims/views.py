@@ -1,7 +1,3 @@
-"""
-Views for Claims app with CRUD operations.
-"""
-
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -16,11 +12,7 @@ from .serializers import (
     ClaimCreateSerializer,
 )
 
-
 class ClaimViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for managing claims with full CRUD operations.
-    """
     queryset = Claim.objects.select_related(
         'customer', 
         'policy', 
@@ -154,7 +146,6 @@ class ClaimViewSet(viewsets.ModelViewSet):
             error_message = str(e)
             error_detail = None
             
-            # Check for foreign key constraint violations
             if 'foreign key constraint' in error_message.lower():
                 if 'customer_id' in error_message.lower():
                     error_detail = 'The specified customer does not exist. Please provide a valid customer_id.'
@@ -173,7 +164,6 @@ class ClaimViewSet(viewsets.ModelViewSet):
             )
     
     def update(self, request, *args, **kwargs):
-        """Override update to return formatted response"""
         try:
             partial = kwargs.pop('partial', False)
             instance = self.get_object()
@@ -214,7 +204,6 @@ class ClaimViewSet(viewsets.ModelViewSet):
         """Override destroy to soft delete and return formatted response"""
         try:
             instance = self.get_object()
-            # Soft delete
             instance.is_deleted = True
             instance.deleted_by = request.user
             instance.save()

@@ -10,10 +10,8 @@ from rest_framework_simplejwt.tokens import AccessToken
 class InboxConsumer(AsyncWebsocketConsumer):
     
     async def connect(self):
-        # 1. Try getting user from standard session (Cookies)
         self.user = self.scope.get("user")
         
-        # 2. If not found, try getting user from JWT Token (Query Param)
         if not self.user or not self.user.is_authenticated:
             query_string = self.scope.get('query_string', b'').decode()
             params = parse_qs(query_string)
@@ -22,25 +20,19 @@ class InboxConsumer(AsyncWebsocketConsumer):
             if token:
                 self.user = await self.get_user_from_token(token)
 
-        # 3. Final Check: If still not authenticated, reject connection
         if not self.user or not self.user.is_authenticated:
             print("WebSocket Auth Failed: No valid user found.")
             await self.close()
             return
 
-        # --- Connection Logic Starts Here ---
-        
-        # Room group names
         self.inbox_group = "inbox_updates"
         self.email_id = self.scope['url_route']['kwargs'].get('email_id') 
         
-        # Join Inbox Updates Group
         await self.channel_layer.group_add(
             self.inbox_group,
             self.channel_name
         )
 
-        # If viewing a specific email, track presence
         if self.email_id:
             self.presence_group = f"email_{self.email_id}_viewers"
             await self.channel_layer.group_add(
@@ -52,7 +44,6 @@ class InboxConsumer(AsyncWebsocketConsumer):
         await self.accept()
 
     async def disconnect(self, close_code):
-        # Only try to leave groups if we successfully connected (user exists)
         if hasattr(self, 'inbox_group'):
             await self.channel_layer.group_discard(
                 self.inbox_group,
@@ -105,7 +96,6 @@ class InboxConsumer(AsyncWebsocketConsumer):
         Manually decodes the JWT token to find the user.
         """
         try:
-            # Assuming you use simplejwt. If using another lib, adjust import.
             from rest_framework_simplejwt.tokens import AccessToken
             
             access_token = AccessToken(token)

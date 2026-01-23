@@ -6,7 +6,7 @@ from .views import (
     DNCOverrideView,
     DNCStatisticsView,
     BulkUploadView,
-    DNCEvaluateView,   # ✅ NEW
+    DNCEvaluateView,  
 )
 
 router = DefaultRouter()
@@ -16,7 +16,7 @@ urlpatterns = [
     path('settings/', DNCSettingsView.as_view(), name='dnc-settings'),
     path('', include(router.urls)),
     path('override/', DNCOverrideView.as_view(), name='dnc-override'),
-    path('evaluate/', DNCEvaluateView.as_view(), name='dnc-evaluate'),  # ✅ NEW
+    path('evaluate/', DNCEvaluateView.as_view(), name='dnc-evaluate'), 
     path('statistics/', DNCStatisticsView.as_view(), name='dnc-statistics'),
     path('upload/', BulkUploadView.as_view(), name='dnc-upload'),
 ]

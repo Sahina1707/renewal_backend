@@ -1,7 +1,7 @@
 from celery import shared_task
 from django.utils import timezone
-from datetime import timedelta # <-- NEW
-from .models import Campaign, SequenceStep, CampaignLog, PendingTask # <-- UPDATED
+from datetime import timedelta 
+from .models import Campaign, SequenceStep, CampaignLog, PendingTask 
 from apps.email_provider.services import EmailProviderService
 from apps.email_provider.models import EmailProviderConfig
 from apps.audience_manager.models import AudienceContact
@@ -29,20 +29,13 @@ def check_scheduled_campaigns():
         
     return f"Started {campaigns_to_start.count()} scheduled campaigns."
 
-
 @shared_task
 def process_campaign(campaign_id):
-    """
-    Task 1: Starts a NEW campaign (from Draft).
-    """
     print(f"--- CELERY: Processing new campaign_id: {campaign_id} ---")
     try:
         campaign = Campaign.objects.get(id=campaign_id)
     except Campaign.DoesNotExist:
         return f"Campaign {campaign_id} not found."
-
-    # --- Optimization: Resolve Default Provider Upfront ---
-    # This prevents race conditions where multiple worker tasks try to save the provider simultaneously.
     if campaign.enable_email and not campaign.email_provider:
         default_provider = EmailProviderConfig.objects.filter(is_default=True, is_active=True).first()
         if default_provider:
@@ -65,20 +58,14 @@ def process_campaign(campaign_id):
     for contact in contacts:
         schedule_step_for_contact.apply_async(
             args=[campaign.id, first_step.id, contact.id],
-            countdown=5 # Add 5s buffer
+            countdown=5 
         )
     return f"Campaign {campaign_id} started."
 
 
 @shared_task
 def resume_paused_campaign(campaign_id):
-    """
-    Task 2: Resumes a PAUSED campaign.
-    Finds all pending tasks and re-schedules them.
-    """
     print(f"--- CELERY: Resuming paused campaign_id: {campaign_id} ---")
-    
-    # Find all tasks that were pending when pause was hit
     tasks_to_resume = PendingTask.objects.filter(campaign_id=campaign_id)
     
     if not tasks_to_resume.exists():
@@ -88,9 +75,6 @@ def resume_paused_campaign(campaign_id):
     resumed_count = 0
     
     for task in tasks_to_resume:
-        # Calculate new delay
-        # If task was scheduled for the future, keep that delay
-        # If task was scheduled for the past (i.e., should have run while paused), run it now
         delay_seconds = 0
         if task.scheduled_for > now:
             delay_seconds = (task.scheduled_for - now).total_seconds()
@@ -100,20 +84,11 @@ def resume_paused_campaign(campaign_id):
             countdown=delay_seconds
         )
         resumed_count += 1
-
-    # Clear the old pending tasks
     tasks_to_resume.delete()
     return f"Resumed {resumed_count} tasks for campaign {campaign_id}."
 
-
-@shared_task(bind=True) # <-- bind=True gives us access to 'self'
+@shared_task(bind=True)
 def schedule_step_for_contact(self, campaign_id, step_id, contact_id):
-    """
-    Task 3: The "Engine".
-    Processes one step for one contact, then schedules the next.
-    """
-    # --- NEW: Clear this task from PendingTask DB ---
-    # If we are running, we are no longer "pending"
     PendingTask.objects.filter(task_id=self.request.id).delete()
     
     try:
@@ -123,26 +98,21 @@ def schedule_step_for_contact(self, campaign_id, step_id, contact_id):
     except Exception as e:
         return f"Could not find models: {e}"
 
-    # --- 1. Check Campaign Status ---
     if campaign.status == Campaign.CampaignStatus.PAUSED:
         print(f"--- CELERY: Campaign is PAUSED. Re-queueing task. ---")
-        # This is a failsafe. We re-add it to the PendingTask list
-        # to be picked up by resume_paused_campaign later.
         PendingTask.objects.get_or_create(
             task_id=self.request.id,
             defaults={
                 'campaign': campaign,
                 'contact': contact,
                 'step': step,
-                'scheduled_for': timezone.now() # Schedule for "now"
+                'scheduled_for': timezone.now() 
             }
         )
         return "Campaign paused. Task stored."
     
     if campaign.status == Campaign.CampaignStatus.COMPLETED:
         return "Campaign is completed. Skipping."
-
-    # --- 2. Check Trigger Condition (from video 00:51) ---
     if step.trigger_condition in ['no_response', 'no_action']:
         has_interacted = CampaignLog.objects.filter(
             campaign=campaign,
@@ -156,30 +126,20 @@ def schedule_step_for_contact(self, campaign_id, step_id, contact_id):
         if has_interacted:
             print(f"--- CELERY: Skipping step {step.step_order} for {contact.id}: User has replied/clicked. ---")
             return "Skipped: User interacted."
-
-    # --- 3. Process Channel (from video 00:37) ---
     template = step.template
     success = False
     error_msg = None
-    message_id = None # <-- NEW
+    message_id = None 
 
     if step.channel == 'email' and campaign.enable_email:
         if contact.email:
             print(f"--- CELERY: Sending email for step {step.step_order} to {contact.email}... ---")
-            
-            # 1. Get the Provider
             provider = getattr(campaign, 'email_provider', None)
             
             if not provider:
-                # Fetch System Default
                 provider = EmailProviderConfig.objects.filter(is_default=True, is_active=True).first()
-                # NOTE: We do NOT save the campaign here to avoid race conditions/DB locks 
-                # when multiple tasks run simultaneously.
-            
-            # 2. Send
             if provider:
                 try:
-                    # CRITICAL: Pass config=provider
                     email_service = EmailProviderService(config=provider)
                     
                     rendered_content = template.content 
@@ -209,10 +169,9 @@ def schedule_step_for_contact(self, campaign_id, step_id, contact_id):
     
     elif step.channel == 'sms' and campaign.enable_sms:
         if contact.phone:
-            body = template.content # Add variable replacement
+            body = template.content 
             print(f"--- CELERY: Sending SMS for step {step.step_order} to {contact.phone}... ---")
-            # success, error_msg, message_id = send_twilio_sms(contact.phone, body)
-            success, error_msg, message_id = (True, "SMS sending not implemented", None) # Placeholder
+            success, error_msg, message_id = (True, "SMS sending not implemented", None) 
         else:
             error_msg = "Contact has no phone number."
 
@@ -220,30 +179,25 @@ def schedule_step_for_contact(self, campaign_id, step_id, contact_id):
         if contact.phone:
             print(f"--- CELERY: Sending Twilio WhatsApp for step {step.step_order} to {contact.phone}... ---")
             try:
-                # 1. Get the default provider service
                 service = WhatsAppService().get_service_instance()
 
-                # 2. Find the provider-specific template matching the campaign template's name
                 provider_template = WhatsAppMessageTemplate.objects.get(
                     name=template.name,
                     provider=service.provider,
                     status='approved'
                 )
-
-                # 3. Build the template parameters
                 variable_names = template.variables
                 custom_params = []
                 for var_name in variable_names:
                     value = getattr(contact, var_name, '')
                     custom_params.append(str(value))
 
-                # 4. Send the message using the service
                 response = service.send_template_message(
                     to_phone=contact.phone,
                     template=provider_template,
                     template_params=custom_params,
                     campaign=campaign,
-                    customer=None # Or link to a customer model if you have one
+                    customer=None 
                 )
                 success = True
                 message_id = response['messages'][0]['id']
@@ -262,7 +216,6 @@ def schedule_step_for_contact(self, campaign_id, step_id, contact_id):
                 error_msg = f"A general error occurred: {e}"
         else:
             error_msg = "Contact has no phone number."
-    # --- 4. Log the Result ---
     CampaignLog.objects.create(
         campaign=campaign,
         step=step,
@@ -270,17 +223,14 @@ def schedule_step_for_contact(self, campaign_id, step_id, contact_id):
         status=CampaignLog.LogStatus.SENT if success else CampaignLog.LogStatus.FAILED,
         sent_at=timezone.now(),
         error_message=error_msg,
-        message_provider_id=message_id # <-- Store provider ID for webhook
+        message_provider_id=message_id 
     )
 
-    # --- 5. Schedule Next Step ---
     next_step = campaign.cm_sequence_steps.filter(
         step_order=step.step_order + 1
     ).first()
 
-    if next_step and success: # Only schedule next step if this one didn't fail
-        
-        # --- UPDATED (from video 00:59) ---
+    if next_step and success: 
         delay_in_seconds = (
             (next_step.delay_minutes * 60) +
             (next_step.delay_hours * 3600) +
@@ -289,20 +239,15 @@ def schedule_step_for_contact(self, campaign_id, step_id, contact_id):
         )
         
         if delay_in_seconds == 0:
-            delay_in_seconds = 5 # Add 5s buffer for immediate follow-ups
+            delay_in_seconds = 5 
             
         scheduled_time = timezone.now() + timedelta(seconds=delay_in_seconds)
         
         print(f"--- CELERY: Scheduling next step ({next_step.step_order}) in {delay_in_seconds}s. ---")
-        
-        # Schedule the task
         task = schedule_step_for_contact.apply_async(
             args=[campaign_id, next_step.id, contact_id],
             countdown=delay_in_seconds
         )
-        
-        # --- NEW (Bug Fix) ---
-        # Store the task ID so we can pause it
         PendingTask.objects.create(
             task_id=task.id,
             campaign=campaign,
@@ -310,11 +255,7 @@ def schedule_step_for_contact(self, campaign_id, step_id, contact_id):
             step=next_step,
             scheduled_for=scheduled_time
         )
-        # --- END OF NEW ---
         
     elif not next_step:
         print(f"--- CELERY: End of sequence for contact {contact.id}. ---")
-        # Optional: Check if all logs for this campaign are done and mark
-        # campaign as COMPLETED.
-        
     return "Step completed."
