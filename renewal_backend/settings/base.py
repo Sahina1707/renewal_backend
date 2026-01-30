@@ -121,6 +121,8 @@ LOCAL_APPS = [
     'apps.renewal_settings',
     'apps.feedback_settings.apps.FeedbackSettingsConfig',
     'apps.feedback_and_surveys.apps.FeedbackConfig',
+    'apps.knowledge_process_folder',
+    'apps.system',
 
     'apps.whatsapp_flow_settings',
     'apps.whatsapp_flow_management',
@@ -546,3 +548,6 @@ LOCALE_PATHS = (
     os.path.join(BASE_DIR, 'locale'),
 )
 SITE_URL = config('BASE_URL', default='http://127.0.0.1:8000')
+
+POPPLER_PATH = r"C:\Program Files\Release-25.12.0-0\poppler-25.12.0\Library\bin"
+EMAIL_CREDENTIAL_KEY = config('EMAIL_CREDENTIAL_KEY', default="ifyBPaHoeRLXfUPzS9G1TeLBXkZqpJMGi29ZM7v4dE4=")
