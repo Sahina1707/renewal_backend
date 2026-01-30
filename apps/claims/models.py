@@ -1,7 +1,3 @@
-"""
-Claims models for the Intelipro Insurance Policy Renewal System.
-"""
-
 from django.db import models
 from django.contrib.auth import get_user_model
 from apps.core.models import BaseModel
@@ -9,8 +5,6 @@ from apps.customers.models import Customer
 from apps.policies.models import Policy
 
 User = get_user_model()
-
-
 class Claim(BaseModel):
     """Model for insurance claims"""
     
@@ -34,7 +28,6 @@ class Claim(BaseModel):
         ('other', 'Other'),
     ]
     
-    # Auto-generated claim number (CLM0001 format)
     claim_number = models.CharField(
         max_length=100, 
         unique=True, 
@@ -42,7 +35,6 @@ class Claim(BaseModel):
         help_text="Auto-generated claim number in format CLM0001"
     )
     
-    # Foreign Keys
     customer = models.ForeignKey(
         Customer,
         on_delete=models.CASCADE,
@@ -61,7 +53,6 @@ class Claim(BaseModel):
         help_text="Policy associated with this claim"
     )
     
-    # Claim Details
     claim_type = models.CharField(
         max_length=50,
         choices=CLAIM_TYPE_CHOICES,
@@ -86,7 +77,6 @@ class Claim(BaseModel):
         help_text="Current status of the claim"
     )
     
-    # Additional fields
     insurance_company_name = models.CharField(
         max_length=200,
         blank=True,
@@ -140,18 +130,15 @@ class Claim(BaseModel):
         return f"{self.claim_number} - N/A"
     
     def save(self, *args, **kwargs):
-        # Auto-generate claim_number if not provided
         if not self.claim_number:
             self.claim_number = self.generate_claim_number()
         
-        # Auto-populate policy_number from policy if available
         if self.policy and not self.policy_number:
             try:
                 self.policy_number = self.policy.policy_number
             except AttributeError:
                 pass
         
-        # Auto-populate expire_date from policy if available
         if self.policy and not self.expire_date:
             try:
                 if hasattr(self.policy, 'expiry_date') and self.policy.expiry_date:
@@ -167,7 +154,6 @@ class Claim(BaseModel):
         """Generate a unique claim number in format CLM0001"""
         prefix = "CLM"
         
-        # Get all existing claim numbers with the prefix
         existing_claims = Claim.objects.filter(
             claim_number__startswith=prefix
         ).values_list('claim_number', flat=True)
@@ -175,7 +161,6 @@ class Claim(BaseModel):
         max_number = 0
         for claim_number in existing_claims:
             try:
-                # Extract number part (e.g., "CLM0001" -> "0001" -> 1)
                 number_part = claim_number[len(prefix):]
                 number = int(number_part)
                 if number > max_number:

@@ -30,11 +30,9 @@ class Dashboard(BaseModel):
     allowed_roles = models.JSONField(default=list, blank=True)
     allowed_users = models.ManyToManyField(User, blank=True, related_name='accessible_dashboards')
     
-    # Settings
     auto_refresh = models.BooleanField(default=True)
     refresh_interval = models.PositiveIntegerField(default=300, help_text="Refresh interval in seconds")
     
-    # Usage tracking
     view_count = models.PositiveIntegerField(default=0)
     last_viewed = models.DateTimeField(null=True, blank=True)
     
@@ -47,7 +45,6 @@ class Dashboard(BaseModel):
     
     def __str__(self):
         return f"{self.name} ({self.dashboard_type})"
-
 class Widget(BaseModel):
     """Dashboard widgets"""
     WIDGET_TYPE_CHOICES = [
@@ -76,7 +73,6 @@ class Widget(BaseModel):
     widget_type = models.CharField(max_length=20, choices=WIDGET_TYPE_CHOICES)
     chart_type = models.CharField(max_length=20, choices=CHART_TYPE_CHOICES, blank=True)
     
-    # Data source configuration
     data_source = models.CharField(max_length=100, choices=[
         ('policies', 'Policies'),
         ('customers', 'Customers'),
@@ -89,19 +85,16 @@ class Widget(BaseModel):
         ('api_endpoint', 'API Endpoint'),
     ])
     
-    # Query configuration
     query_config = models.JSONField(default=dict)
     
     custom_query = models.TextField(blank=True, help_text="Custom SQL query for advanced widgets")
     api_endpoint = models.URLField(blank=True, help_text="External API endpoint for data")
     
-    # Display configuration
     display_config = models.JSONField(default=dict)
     
     default_width = models.PositiveIntegerField(default=1)
     default_height = models.PositiveIntegerField(default=1)
     
-    # Caching
     cache_duration = models.PositiveIntegerField(default=300, help_text="Cache duration in seconds")
     last_updated = models.DateTimeField(null=True, blank=True)
     cached_data = models.JSONField(default=dict, blank=True)
@@ -121,13 +114,11 @@ class DashboardWidget(BaseModel):
     dashboard = models.ForeignKey(Dashboard, on_delete=models.CASCADE, related_name='dashboard_widgets')
     widget = models.ForeignKey(Widget, on_delete=models.CASCADE, related_name='widget_dashboards')
     
-    # Position and size
     position_x = models.PositiveIntegerField(default=0)
     position_y = models.PositiveIntegerField(default=0)
     width = models.PositiveIntegerField(default=1)
     height = models.PositiveIntegerField(default=1)
     
-    # Widget-specific overrides
     title_override = models.CharField(max_length=200, blank=True)
     config_override = models.JSONField(default=dict, blank=True)
     
@@ -167,23 +158,17 @@ class KPI(BaseModel):
     kpi_type = models.CharField(max_length=20, choices=KPI_TYPE_CHOICES)
     description = models.TextField(blank=True)
     
-    # Calculation
     calculation_method = models.TextField(help_text="Description of how this KPI is calculated")
     sql_query = models.TextField(blank=True, help_text="SQL query to calculate the KPI")
     
-    # Targets and thresholds
     target_value = models.FloatField(null=True, blank=True)
     warning_threshold = models.FloatField(null=True, blank=True)
     critical_threshold = models.FloatField(null=True, blank=True)
     
-    # Display settings
     unit = models.CharField(max_length=20, blank=True, help_text="Unit of measurement (%, $, etc.)")
     decimal_places = models.PositiveIntegerField(default=2)
     
-    # Calculation frequency
     frequency = models.CharField(max_length=20, choices=FREQUENCY_CHOICES, default='daily')
-    
-    # Ownership
     owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='owned_kpis')
     department = models.CharField(max_length=100, blank=True)
     
@@ -204,12 +189,10 @@ class KPIValue(BaseModel):
     date = models.DateField()
     value = models.FloatField()
     
-    # Additional context
     target_value = models.FloatField(null=True, blank=True)
     previous_value = models.FloatField(null=True, blank=True)
     change_percentage = models.FloatField(null=True, blank=True)
     
-    # Status based on thresholds
     status = models.CharField(max_length=20, choices=[
         ('excellent', 'Excellent'),
         ('good', 'Good'),
@@ -217,10 +200,8 @@ class KPIValue(BaseModel):
         ('critical', 'Critical'),
     ], blank=True)
     
-    # Calculation metadata
     calculation_details = models.JSONField(default=dict, blank=True)
     calculated_at = models.DateTimeField(auto_now_add=True)
-    
     class Meta:
         db_table = 'kpi_values'
         unique_together = ['kpi', 'date']
@@ -255,23 +236,17 @@ class Report(BaseModel):
     name = models.CharField(max_length=200)
     report_type = models.CharField(max_length=20, choices=REPORT_TYPE_CHOICES)
     description = models.TextField(blank=True)
-    
-    # Report configuration
     parameters = models.JSONField(default=dict)
     
-    # Scheduling
     frequency = models.CharField(max_length=20, choices=FREQUENCY_CHOICES, default='on_demand')
     is_automated = models.BooleanField(default=False)
     next_run_date = models.DateTimeField(null=True, blank=True)
     
-    # Recipients
     recipients = models.JSONField(default=list, blank=True)
     
-    # Template
     template_config = models.JSONField(default=dict)
     custom_template = models.TextField(blank=True)
     
-    # Files
     last_generated_file = models.FileField(upload_to='reports/', null=True, blank=True)
     file_format = models.CharField(max_length=10, choices=[
         ('pdf', 'PDF'),
@@ -280,7 +255,6 @@ class Report(BaseModel):
         ('html', 'HTML'),
     ], default='pdf')
     
-    # Generation tracking
     generation_count = models.PositiveIntegerField(default=0)
     last_generated = models.DateTimeField(null=True, blank=True)
     last_generation_duration = models.PositiveIntegerField(null=True, blank=True, help_text="Duration in seconds")
@@ -294,7 +268,6 @@ class Report(BaseModel):
     
     def __str__(self):
         return f"{self.name} ({self.report_type})"
-
 class ReportExecution(BaseModel):
     """Report execution history"""
     STATUS_CHOICES = [
@@ -308,23 +281,18 @@ class ReportExecution(BaseModel):
     report = models.ForeignKey(Report, on_delete=models.CASCADE, related_name='executions')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='queued')
     
-    # Execution details
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     duration = models.PositiveIntegerField(null=True, blank=True, help_text="Duration in seconds")
     
-    # Parameters used
     execution_parameters = models.JSONField(default=dict)
     
-    # Results
     generated_file = models.FileField(upload_to='reports/executions/', null=True, blank=True)
     file_size = models.PositiveIntegerField(null=True, blank=True)
     
-    # Error handling
     error_message = models.TextField(blank=True)
     error_details = models.JSONField(default=dict, blank=True)
     
-    # Delivery tracking
     delivery_status = models.CharField(max_length=20, choices=[
         ('pending', 'Pending'),
         ('sent', 'Sent'),
@@ -340,7 +308,6 @@ class ReportExecution(BaseModel):
     
     def __str__(self):
         return f"{self.report.name} - {self.status} - {self.created_at}"
-
 class AnalyticsEvent(BaseModel):
     """Analytics events for tracking user behavior"""
     EVENT_TYPE_CHOICES = [
@@ -359,25 +326,20 @@ class AnalyticsEvent(BaseModel):
     event_type = models.CharField(max_length=20, choices=EVENT_TYPE_CHOICES)
     event_name = models.CharField(max_length=200)
     
-    # User context
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     session_id = models.CharField(max_length=100, blank=True)
     
-    # Event context
     page_url = models.URLField(blank=True)
     page_title = models.CharField(max_length=200, blank=True)
     referrer = models.URLField(blank=True)
     
-    # Event data
     event_data = models.JSONField(default=dict, blank=True)
     
-    # Technical details
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.TextField(blank=True)
     device_type = models.CharField(max_length=20, blank=True)
     browser = models.CharField(max_length=50, blank=True)
     
-    # Timing
     timestamp = models.DateTimeField(auto_now_add=True)
     
     class Meta:

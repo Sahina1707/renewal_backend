@@ -5,8 +5,6 @@ from django.conf import settings
 import uuid
 
 User = get_user_model()
-
-
 class EmailFolder(models.Model):
     """Email folders for organizing messages"""
     
@@ -20,40 +18,6 @@ class EmailFolder(models.Model):
         ('archive', 'Archive'),
         ('custom', 'Custom'),
     ]
-    # CUSTOMER_TYPE_CHOICES = [
-    #     ('normal', 'Normal'),
-    #     ('hni', 'HNI (High Net Worth)'),
-    #     ('super_hni', 'Super HNI'),
-    #     ('vip', 'VIP'),
-    # ]
-    # customer_type = models.CharField(
-    #     max_length=20,
-    #     choices=CUSTOMER_TYPE_CHOICES,
-    #     default='normal',
-    #     help_text="Customer categorization for support tiers"
-    # )
-
-    # ESCALATION_PRIORITY_CHOICES = [
-    #     ('high', 'High Priority'),
-    #     ('urgent', 'Urgent Priority'),
-    #     ('critical', 'Critical Priority'),
-    # ]
-    # is_escalated = models.BooleanField(default=False)
-    # escalation_reason = models.TextField(blank=True, null=True)
-    # escalation_priority = models.CharField(
-    #     max_length=20,
-    #     choices=ESCALATION_PRIORITY_CHOICES,
-    #     blank=True,
-    #     null=True
-    # )
-    # escalated_at = models.DateTimeField(blank=True, null=True)
-    # escalated_by = models.ForeignKey(
-    #     User, 
-    #     on_delete=models.SET_NULL, 
-    #     null=True, 
-    #     related_name='escalated_emails'
-    # )
-    # due_date = models.DateTimeField(null=True, blank=True)
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100)
     folder_type = models.CharField(max_length=20, choices=FOLDER_TYPES, default='custom')

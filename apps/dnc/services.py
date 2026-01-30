@@ -1,8 +1,6 @@
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
-
 from .models import DNCSettings, DNCRegistry, DNCOverrideLog
-
 
 def evaluate_dnc(
     *,
@@ -12,21 +10,8 @@ def evaluate_dnc(
     source: str = "dnc",
     reason: str = None,
 ):
-    """
-    Core DNC decision engine.
-
-    Enforces:
-    - Block DNC Contacts
-    - Universal Allow DNC Overrides switch
-
-    Does NOT:
-    - Auto-check before sending
-    - Intercept other apps
-    """
-
     settings = DNCSettings.get_settings()
 
-    # 1️⃣ Master switch
     if not settings.enable_dnc_checking:
         return {
             "allowed": True,
@@ -35,7 +20,6 @@ def evaluate_dnc(
             "message": "DNC checking disabled",
         }
 
-    # 2️⃣ Check registry
     dnc_entry = DNCRegistry.objects.filter(
         phone_number=phone_number,
         status="Active",
@@ -49,7 +33,6 @@ def evaluate_dnc(
             "message": "Not in DNC registry",
         }
 
-    # 3️⃣ Block DNC Contacts
     if not settings.block_dnc_contacts:
         return {
             "allowed": True,
@@ -58,7 +41,6 @@ def evaluate_dnc(
             "message": "Blocking disabled",
         }
 
-    # 4️⃣ Universal override gate
     if request_override:
         if not settings.allow_dnc_overrides:
             raise PermissionDenied("DNC override is disabled globally")
@@ -86,5 +68,4 @@ def evaluate_dnc(
             "message": "Override approved",
         }
 
-    # 5️⃣ Hard block
     raise PermissionDenied("Number is blocked by DNC")

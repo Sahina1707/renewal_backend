@@ -1,30 +1,21 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.utils import timezone
-
+from .models import CallProviderHealthLog 
 
 User = get_user_model()
-
-
-
-
 class CallProviderConfig(models.Model):
-    """Configuration for call providers (Twilio, Exotel, Ubona)"""
-
-
     PROVIDER_CHOICES = [
         ("twilio", "Twilio"),
         ("exotel", "Exotel"),
         ("ubona", "Ubona"),
     ]
 
-
     PRIORITY_CHOICES = [
         (1, "Primary"),
         (2, "Secondary"),
         (3, "Tertiary"),
     ]
-
 
     STATUS_CHOICES = [
         ("connected", "Connected"),
@@ -33,7 +24,6 @@ class CallProviderConfig(models.Model):
         ("unknown", "Unknown"),
     ]
 
-
     id = models.BigAutoField(primary_key=True)
     name = models.CharField(
         max_length=100,
@@ -41,8 +31,6 @@ class CallProviderConfig(models.Model):
     )
     provider_type = models.CharField(max_length=20, choices=PROVIDER_CHOICES)
 
-
-    # --- Twilio specific fields ---
     twilio_account_sid = models.CharField(
         max_length=255,
         blank=True,
@@ -71,9 +59,6 @@ class CallProviderConfig(models.Model):
         null=True,
         help_text="Twilio Voice URL for outbound calls",
     )
-
-
-    # --- Exotel specific fields ---
     exotel_api_key = models.CharField(
         max_length=255,
         blank=True,
@@ -104,9 +89,6 @@ class CallProviderConfig(models.Model):
         null=True,
         help_text="Exotel Caller ID",
     )
-
-
-    # --- Ubona specific fields ---
     ubona_api_key = models.CharField(
         max_length=255,
         blank=True,
@@ -131,8 +113,6 @@ class CallProviderConfig(models.Model):
         help_text="Ubona Caller ID",
     )
 
-
-    # --- Rate limiting (common) ---
     daily_limit = models.PositiveIntegerField(
         default=1000,
         help_text="Daily call limit",
@@ -146,8 +126,6 @@ class CallProviderConfig(models.Model):
         help_text="Rate limit per minute",
     )
 
-
-    # --- Configuration / flags ---
     priority = models.PositiveIntegerField(
         choices=PRIORITY_CHOICES,
         default=1,
@@ -156,8 +134,6 @@ class CallProviderConfig(models.Model):
     is_default = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
 
-
-    # --- Health / connection status ---
     last_health_check = models.DateTimeField(blank=True, null=True)
     status = models.CharField(
         max_length=20,
@@ -166,15 +142,11 @@ class CallProviderConfig(models.Model):
         help_text="Connection status (connected / disconnected / error / unknown)",
     )
 
-
-    # --- Usage tracking (calls) ---
     calls_made_today = models.PositiveIntegerField(default=0)
     calls_made_this_month = models.PositiveIntegerField(default=0)
     last_reset_daily = models.DateField(default=timezone.now)
     last_reset_monthly = models.DateField(default=timezone.now)
 
-
-    # --- Metadata / audit ---
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(
@@ -200,21 +172,14 @@ class CallProviderConfig(models.Model):
         blank=True,
         related_name="deleted_call_providers",
     )
-
-
     class Meta:
         db_table = "call_provider_configs"
         ordering = ["priority", "name"]
         verbose_name = "Call Provider Configuration"
         verbose_name_plural = "Call Provider Configurations"
 
-
     def __str__(self):
         return f"{self.name} ({self.get_provider_type_display()})"
-
-
-    # ---- helper methods (similar style to EmailProviderConfig) ----
-
 
     def update_status(
         self,
@@ -224,27 +189,16 @@ class CallProviderConfig(models.Model):
         test_type: str = "health_check",
         user=None,
     ):
-        """
-        Update the connection/health status of the provider and create a health log.
-        """
-        from .models import CallProviderHealthLog  # local import is OK
-
-
-        # 1) update status field on provider
         self.last_health_check = timezone.now()
 
-
         if not self.is_active:
-            # if provider is disabled, treat as disconnected
             self.status = "disconnected"
         else:
             self.status = "connected" if is_healthy else "error"
 
-
         self.save(update_fields=["last_health_check", "status"])
 
 
-        # 2) create log entry
         CallProviderHealthLog.objects.create(
             provider=self,
             is_healthy=is_healthy,
@@ -256,42 +210,32 @@ class CallProviderConfig(models.Model):
             updated_by=user,
         )
 
-
     def can_make_call(self) -> bool:
-        """Check if provider can make calls based on limits and status"""
         if not self.is_active or self.status in ["error", "disconnected"]:
             return False
-
 
         if self.calls_made_today >= self.daily_limit:
             return False
 
-
         if self.calls_made_this_month >= self.monthly_limit:
             return False
 
-
         return True
 
-
     def increment_usage(self, count: int = 1):
-        """Increment call usage counters"""
         self.calls_made_today += count
         self.calls_made_this_month += count
         self.save(update_fields=["calls_made_today", "calls_made_this_month"])
-
 
     def reset_daily_usage(self):
         self.calls_made_today = 0
         self.last_reset_daily = timezone.now().date()
         self.save(update_fields=["calls_made_today", "last_reset_daily"])
 
-
     def reset_monthly_usage(self):
         self.calls_made_this_month = 0
         self.last_reset_monthly = timezone.now().date()
         self.save(update_fields=["calls_made_this_month", "last_reset_monthly"])
-
 
     def soft_delete(self):
         self.is_deleted = True
@@ -299,13 +243,7 @@ class CallProviderConfig(models.Model):
         self.is_active = False
         self.save(update_fields=["is_deleted", "deleted_at", "is_active"])
 
-
-
-
 class CallProviderHealthLog(models.Model):
-    """Log of health / connection checks for call providers"""
-
-
     id = models.BigAutoField(primary_key=True)
     provider = models.ForeignKey(
         CallProviderConfig,
@@ -320,8 +258,6 @@ class CallProviderHealthLog(models.Model):
     )
     checked_at = models.DateTimeField(auto_now_add=True)
 
-
-    # extra fields (same style as email logs)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_deleted = models.BooleanField(default=False)
@@ -362,13 +298,7 @@ class CallProviderHealthLog(models.Model):
         status = "Healthy" if self.is_healthy else "Error"
         return f"{self.provider.name} - {status} ({self.checked_at})"
 
-
-
-
 class CallProviderUsageLog(models.Model):
-    """Log of call volume usage for providers"""
-
-
     id = models.BigAutoField(primary_key=True)
     provider = models.ForeignKey(
         CallProviderConfig,
@@ -384,8 +314,6 @@ class CallProviderUsageLog(models.Model):
     )
     logged_at = models.DateTimeField(auto_now_add=True)
 
-
-    # extra audit fields
     created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
     is_deleted = models.BooleanField(default=False)
@@ -412,31 +340,21 @@ class CallProviderUsageLog(models.Model):
         blank=True,
         related_name="deleted_call_usage_logs",
     )
-
-
     class Meta:
         db_table = "call_provider_usage_logs"
         ordering = ["-logged_at"]
         verbose_name = "Call Provider Usage Log"
         verbose_name_plural = "Call Provider Usage Logs"
 
-
     def __str__(self):
         return f"{self.provider.name} - {self.calls_made} calls ({self.logged_at})"
-
-
-
-
 class CallProviderTestResult(models.Model):
-    """Test results for call provider configurations"""
-
 
     STATUS_CHOICES = [
         ("pending", "Pending"),
         ("success", "Success"),
         ("failed", "Failed"),
     ]
-
 
     provider = models.ForeignKey(
         CallProviderConfig,
@@ -466,8 +384,6 @@ class CallProviderTestResult(models.Model):
         blank=True,
     )
 
-
-    # extra audit fields
     created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
     is_deleted = models.BooleanField(default=False)
@@ -495,14 +411,11 @@ class CallProviderTestResult(models.Model):
         blank=True,
         related_name="deleted_call_test_logs",
     )
-
-
     class Meta:
         db_table = "call_provider_test_results"
         ordering = ["-tested_at"]
         verbose_name = "Call Provider Test Result"
         verbose_name_plural = "Call Provider Test Results"
-
 
     def __str__(self):
         return f"{self.provider.name} test to {self.test_number} - {self.get_status_display()}"

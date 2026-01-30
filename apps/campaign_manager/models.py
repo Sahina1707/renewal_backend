@@ -1,5 +1,3 @@
-# File: apps/campaign_manager/models.py
-
 from django.db import models
 from django.utils import timezone
 from apps.users.models import User 
@@ -8,8 +6,6 @@ from apps.email_provider.models import EmailProviderConfig
 from apps.sms_provider.models import SmsProvider
 from apps.whatsapp_provider.models import WhatsAppProvider
 from apps.templates.models import Template
-
-# --- 2. CAMPAIGN MODEL
 class Campaign(models.Model):
     class CampaignTypes(models.TextChoices):
         PROMOTIONAL = 'promotional', 'Promotional'
@@ -41,7 +37,6 @@ class Campaign(models.Model):
         blank=True,
         help_text="Specific provider for this campaign"
     )
-    # SMS Integration
     sms_provider = models.ForeignKey(
         SmsProvider, 
         on_delete=models.SET_NULL, 
@@ -50,7 +45,6 @@ class Campaign(models.Model):
         help_text="Select specific SMS credentials (MSG91/Twilio)"
     )
 
-    # WhatsApp Integration
     whatsapp_provider = models.ForeignKey(
         WhatsAppProvider, 
         on_delete=models.SET_NULL, 
@@ -72,7 +66,6 @@ class Campaign(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='cm_created_campaigns')
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='cm_updated_campaigns')
     deleted_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='cm_deleted_campaigns')
-
     class Meta:
         ordering = ['-created_at']
         verbose_name = "Campaign Manager Campaign"
@@ -80,8 +73,6 @@ class Campaign(models.Model):
 
     def __str__(self):
         return self.name
-
-# --- 3. SEQUENCE STEP MODEL ---
 class SequenceStep(models.Model):
     class TriggerConditions(models.TextChoices):
         ALWAYS_SEND = 'always', 'Always Send'
@@ -126,8 +117,6 @@ class SequenceStep(models.Model):
 
     def __str__(self):
         return f"{self.campaign.name} - Step {self.step_order}"
-
-# --- 4. CAMPAIGN LOG MODEL ---
 class CampaignLog(models.Model):
     class LogStatus(models.TextChoices):
         PENDING = 'pending', 'Pending'
@@ -136,7 +125,6 @@ class CampaignLog(models.Model):
         REPLIED = 'replied', 'Replied'
         OPENED = 'opened', 'Opened'
         CLICKED = 'clicked', 'Clicked'
-        # --- NEW (from video) ---
         DELIVERED = 'delivered', 'Delivered' 
 
     campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name="cm_logs")
@@ -159,12 +147,7 @@ class CampaignLog(models.Model):
 
     def __str__(self):
         return f"Log: {self.campaign.name} to {self.contact.id} - {self.get_status_display()}"
-
-# --- 5. NEW MODEL (to fix Pause/Resume bug) ---
 class PendingTask(models.Model):
-    """
-    Stores Celery task IDs for campaigns that can be paused.
-    """
     task_id = models.CharField(max_length=255, unique=True)
     campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name="cm_pending_tasks")
     contact = models.ForeignKey(AudienceContact, on_delete=models.CASCADE, related_name="cm_pending_tasks")

@@ -45,7 +45,6 @@ class EmailWebhookAdmin(admin.ModelAdmin):
         """Process selected webhooks"""
         count = 0
         for webhook in queryset.filter(status='pending'):
-            # This would call the webhook processing service
             webhook.status = 'processed'
             webhook.save()
             count += 1
@@ -181,7 +180,6 @@ class EmailIntegrationAdmin(admin.ModelAdmin):
         """Sync selected integrations"""
         count = 0
         for integration in queryset.filter(sync_enabled=True):
-            # This would call the integration sync service
             integration.last_sync = timezone.now()
             integration.save()
             count += 1

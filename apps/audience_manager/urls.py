@@ -5,9 +5,7 @@ from .views import AudienceViewSet, AudienceContactViewSet
 app_name = 'audience_manager'
 
 router = DefaultRouter()
-# /api/audience/audiences/
 router.register(r'audiences', AudienceViewSet, basename='audience')
-# /api/audience/contacts/ (Can be used for global search/management)
 router.register(r'contacts', AudienceContactViewSet, basename='audience-contact')
 
 urlpatterns = [

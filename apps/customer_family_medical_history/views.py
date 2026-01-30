@@ -9,7 +9,6 @@ from .serializers import (
     CustomerFamilyMedicalHistoryCreateSerializer,
     CustomerFamilyMedicalHistoryListSerializer,
 )
-
 class CustomerFamilyMedicalHistoryViewSet(viewsets.ModelViewSet):
     queryset = CustomerFamilyMedicalHistory.objects.filter(is_deleted=False)
     pagination_class = StandardResultsSetPagination
@@ -112,10 +111,8 @@ class CustomerFamilyMedicalHistoryViewSet(viewsets.ModelViewSet):
         try:
             serializer = CustomerFamilyMedicalHistoryCreateSerializer(data=request.data)
             if serializer.is_valid():
-                # Save the customer family medical history
                 medical_history = serializer.save(created_by=request.user)
 
-                # Return success response with created data
                 response_serializer = CustomerFamilyMedicalHistorySerializer(medical_history)
                 return Response({
                     'success': True,

@@ -1,30 +1,17 @@
-"""
-Customer Installment Integration Services
-This module provides integration services for automatically creating installments
-when policies are created and linking payments to installments.
-"""
-
 from decimal import Decimal
 from datetime import date, timedelta
 from django.db import transaction
 from django.utils import timezone
 from .models import CustomerInstallment
-
-
 class InstallmentIntegrationService:
     """Service class for integrating installments with policy and payment systems"""
     
     @staticmethod
     def create_installments_for_policy(policy, renewal_case=None):
-        """
-        Create installments when a policy is created
-        This method should be called after policy creation
-        """
         try:
             with transaction.atomic():
                 installments_created = []
                 
-                # Determine payment frequency and create installments accordingly
                 if policy.payment_frequency == 'monthly':
                     installments_created = InstallmentIntegrationService._create_monthly_installments(
                         policy, renewal_case
@@ -133,12 +120,7 @@ class InstallmentIntegrationService:
     
     @staticmethod
     def link_payment_to_installment(payment):
-        """
-        Link a payment to the appropriate installment
-        This method should be called after payment creation
-        """
         try:
-            # Find the most appropriate installment to link
             installment = InstallmentIntegrationService._find_matching_installment(payment)
             
             if installment:
@@ -163,7 +145,6 @@ class InstallmentIntegrationService:
     @staticmethod
     def _find_matching_installment(payment):
         """Find the most appropriate installment for a payment"""
-        # First, try to find by renewal case if available
         if hasattr(payment, 'renewal_case') and payment.renewal_case:
             installment = CustomerInstallment.objects.filter(
                 customer=payment.customer,
@@ -174,7 +155,6 @@ class InstallmentIntegrationService:
             if installment:
                 return installment
         
-        # If no renewal case match, find by customer and amount
         if payment.payment_amount:
             installment = CustomerInstallment.objects.filter(
                 customer=payment.customer,
@@ -185,7 +165,6 @@ class InstallmentIntegrationService:
             if installment:
                 return installment
         
-        # Last resort: find any pending installment for the customer
         installment = CustomerInstallment.objects.filter(
             customer=payment.customer,
             status='pending'
@@ -195,10 +174,6 @@ class InstallmentIntegrationService:
     
     @staticmethod
     def update_overdue_installments():
-        """
-        Update installments that are now overdue
-        This can be called periodically or manually
-        """
         try:
             updated_count = 0
             pending_installments = CustomerInstallment.objects.filter(status='pending')

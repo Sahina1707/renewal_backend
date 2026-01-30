@@ -1,11 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
-
-
 class ClosedCaseChatbot(models.Model):
-    """
-    Model for storing closed case chatbot interactions and data
-    """
     case_id = models.CharField(max_length=100, unique=True, help_text="Unique identifier for the closed case")
     customer_name = models.CharField(max_length=255, help_text="Name of the customer")
     policy_number = models.CharField(max_length=100, help_text="Policy number associated with the case")
@@ -35,11 +30,7 @@ class ClosedCaseChatbot(models.Model):
     def __str__(self):
         return f"{self.case_id} - {self.customer_name}"
 
-
 class ClosedCaseChatbotMessage(models.Model):
-    """
-    Model for storing individual chatbot messages and responses
-    """
     chatbot_session = models.ForeignKey(
         ClosedCaseChatbot, 
         on_delete=models.CASCADE, 
@@ -63,11 +54,7 @@ class ClosedCaseChatbotMessage(models.Model):
     def __str__(self):
         return f"{self.chatbot_session.case_id} - {self.message_type} - {self.timestamp}"
 
-
 class ClosedCaseChatbotAnalytics(models.Model):
-    """
-    Model for storing analytics data about chatbot usage
-    """
     chatbot_session = models.ForeignKey(
         ClosedCaseChatbot, 
         on_delete=models.CASCADE, 

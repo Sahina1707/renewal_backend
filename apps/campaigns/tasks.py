@@ -1,14 +1,9 @@
-"""
-Celery tasks for campaign management
-"""
-
 from celery import shared_task
 from django.utils import timezone
 from datetime import datetime, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
-
 
 @shared_task
 def process_pending_campaigns():

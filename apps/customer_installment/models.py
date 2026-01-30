@@ -1,20 +1,10 @@
-"""
-Customer Installment models for the Intelipro Insurance Policy Renewal System.
-"""
-
 from django.db import models
 from django.core.validators import MinValueValidator
 from decimal import Decimal
 from django.utils import timezone
 from django.db.models import Sum, Count, Avg, Min, Max, Q
 from apps.core.models import BaseModel
-
-
 class CustomerInstallment(BaseModel):
-    """
-    Customer installment records for tracking payment installments.
-    """
-    
     STATUS_CHOICES = [
         ("pending", "Pending"),
         ("overdue", "Overdue"),

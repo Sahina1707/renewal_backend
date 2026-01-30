@@ -636,10 +636,6 @@ class EmailIntegrationAnalyticsViewSet(viewsets.ReadOnlyModelViewSet):
 @permission_classes([AllowAny])
 @csrf_exempt
 def sendgrid_incoming_webhook(request):
-    """
-    Webhook endpoint for receiving incoming emails from SendGrid
-    This endpoint processes incoming emails and stores them in the email_inbox_messages table
-    """
     logger = logging.getLogger(__name__)
     
     try:
@@ -688,10 +684,6 @@ def sendgrid_incoming_webhook(request):
 @permission_classes([AllowAny])
 @csrf_exempt
 def sendgrid_events_webhook(request):
-    """
-    Webhook endpoint for receiving SendGrid event tracking (delivered, open, click, bounce, etc.)
-    This endpoint updates campaign recipient tracking based on SendGrid events
-    """
     logger = logging.getLogger(__name__)
     
     try:

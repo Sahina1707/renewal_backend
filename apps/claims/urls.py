@@ -1,7 +1,3 @@
-"""
-URL configuration for Claims app.
-"""
-
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import ClaimViewSet
@@ -14,4 +10,3 @@ app_name = 'claims'
 urlpatterns = [
     path('', include(router.urls)),
 ]
-

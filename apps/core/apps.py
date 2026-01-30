@@ -7,8 +7,6 @@ class CoreConfig(AppConfig):
     verbose_name = 'Core Utilities'
     
     def ready(self):
-        """Initialize app when Django starts"""
-        # Import signal handlers
         try:
             import apps.core.signals
         except ImportError:

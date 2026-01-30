@@ -38,22 +38,17 @@ class VendorCardSerializer(serializers.Serializer):
     name = serializers.CharField(read_only=True)
     display_type = serializers.CharField(read_only=True) 
     
-    # Main Stats
     total_communications = serializers.IntegerField(read_only=True)
     delivery_rate = serializers.FloatField(read_only=True)
     
-    # Breakdown Stats
     delivered = serializers.IntegerField(read_only=True)
     failed = serializers.IntegerField(read_only=True)
     pending = serializers.IntegerField(read_only=True)
     
-    # Financials & Status
     cost_per_message = serializers.DecimalField(max_digits=6, decimal_places=3, read_only=True)
     total_cost = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     last_activity = serializers.DateField(read_only=True)
     status = serializers.CharField(read_only=True)
-
-# --- Serializer for the Bottom Table (Grouped Columns) ---
 class VendorTableSerializer(serializers.Serializer):
     vendor_details = serializers.SerializerMethodField()
     type_label = serializers.CharField(source='display_type', read_only=True)
@@ -87,21 +82,15 @@ class CommunicationLogSerializer(serializers.ModelSerializer):
         model = CommunicationLog
         fields = ['id', 'customer_name', 'type', 'message_snippet', 'status', 'vendor_name', 'cost', 'timestamp']
 class DeliveryStatusSerializer(serializers.ModelSerializer):
-    # 1. Fetch 'case_number' from the related RenewalCase model
     case_id = serializers.CharField(source='case.case_number', default="-", read_only=True)
 
-    # 2. Group Customer Name + Customer Code
     customer_details = serializers.SerializerMethodField()
     
-    # 3. Format Type label (SMS, EMAIL)
     type_label = serializers.SerializerMethodField()
     
-    # 4. Format Status (includes timestamp & error)
     status_details = serializers.SerializerMethodField()
     
-    # 5. Vendor Name
     vendor_name = serializers.CharField(source='vendor.name', read_only=True)
-
     class Meta:
         model = CommunicationLog
         fields = [
@@ -116,7 +105,6 @@ class DeliveryStatusSerializer(serializers.ModelSerializer):
         ]
 
     def get_customer_details(self, obj):
-        # Access the related Customer object fields
         policy_id_display = "-"
         
         if obj.policy_chatbot:
@@ -126,7 +114,7 @@ class DeliveryStatusSerializer(serializers.ModelSerializer):
 
         if obj.customer:
             return {
-                "name": obj.customer.full_name,      # Using property from Customer model
+                "name": obj.customer.full_name,
                 "policy_id": policy_id_display
             }
         return {

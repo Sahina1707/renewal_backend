@@ -19,15 +19,10 @@ from .serializers import (
     CallProviderStatsSerializer,
 )
 from .services import CallProviderService
-
-
 class CallProviderConfigViewSet(viewsets.ModelViewSet):
-    """Manage call provider configurations (Twilio, Exotel, Ubona)"""
 
     queryset = CallProviderConfig.objects.filter(is_deleted=False)
     permission_classes = [IsAuthenticated]
-
-    # ---------------- serializer selection ----------------
     def get_serializer_class(self):
         if self.action == 'create':
             return CallProviderConfigCreateSerializer
@@ -36,8 +31,6 @@ class CallProviderConfigViewSet(viewsets.ModelViewSet):
         elif self.action == 'update_credentials':
             return CallProviderCredentialsSerializer
         return CallProviderConfigSerializer
-
-    # ---------------- queryset filters ----------------
     def get_queryset(self):
         queryset = super().get_queryset().filter(is_deleted=False)
 
@@ -58,15 +51,12 @@ class CallProviderConfigViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(priority=priority)
 
         return queryset.order_by('priority', 'name')
-
-    # ---------------- create & update ----------------
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
 
-    # ---------------- soft delete ----------------
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         name = instance.name
@@ -79,7 +69,6 @@ class CallProviderConfigViewSet(viewsets.ModelViewSet):
             status=status.HTTP_204_NO_CONTENT,
         )
 
-    # ---------------- UPDATE CREDENTIALS ----------------
     @action(detail=True, methods=['post'])
     def update_credentials(self, request, pk=None):
         provider = self.get_object()
@@ -95,12 +84,8 @@ class CallProviderConfigViewSet(viewsets.ModelViewSet):
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    # ---------------- HEALTH CHECK (single provider) ----------------
     @action(detail=True, methods=['post'], url_path='health_check')
     def health_check(self, request, pk=None):
-        """
-        POST /call-provider/providers/<id>/health_check/
-        """
         provider = self.get_object()
         service = CallProviderService()
 
@@ -120,7 +105,6 @@ class CallProviderConfigViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
-    # ---------------- RESET USAGE ----------------
     @action(detail=True, methods=['post'])
     def reset_usage(self, request, pk=None):
         provider = self.get_object()
@@ -137,15 +121,10 @@ class CallProviderConfigViewSet(viewsets.ModelViewSet):
             )
         return Response({'message': f'{reset_type.title()} call usage reset successfully'})
 
-    # ---------------- SET DEFAULT PROVIDER ----------------
     @action(detail=True, methods=['patch'], url_path='set-default')
     def set_default(self, request, pk=None):
-        """
-        PATCH /call-provider/providers/<id>/set-default/
-        """
         provider = self.get_object()
 
-        # Clear default for providers of same type (or all, depending on your rule)
         CallProviderConfig.objects.filter(
             provider_type=provider.provider_type,
             is_deleted=False
@@ -159,12 +138,8 @@ class CallProviderConfigViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK
         )
 
-    # ---------------- ACTIVATE / DEACTIVATE PROVIDER ----------------
     @action(detail=True, methods=['patch'], url_path='activate')
     def activate(self, request, pk=None):
-        """
-        PATCH /call-provider/providers/<id>/activate/
-        """
         provider = self.get_object()
         provider.is_active = True
         provider.save(update_fields=['is_active'])
@@ -176,9 +151,6 @@ class CallProviderConfigViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['patch'], url_path='deactivate')
     def deactivate(self, request, pk=None):
-        """
-        PATCH /call-provider/providers/<id>/deactivate/
-        """
         provider = self.get_object()
         provider.is_active = False
         provider.save(update_fields=['is_active'])
@@ -188,10 +160,8 @@ class CallProviderConfigViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
-    # ---------------- STATISTICS ----------------
     @action(detail=False, methods=['get'])
     def statistics(self, request):
-        """List stats for all providers"""
         providers = self.get_queryset()
 
         stats = []
@@ -231,12 +201,8 @@ class CallProviderConfigViewSet(viewsets.ModelViewSet):
         serializer = CallProviderStatsSerializer(stats, many=True)
         return Response(serializer.data)
 
-    # ---------------- HEALTH STATUS FOR ALL ----------------
     @action(detail=False, methods=['get'])
     def health_status(self, request):
-        """
-        Health status of all providers.
-        """
         providers = self.get_queryset()
         service = CallProviderService()
 
@@ -255,8 +221,6 @@ class CallProviderConfigViewSet(viewsets.ModelViewSet):
             })
 
         return Response(data)
-
-
 class CallProviderHealthLogViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = CallProviderHealthLog.objects.all()
     serializer_class = CallProviderHealthLogSerializer
@@ -268,7 +232,6 @@ class CallProviderHealthLogViewSet(viewsets.ReadOnlyModelViewSet):
         if provider_id:
             queryset = queryset.filter(provider_id=provider_id)
 
-        # renamed filter param + field to is_healthy
         is_healthy = self.request.query_params.get('is_healthy')
         if is_healthy is not None:
             queryset = queryset.filter(is_healthy=is_healthy.lower() == 'true')
@@ -281,7 +244,6 @@ class CallProviderHealthLogViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(checked_at__lte=end_date)
 
         return queryset.order_by('-checked_at')
-
 
 class CallProviderUsageLogViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = CallProviderUsageLog.objects.all()
@@ -302,7 +264,6 @@ class CallProviderUsageLogViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(logged_at__lte=end_date)
 
         return queryset.order_by('-logged_at')
-
 
 class CallProviderTestResultViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = CallProviderTestResult.objects.all()

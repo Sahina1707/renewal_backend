@@ -4,19 +4,14 @@ from django.utils import timezone
 from django.core.validators import RegexValidator
 from apps.core.models import BaseModel
 from decimal import Decimal
-
 User = get_user_model()
-
 from apps.renewals.models import RenewalCase
-
 Case = RenewalCase
 
 def get_case_id(self):
-    """Get case ID in the format expected by case history"""
     return self.case_number
 
 def get_title(self):
-    """Get case title from customer and policy info"""
     if self.customer and self.policy:
         return f"Renewal for {self.customer.full_name} - {self.policy.policy_number}"
     elif self.customer:
@@ -25,19 +20,15 @@ def get_title(self):
         return f"Renewal Case {self.case_number}"
 
 def get_description(self):
-    """Get case description from notes"""
     return self.notes or f"Policy renewal case for {self.customer.full_name if self.customer else 'Unknown Customer'}"
 
 def get_handling_agent(self):
-    """Get handling agent (assigned_to field)"""
     return self.assigned_to
 
 def get_started_at(self):
-    """Get started date (created_at field)"""
     return self.created_at
 
 def get_processing_days(self):
-    """Calculate processing days"""
     if self.created_at:
         from django.utils import timezone
         now = timezone.now()
@@ -51,27 +42,22 @@ def get_processing_days(self):
     return 0
 
 def get_closed_at(self):
-    """Get closed date - check if status indicates closure"""
     if self.status in ['completed', 'renewed', 'cancelled', 'expired']:
         return self.updated_at
     return None
 
 def get_is_closed(self):
-    """Check if case is closed"""
     return self.status in ['completed', 'renewed', 'cancelled', 'expired']
 
 def get_is_active(self):
-    """Check if case is active"""
     return self.status not in ['completed', 'renewed', 'cancelled', 'expired']
 
 def close_case(self, user=None):
-    """Close the case"""
     self.status = 'completed'
     if user:
         self.updated_by = user
     self.save(update_fields=['status', 'updated_by', 'updated_at'])
 
-# Add these properties to the RenewalCase model
 RenewalCase.case_id = property(get_case_id)
 RenewalCase.title = property(get_title)
 RenewalCase.description = property(get_description)
@@ -82,8 +68,6 @@ RenewalCase.closed_at = property(get_closed_at)
 RenewalCase.is_closed = property(get_is_closed)
 RenewalCase.is_active = property(get_is_active)
 RenewalCase.close_case = close_case
-
-
 class CaseHistory(BaseModel):
     ACTION_CHOICES = [
         ('case_created', 'Case Created'),
@@ -124,7 +108,6 @@ class CaseHistory(BaseModel):
         help_text="Detailed description of the action"
     )
     
-    # Additional context
     old_value = models.TextField(
         blank=True,
         help_text="Previous value (for updates)"
@@ -134,13 +117,11 @@ class CaseHistory(BaseModel):
         help_text="New value (for updates)"
     )
     
-    # Additional metadata
     metadata = models.JSONField(
         default=dict,
         blank=True,
         help_text="Additional metadata for this history entry"
     )
-    
     class Meta:
         ordering = ['-created_at']
         indexes = [
@@ -154,5 +135,3 @@ class CaseHistory(BaseModel):
     
     def __str__(self):
         return f"{self.case.case_id} - {self.get_action_display()} ({self.created_at})"
-
-

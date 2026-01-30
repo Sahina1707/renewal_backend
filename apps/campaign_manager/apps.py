@@ -1,5 +1,3 @@
-# File: apps/campaign_manager/apps.py
-
 from django.apps import AppConfig
 
 class CampaignManagerConfig(AppConfig):
@@ -7,4 +5,4 @@ class CampaignManagerConfig(AppConfig):
     name = 'apps.campaign_manager'
 
     def ready(self):
-        pass # --- Make this function empty ---
+        pass

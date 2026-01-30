@@ -5,8 +5,7 @@ from .models import (
     CallProviderUsageLog,
     CallProviderTestResult,
 )
-
-
+from .services import CallProviderService
 class CallProviderConfigSerializer(serializers.ModelSerializer):
     provider_type_display = serializers.CharField(source='get_provider_type_display', read_only=True)
     priority_display = serializers.CharField(source='get_priority_display', read_only=True)
@@ -16,28 +15,16 @@ class CallProviderConfigSerializer(serializers.ModelSerializer):
         model = CallProviderConfig
         fields = [
             'id', 'name', 'provider_type', 'provider_type_display',
-
-            # Twilio
             'twilio_account_sid', 'twilio_auth_token', 'twilio_from_number',
             'twilio_status_callback_url', 'twilio_voice_url',
-
-            # Exotel
             'exotel_api_key', 'exotel_api_token', 'exotel_account_sid',
             'exotel_subdomain', 'exotel_caller_id',
-
-            # Ubona
             'ubona_api_key', 'ubona_api_url', 'ubona_account_sid', 'ubona_caller_id',
-
-            # Limits & flags
             'daily_limit', 'monthly_limit', 'rate_limit_per_minute',
             'priority', 'priority_display', 'is_default', 'is_active',
-
-            # Health
             'last_health_check', 'status', 'status_display',
             'calls_made_today', 'calls_made_this_month',
             'last_reset_daily', 'last_reset_monthly',
-
-            # Audit fields
             'created_at', 'updated_at', 'created_by', 'updated_by',
             'is_deleted', 'deleted_at', 'deleted_by',
         ]
@@ -48,31 +35,21 @@ class CallProviderConfigSerializer(serializers.ModelSerializer):
             'is_deleted', 'deleted_at', 'deleted_by',
         ]
 
-
 class CallProviderConfigCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CallProviderConfig
         fields = [
             'name', 'provider_type',
-
-            # Twilio
             'twilio_account_sid', 'twilio_auth_token', 'twilio_from_number',
             'twilio_status_callback_url', 'twilio_voice_url',
-
-            # Exotel
             'exotel_api_key', 'exotel_api_token', 'exotel_account_sid',
             'exotel_subdomain', 'exotel_caller_id',
-
-            # Ubona
             'ubona_api_key', 'ubona_api_url', 'ubona_account_sid', 'ubona_caller_id',
-
-            # limits + flags
             'daily_limit', 'monthly_limit', 'rate_limit_per_minute',
             'priority', 'is_default', 'is_active',
         ]
 
     def create(self, validated_data):
-        from .services import CallProviderService
         validated_data['created_by'] = self.context['request'].user
 
         service = CallProviderService()
@@ -106,20 +83,14 @@ class CallProviderCredentialsSerializer(serializers.ModelSerializer):
     class Meta:
         model = CallProviderConfig
         fields = [
-            # Twilio
             'twilio_account_sid', 'twilio_auth_token', 'twilio_from_number',
             'twilio_status_callback_url', 'twilio_voice_url',
-
-            # Exotel
             'exotel_api_key', 'exotel_api_token', 'exotel_account_sid',
             'exotel_subdomain', 'exotel_caller_id',
-
-            # Ubona
             'ubona_api_key', 'ubona_api_url', 'ubona_account_sid', 'ubona_caller_id',
         ]
 
     def update(self, instance, validated_data):
-        from .services import CallProviderService
 
         validated_data['updated_by'] = self.context['request'].user
         service = CallProviderService()
@@ -134,19 +105,13 @@ class CallProviderCredentialsSerializer(serializers.ModelSerializer):
                 validated_data[field] = service._encrypt_credential(validated_data[field])
 
         return super().update(instance, validated_data)
-
-
-# ---------------------------------------------------------
-#      FIXED: HEALTH LOG SERIALIZER → is_healthy
-# ---------------------------------------------------------
 class CallProviderHealthLogSerializer(serializers.ModelSerializer):
     provider_name = serializers.CharField(source='provider.name', read_only=True)
-
     class Meta:
         model = CallProviderHealthLog
         fields = [
             'id', 'provider', 'provider_name',
-            'is_healthy',          # <-- FIXED
+            'is_healthy',
             'error_message', 'response_time',
             'checked_at', 'created_at', 'updated_at',
             'status', 'test_type',
@@ -156,8 +121,6 @@ class CallProviderHealthLogSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'id', 'checked_at', 'created_at', 'updated_at'
         ]
-
-
 class CallProviderUsageLogSerializer(serializers.ModelSerializer):
     provider_name = serializers.CharField(source='provider.name', read_only=True)
     success_rate = serializers.SerializerMethodField()

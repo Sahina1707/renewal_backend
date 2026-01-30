@@ -21,7 +21,6 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
-
 class EmailInboxService:
     """Service for managing email inbox operations"""
     
@@ -72,14 +71,12 @@ class EmailInboxService:
                 source_message_id=str(uuid.uuid4())
             )
             
-            # (Rest of the logic remains the same...)
             self._classify_email(email_message)
             self._apply_filters(email_message)
             if attachments:
                 self._process_attachments(email_message, attachments)
             self._update_conversation_thread(email_message)
             
-            # ... (Keep the automation trigger logic) ...
 
             return {
                 'success': True,
@@ -98,10 +95,6 @@ class EmailInboxService:
             }
     
     def _classify_email(self, email_message: EmailInboxMessage):
-        """
-        Auto-tags emails based on your Dashboard Categories:
-        Refund, Complaint, Appointment, Feedback, Uncategorized.
-        """
         try:
             subject = email_message.subject.lower()
             content = (email_message.text_content or email_message.html_content or '').lower()
@@ -158,7 +151,7 @@ class EmailInboxService:
                     filter_obj.match_count += 1
                     filter_obj.last_matched = timezone.now()
                     filter_obj.save(update_fields=['match_count', 'last_matched'])
-                    break  # Apply only the first matching filter
+                    break  
             
         except Exception as e:
             logger.error(f"Error applying filters: {str(e)}")
@@ -256,7 +249,6 @@ class EmailInboxService:
     def _update_conversation_thread(self, email_message: EmailInboxMessage):
         """Update conversation thread for email message"""
         try:
-            # Extract thread ID from subject (simple implementation)
             thread_id = self._extract_thread_id(email_message.subject)
             
             if thread_id:
@@ -295,17 +287,11 @@ class EmailInboxService:
     
     def _extract_thread_id(self, subject: str) -> str:
         """Extract thread ID from email subject"""
-        # Simple implementation - look for "Re:" or "Fwd:" patterns
         if subject.lower().startswith(('re:', 'fwd:')):
-            # Remove "Re:" or "Fwd:" and use the rest as thread ID
             return subject[4:].strip()
         return None
     
     def send_outbound_email(self, email_message_obj, attachments=None):
-        """
-        Sends email using the SPECIFIC SMTP credentials of the sender account.
-        Includes safety cleaning for CC/BCC to prevent delivery failures.
-        """
         try:
             # 1. Identify Sender Account
             sender_address = email_message_obj.from_email
@@ -324,8 +310,6 @@ class EmailInboxService:
             if not password:
                 return False, "Account has no password saved."
 
-            # 3. CLEAN RECIPIENT LISTS (The Fix)
-            # Ensure we don't have None, empty strings, or duplicates
             def clean_list(recipients):
                 if not recipients: return []
                 if isinstance(recipients, str): return [recipients]
@@ -363,10 +347,10 @@ class EmailInboxService:
             if attachments:
                 for file in attachments:
                     try:
-                        if hasattr(file, 'read'): # UploadedFile
+                        if hasattr(file, 'read'): 
                             content = file.read()
                             name = file.name
-                        elif isinstance(file, dict): # Dictionary
+                        elif isinstance(file, dict):
                             content = file['content']
                             name = file['name']
                         else:
@@ -388,8 +372,6 @@ class EmailInboxService:
 
             server.login(account.email_address, password)
             
-            # Combine all recipients for the Envelope (To + CC + BCC)
-            # Use set() to remove duplicates (e.g. if I CC myself)
             all_recipients = list(set(to_list + cc_list + bcc_list))
             
             logger.info(f"Sending email from {account.email_address} to {all_recipients}")
@@ -409,7 +391,7 @@ class EmailInboxService:
             msg = EmailMultiAlternatives(
                 subject=email_message_obj.subject,
                 body=email_message_obj.text_content,
-                from_email=settings.DEFAULT_FROM_EMAIL, # Fallback only
+                from_email=settings.DEFAULT_FROM_EMAIL,
                 to=email_message_obj.to_emails,
                 cc=email_message_obj.cc_emails,
                 bcc=email_message_obj.bcc_emails,
@@ -429,45 +411,37 @@ class EmailInboxService:
         try:
             original_email = EmailInboxMessage.objects.get(id=email_id)
             
-            # --- FIX 1: SMART ACCOUNT DETECTION ---
-            # We need to find which of our accounts received this email so we can reply FROM it.
             our_account_email = None
             
-            # Check all recipients in the original email 'To' list
             potential_emails = original_email.to_emails or []
             if isinstance(potential_emails, str): potential_emails = [potential_emails]
             
             for recipient in potential_emails:
                 if EmailAccount.objects.filter(email_address__iexact=recipient, is_deleted=False).exists():
                     our_account_email = recipient
-                    break # Found one of our accounts!
+                    break 
             
-            # If still not found, check CC list
             if not our_account_email and original_email.cc_emails:
                 for recipient in original_email.cc_emails:
                     if EmailAccount.objects.filter(email_address__iexact=recipient, is_deleted=False).exists():
                         our_account_email = recipient
                         break
 
-            # Fallback: Use the Default Sender Account if we couldn't match the incoming email
             if not our_account_email:
                 default_account = EmailAccount.objects.filter(is_default_sender=True, is_deleted=False).first()
                 if default_account:
                     our_account_email = default_account.email_address
                 else:
-                    # Last Resort: Use the logged in user's account if available, or system default
-                    # (This prevents the empty {} error by ensuring we have SOME string)
                     our_account_email = settings.DEFAULT_FROM_EMAIL
 
-            # --- FIX 2: CREATE REPLY MESSAGE ---
             sent_folder, _ = EmailFolder.objects.get_or_create(
                 folder_type='sent',
                 defaults={'name': 'Sent', 'is_system': True}
             )
 
             reply_message = EmailInboxMessage(
-                from_email=our_account_email,  # Now guaranteed to be a valid string
-                to_emails=to_emails or [original_email.from_email], # Default reply to sender
+                from_email=our_account_email,  
+                to_emails=to_emails or [original_email.from_email],
                 cc_emails=cc_emails or [],
                 bcc_emails=bcc_emails or [],
                 subject=subject,
@@ -481,25 +455,20 @@ class EmailInboxService:
                 parent_message=original_email,
                 tags=tags or [],
                 message_id=str(uuid.uuid4()),
-                created_by=original_email.assigned_to # Or current user if context available
+                created_by=original_email.assigned_to 
             )
             
-            # Save BEFORE sending to ensure ID exists
             reply_message.save()
 
-            # --- FIX 3: SEND WITH DETAILED ERROR LOGGING ---
             success, error_msg = self.send_outbound_email(reply_message)
             
             if not success:
-                # Update status to failed so we can see it in UI
                 reply_message.status = 'failed'
                 reply_message.save()
                 return {'success': False, 'message': f'Failed to send reply via {our_account_email}: {error_msg}'}
             
-            # Mark original as replied
             original_email.mark_as_replied()
             
-            # Update reply status
             reply_message.sent_at = timezone.now()
             reply_message.save()
             
@@ -523,13 +492,11 @@ class EmailInboxService:
         try:
             original_email = EmailInboxMessage.objects.get(id=email_id)
             
-            # --- FIX: Get Sent Folder ---
             sent_folder, _ = EmailFolder.objects.get_or_create(
                 folder_type='sent',
                 defaults={'name': 'Sent', 'is_system': True}
             )
 
-            # Create forward message
             forward_subject = subject or f"Fwd: {original_email.subject}"
             forward_message = EmailInboxMessage(
                 from_email=original_email.to_emails[0] if original_email.to_emails else settings.DEFAULT_FROM_EMAIL,
@@ -541,22 +508,19 @@ class EmailInboxService:
                 text_content=f"{message}\n---\n{original_email.text_content}",
                 category=original_email.category,
                 priority=priority,
-                status='read',        # <--- Outgoing mail is always 'read'
-                folder=sent_folder,   # <--- ASSIGN TO SENT FOLDER
+                status='read',        
+                folder=sent_folder,  
                 tags=tags or [],
                 message_id=str(uuid.uuid4())
             )
             
-            # Send the actual email
             success, error_msg = self.send_outbound_email(forward_message)
 
             if not success:
                 return {'success': False, 'message': f'Failed to send forward: {error_msg}'}
 
-            # --- FIX: SAVE TO DATABASE ---
-            forward_message.save() # <--- CRITICAL! This was missing.
+            forward_message.save() 
 
-            # Mark original as forwarded
             original_email.mark_as_forwarded()
             
             return {
@@ -671,19 +635,15 @@ class EmailInboxService:
         today = timezone.now().date()
         emails = EmailInboxMessage.objects.filter(is_deleted=False)
         
-        # 1. Top Cards Data
         total_today = emails.filter(received_at__date=today).count()
         new_unread = emails.filter(status='unread').count()
         in_progress = emails.filter(status__in=['read', 'replied']).count()
         
-        # 2. SLA Breaches (Due Date passed)
         sla_breaches = emails.filter(
             due_date__lt=timezone.now(),
             status__in=['unread', 'read']
         ).count()
 
-        # 3. Categorized Breakdown (For Colored Buttons)
-        # We initialize with 0 so the frontend always gets all keys
         categories = {
             "complaint": 0,
             "feedback": 0,
@@ -704,7 +664,7 @@ class EmailInboxService:
             "new_emails": new_unread,
             "in_progress": in_progress,
             "sla_breaches": sla_breaches,
-            "categories": categories, # Use this object to populate the buttons
+            "categories": categories, 
             "sla_alert_message": f"{sla_breaches} emails have breached SLA requirements"
         }
     
@@ -723,19 +683,15 @@ class EmailInboxService:
         emails = EmailInboxMessage.objects.filter(**email_filters)
         campaigns = BulkEmailCampaign.objects.filter(**campaign_filters)
 
-        # A. General Stats
         total_emails = emails.count()
         resolved_count = emails.filter(status__in=['resolved', 'closed']).count()
         
-        # Calculate Global Average Response Time
         global_replied = emails.filter(replied_at__isnull=False, received_at__isnull=False)
         global_avg_hours = 0.0
         if global_replied.exists():
-            # Sum total seconds and convert to hours
             total_seconds = sum((e.replied_at - e.received_at).total_seconds() for e in global_replied)
             global_avg_hours = round((total_seconds / global_replied.count()) / 3600, 1)
         
-        # Satisfaction Score
         sat_agg = emails.aggregate(
             score=Avg(Case(
                 When(sentiment='positive', then=Value(5.0)),
@@ -746,7 +702,6 @@ class EmailInboxService:
         )
         satisfaction = round(sat_agg['score'] or 0, 1)
 
-        # B. Agent Performance
         User = get_user_model()
         agents = User.objects.filter(is_active=True) 
         

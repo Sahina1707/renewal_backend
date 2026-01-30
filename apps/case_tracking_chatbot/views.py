@@ -26,9 +26,6 @@ logger = logging.getLogger(__name__)
 
 
 def generate_related_suggestions(user_message, ai_response):
-    """
-    Generate 3 related suggestions based on the user's question and AI response
-    """
     all_suggestions = [
         "What is my case status?",
         "Show me my case details",

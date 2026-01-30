@@ -1,13 +1,6 @@
-"""
-Admin configuration for Customer Insights models.
-Simplified design with single insights model.
-"""
-
 from django.contrib import admin
 from django.utils.html import format_html
 from .models import CustomerInsight
-
-
 @admin.register(CustomerInsight)
 class CustomerInsightAdmin(admin.ModelAdmin):
     """Admin for CustomerInsight model - simplified"""

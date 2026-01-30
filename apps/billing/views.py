@@ -33,10 +33,8 @@ def get_header_style():
     ])
 
 class BillingViewSet(viewsets.ViewSet):
-    
     @action(detail=False, methods=['get'])
     def dashboard(self, request):
-        # 1. Capture inputs from the frontend dropdowns
         month = request.query_params.get('month')
         year = request.query_params.get('year')
         start_date = request.query_params.get('start_date')
@@ -61,7 +59,6 @@ class BillingViewSet(viewsets.ViewSet):
                 usage_charges = period.usage_charges.all()
                 platform_charges = period.platform_charges.all()
 
-        # 4. Calculate Totals
         usage_total = sum(u.total_cost for u in usage_charges)
         platform_total = sum(p.cost for p in platform_charges)
         grand_total = usage_total + platform_total
@@ -81,23 +78,19 @@ class BillingViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=['get'])
     def download_pdf(self, request):
-        # 1. Get Filters
         month = request.query_params.get('month', 12)
         year = request.query_params.get('year', 2025)
         
-        # 2. Fetch Data
         period, _ = BillingPeriod.objects.get_or_create(month=month, year=year)
         usage = period.usage_charges.all()
         platform = period.platform_charges.all()
         invoices = Invoice.objects.filter(date__month=month, date__year=year)
 
-        # 3. Build PDF Elements
         elements = []
         styles = getSampleStyleSheet()
         elements.append(Paragraph(f"Billing Statement - {month}/{year}", styles['Title']))
         elements.append(Spacer(1, 20))
 
-        # --- Table 1: Usage Charges ---
         elements.append(Paragraph("Usage Charges", styles['Heading2']))
         data1 = [['Service', 'Count', 'Cost']]
         for u in usage:
@@ -108,7 +101,6 @@ class BillingViewSet(viewsets.ViewSet):
         elements.append(t1)
         elements.append(Spacer(1, 20))
 
-        # --- Table 2: Platform Charges ---
         elements.append(Paragraph("Platform Charges", styles['Heading2']))
         data2 = [['Service', 'Period', 'Cost']]
         for p in platform:
@@ -183,7 +175,6 @@ class CommunicationStatsViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=['get'])
     def download_pdf(self, request):
-        # 1. Get Filters
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
         
@@ -191,7 +182,6 @@ class CommunicationStatsViewSet(viewsets.ViewSet):
         if start_date and end_date:
             logs = logs.filter(timestamp__date__range=[parse_date(start_date), parse_date(end_date)])
 
-        # 2. Aggregate Data (Group by Date)
         daily_stats = (
             logs.annotate(date=TruncDate('timestamp'))
             .values('date')
@@ -202,7 +192,6 @@ class CommunicationStatsViewSet(viewsets.ViewSet):
             ).order_by('-date')
         )
 
-        # 3. Build PDF Elements
         elements = []
         styles = getSampleStyleSheet()
         elements.append(Paragraph("Communication Statistics Report", styles['Title']))
@@ -211,7 +200,6 @@ class CommunicationStatsViewSet(viewsets.ViewSet):
         elements.append(Paragraph(filter_text, styles['Normal']))
         elements.append(Spacer(1, 20))
 
-        # --- Stats Table ---
         data = [['Date', 'SMS', 'Email', 'WhatsApp', 'Total']]
         for item in daily_stats:
             total = item['sms'] + item['email'] + item['whatsapp']
@@ -239,10 +227,8 @@ class VendorStatsViewSet(viewsets.ViewSet):
         raw_data = []
         
         for vendor in vendors:
-            # 2. Base Query
             logs = CommunicationLog.objects.filter(vendor=vendor)
             
-            # 3. APPLY FILTERS (This was missing)
             if start_date and end_date:
                 s_date = parse_date(start_date)
                 e_date = parse_date(end_date)
@@ -251,26 +237,22 @@ class VendorStatsViewSet(viewsets.ViewSet):
             elif month and year:
                 logs = logs.filter(timestamp__month=month, timestamp__year=year)
             
-            # 4. Calculate Stats on the FILTERED logs
             total = logs.count()
             delivered = logs.filter(status='delivered').count()
             failed = logs.filter(status='failed').count()
             pending = logs.filter(status='pending').count()
             
-            # 3. Calculate Rates & Costs
             delivery_rate = (delivered / total * 100) if total > 0 else 0
             total_cost = logs.aggregate(Sum('cost'))['cost__sum'] or 0.00
             last_activity = logs.aggregate(Max('timestamp'))['timestamp__max']
             type_map = {'sms': 'SMS Provider', 'email': 'Email Provider', 'whatsapp': 'WhatsApp Provider'}
             display_type = type_map.get(vendor.service_type, vendor.service_type.capitalize())
             
-            # Performance Badge Logic
             if delivery_rate >= 95: perf_label = "Excellent"
             elif delivery_rate >= 90: perf_label = "Good"
             elif delivery_rate >= 80: perf_label = "Average"
             else: perf_label = "Poor"
 
-            # 5. Build the raw dictionary
             raw_data.append({
                 "id": vendor.id,
                 "vendor_id": vendor.vendor_id,
@@ -292,7 +274,6 @@ class VendorStatsViewSet(viewsets.ViewSet):
                 "success_rate_label": perf_label
             })
             
-        # 6. Serialize into two different formats
         cards_data = VendorCardSerializer(raw_data, many=True).data
         table_data = VendorTableSerializer(raw_data, many=True).data
         
@@ -303,7 +284,6 @@ class VendorStatsViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=['get'])
     def download_pdf(self, request):
-        """Generates PDF for Vendor Tab (Now with Filters!)"""
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
         month = request.query_params.get('month')
@@ -315,7 +295,6 @@ class VendorStatsViewSet(viewsets.ViewSet):
         styles = getSampleStyleSheet()
         elements.append(Paragraph("Vendor Performance Report", styles['Title']))
         
-        # Add filter text to PDF
         filter_text = "All Time"
         if start_date and end_date: filter_text = f"{start_date} to {end_date}"
         elif month and year: filter_text = f"{month}/{year}"
@@ -326,8 +305,6 @@ class VendorStatsViewSet(viewsets.ViewSet):
         
         for v in vendors:
             logs = CommunicationLog.objects.filter(vendor=v)
-            
-            # APPLY FILTERS TO PDF TOO
             if start_date and end_date:
                 s_date = parse_date(start_date)
                 e_date = parse_date(end_date)
@@ -359,8 +336,6 @@ class DeliveryStatusViewSet(viewsets.ViewSet):
     @action(detail=False, methods=['get'])
     def individual_cases(self, request):
         logs = CommunicationLog.objects.select_related('vendor', 'customer', 'case').all().order_by('-timestamp')
-
-        # Filter Logic
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
         month = request.query_params.get('month')
@@ -382,8 +357,6 @@ class DeliveryStatusViewSet(viewsets.ViewSet):
     @action(detail=False, methods=['get'])
     def campaigns(self, request):
         campaigns = Campaign.objects.all().order_by('-date')
-        
-        # Filter Logic
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
         month = request.query_params.get('month')

@@ -4,7 +4,6 @@ from apps.core.models import BaseModel
 from apps.target_audience.models import TargetAudience
 from decimal import Decimal
 
-
 class Channel(BaseModel):
     
     CHANNEL_TYPE_CHOICES = [
@@ -28,7 +27,6 @@ class Channel(BaseModel):
         ('high', 'High'),
     ]
     
-    # Basic Information
     name = models.CharField(max_length=255, help_text="Channel name")
     channel_type = models.CharField(
         max_length=20, 
@@ -38,7 +36,6 @@ class Channel(BaseModel):
     description = models.TextField(blank=True, help_text="Channel description")
     
     target_audience = models.ForeignKey(
-        # TargetAudience,
         'target_audience.TargetAudience',
         on_delete=models.SET_NULL,
         null=True,
@@ -52,7 +49,6 @@ class Channel(BaseModel):
         help_text="Manager name for this channel"
     )
     
-    # Financial Information
     cost_per_lead = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -70,7 +66,6 @@ class Channel(BaseModel):
         help_text="Channel budget"
     )
     
-    # Operational Information
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,

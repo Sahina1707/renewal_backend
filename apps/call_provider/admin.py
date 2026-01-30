@@ -7,8 +7,6 @@ from .models import (
     CallProviderUsageLog,
     CallProviderTestResult,
 )
-
-
 @admin.register(CallProviderConfig)
 class CallProviderConfigAdmin(admin.ModelAdmin):
     list_display = [
@@ -34,7 +32,6 @@ class CallProviderConfigAdmin(admin.ModelAdmin):
             'fields': ('name', 'provider_type', 'priority', 'is_default', 'is_active')
         }),
 
-        # TWILIO
         ('Twilio Configuration', {
             'fields': (
                 'twilio_account_sid',
@@ -46,7 +43,6 @@ class CallProviderConfigAdmin(admin.ModelAdmin):
             'classes': ('collapse',),
         }),
 
-        # EXOTEL
         ('Exotel Configuration', {
             'fields': (
                 'exotel_api_key',
@@ -58,7 +54,6 @@ class CallProviderConfigAdmin(admin.ModelAdmin):
             'classes': ('collapse',),
         }),
 
-        # UBONA
         ('Ubona Configuration', {
             'fields': (
                 'ubona_api_key',
@@ -97,10 +92,7 @@ class CallProviderConfigAdmin(admin.ModelAdmin):
         }),
     )
 
-    # ---------- custom columns ----------
-
     def daily_usage_percentage(self, obj):
-        """Daily calls usage % (coloured like email admin)."""
         if obj.daily_limit == 0:
             return "N/A"
         percentage = (obj.calls_made_today / obj.daily_limit) * 100
@@ -110,7 +102,6 @@ class CallProviderConfigAdmin(admin.ModelAdmin):
     daily_usage_percentage.short_description = "Daily Usage %"
 
     def monthly_usage_percentage(self, obj):
-        """Monthly calls usage %."""
         if obj.monthly_limit == 0:
             return "N/A"
         percentage = (obj.calls_made_this_month / obj.monthly_limit) * 100
@@ -120,10 +111,7 @@ class CallProviderConfigAdmin(admin.ModelAdmin):
     monthly_usage_percentage.short_description = "Monthly Usage %"
 
     def get_queryset(self, request):
-        """Hide soft-deleted call providers."""
         return super().get_queryset(request).filter(is_deleted=False)
-
-    # ---------- bulk actions ----------
 
     actions = ['activate_providers', 'deactivate_providers',
                'reset_daily_usage', 'reset_monthly_usage']
@@ -157,7 +145,6 @@ class CallProviderConfigAdmin(admin.ModelAdmin):
 
 @admin.register(CallProviderHealthLog)
 class CallProviderHealthLogAdmin(admin.ModelAdmin):
-    # 🔽 changed is_connected → is_healthy
     list_display = ['provider', 'is_healthy', 'response_time', 'checked_at']
     list_filter = ['is_healthy', 'provider', 'checked_at']
     search_fields = ['provider__name', 'error_message']
@@ -166,7 +153,6 @@ class CallProviderHealthLogAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('provider')
-
 
 @admin.register(CallProviderUsageLog)
 class CallProviderUsageLogAdmin(admin.ModelAdmin):

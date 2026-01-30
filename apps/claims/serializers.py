@@ -1,22 +1,13 @@
-"""
-Serializers for Claims app.
-"""
-
 from rest_framework import serializers
 from .models import Claim
 from apps.customers.models import Customer
 from apps.policies.models import Policy
 
-
 class ClaimSerializer(serializers.ModelSerializer):
-    """Full serializer for Claim model with all fields"""
-    
-    # Auto-fetched customer fields
     customer_name = serializers.SerializerMethodField()
     mobile_number = serializers.SerializerMethodField()
     email_id = serializers.SerializerMethodField()
     
-    # Foreign key fields
     customer_id = serializers.PrimaryKeyRelatedField(
         queryset=Customer.objects.filter(is_deleted=False),
         source='customer',
@@ -33,7 +24,6 @@ class ClaimSerializer(serializers.ModelSerializer):
         help_text="ID of the policy"
     )
     
-    # Display fields
     policy_number_display = serializers.CharField(
         source='policy.policy_number',
         read_only=True,
@@ -99,11 +89,9 @@ class ClaimSerializer(serializers.ModelSerializer):
     
     def validate(self, data):
         """Validate the data"""
-        # Auto-populate policy_number if policy is provided
         if 'policy' in data and data['policy'] and not data.get('policy_number'):
             data['policy_number'] = data['policy'].policy_number
         
-        # Auto-populate expire_date if policy is provided
         if 'policy' in data and data['policy'] and not data.get('expire_date'):
             policy = data['policy']
             if hasattr(policy, 'expiry_date') and policy.expiry_date:
@@ -112,7 +100,6 @@ class ClaimSerializer(serializers.ModelSerializer):
                 data['expire_date'] = policy.end_date
         
         return data
-
 
 class ClaimListSerializer(serializers.ModelSerializer):
     """Serializer for listing claims (simplified)"""
@@ -154,7 +141,6 @@ class ClaimListSerializer(serializers.ModelSerializer):
         if obj.customer:
             return obj.customer.email
         return None
-
 
 class ClaimCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating claims"""
@@ -212,11 +198,9 @@ class ClaimCreateSerializer(serializers.ModelSerializer):
     
     def validate(self, data):
         """Validate the data"""
-        # Auto-populate policy_number if policy is provided
         if 'policy' in data and data['policy'] and not data.get('policy_number'):
             data['policy_number'] = data['policy'].policy_number
         
-        # Auto-populate expire_date if policy is provided
         if 'policy' in data and data['policy'] and not data.get('expire_date'):
             policy = data['policy']
             if hasattr(policy, 'expiry_date') and policy.expiry_date:
@@ -225,4 +209,3 @@ class ClaimCreateSerializer(serializers.ModelSerializer):
                 data['expire_date'] = policy.end_date
         
         return data
-

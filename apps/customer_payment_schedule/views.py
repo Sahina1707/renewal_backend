@@ -157,10 +157,8 @@ class CustomerPaymentScheduleViewSet(viewsets.ModelViewSet):
         try:
             serializer = self.get_serializer(data=request.data)
             if serializer.is_valid():
-                # Save the payment schedule
                 payment_schedule = serializer.save(created_by=request.user)
 
-                # Return success response with created data
                 response_serializer = PaymentScheduleListSerializer(payment_schedule)
                 return Response({
                     'success': True,
@@ -181,7 +179,6 @@ class CustomerPaymentScheduleViewSet(viewsets.ModelViewSet):
                 'errors': {}
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    # Disable other actions to keep only store and list
     def retrieve(self, request, *args, **kwargs):
         return Response({
             'success': False,
@@ -205,7 +202,3 @@ class CustomerPaymentScheduleViewSet(viewsets.ModelViewSet):
             'success': False,
             'message': 'Delete action not available'
         }, status=status.HTTP_405_METHOD_NOT_ALLOWED)
-
-
-
-

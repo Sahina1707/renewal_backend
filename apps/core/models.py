@@ -6,32 +6,19 @@ import uuid
 
 User = get_user_model()
 
-
 class TimestampedModel(models.Model):
-    """
-    Abstract base model that provides created_at and updated_at timestamps.
-    """
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True, db_index=True)
 
     class Meta:
         abstract = True
 
-
 class UUIDModel(models.Model):
-    """
-    Abstract base model that provides a UUID primary key.
-    """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     class Meta:
         abstract = True
-
-
 class SoftDeleteModel(models.Model):
-    """
-    Abstract base model that provides soft delete functionality.
-    """
     is_deleted = models.BooleanField(default=False, db_index=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
     deleted_by = models.ForeignKey(
@@ -64,11 +51,7 @@ class SoftDeleteModel(models.Model):
         self.deleted_by = None
         self.save()
 
-
 class BaseModel(TimestampedModel, SoftDeleteModel):
-    """
-    Base model that combines timestamp and soft delete functionality.
-    """
     created_by = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
@@ -87,11 +70,7 @@ class BaseModel(TimestampedModel, SoftDeleteModel):
     class Meta:
         abstract = True
 
-
 class AuditLog(TimestampedModel):
-    """
-    Model to track all system activities for compliance and auditing.
-    """
     ACTION_CHOICES = [
         ('create', 'Create'),
         ('update', 'Update'),
@@ -136,9 +115,6 @@ class AuditLog(TimestampedModel):
 
 
 class SystemConfiguration(TimestampedModel):
-    """
-    Model to store system-wide configuration settings.
-    """
     key = models.CharField(max_length=100, unique=True, db_index=True)
     value = models.JSONField()
     description = models.TextField(null=True, blank=True)
@@ -150,7 +126,6 @@ class SystemConfiguration(TimestampedModel):
 
     def __str__(self):
         return f"{self.category}.{self.key}"
-
 
 class APIRateLimit(TimestampedModel):
     """

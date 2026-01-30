@@ -30,11 +30,9 @@ def health_check(request):
     Simple health check endpoint for load balancers and monitoring.
     """
     try:
-        # Test database connection
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
         
-        # Test cache
         cache.set('health_check', 'ok', 10)
         cache_status = cache.get('health_check') == 'ok'
         
@@ -76,7 +74,6 @@ def detailed_health_check(request):
             'checks': {}
         }
         
-        # Database check
         try:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT COUNT(*) FROM django_session")

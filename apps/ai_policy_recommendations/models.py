@@ -142,8 +142,6 @@ class AIPolicyRecommendation(BaseModel):
             delta = self.expires_at - timezone.now()
             return max(0, delta.days)
         return self.validity_period
-
-
 class AIPolicyRecommendationInteraction(BaseModel):
     
     INTERACTION_TYPE_CHOICES = [
@@ -184,7 +182,6 @@ class AIPolicyRecommendationInteraction(BaseModel):
         auto_now_add=True,
         help_text="When this interaction occurred"
     )
-    
     class Meta:
         db_table = 'ai_policy_recommendation_interactions'
         ordering = ['-interaction_at']

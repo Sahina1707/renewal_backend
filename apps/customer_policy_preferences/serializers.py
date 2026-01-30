@@ -1,10 +1,5 @@
-"""
-Serializers for Customer Policy Preferences app.
-"""
-
 from rest_framework import serializers
 from .models import CustomerPolicyPreference
-
 
 class CustomerPolicyPreferenceSerializer(serializers.ModelSerializer):
     """Serializer for CustomerPolicyPreference model"""
@@ -76,7 +71,6 @@ class CustomerPolicyPreferenceCreateSerializer(serializers.ModelSerializer):
     
     def validate(self, data):
         """Validate the preference data"""
-        # Check if preference already exists for this customer and renewal case
         customer = data.get('customer')
         renewal_cases = data.get('renewal_cases')
         
@@ -92,7 +86,6 @@ class CustomerPolicyPreferenceCreateSerializer(serializers.ModelSerializer):
                     "Preference already exists for this customer and renewal case."
                 )
         
-        # Validate budget range
         budget_min = data.get('budget_range_min')
         budget_max = data.get('budget_range_max')
         
@@ -135,8 +128,6 @@ class CustomerPolicyPreferenceUpdateSerializer(serializers.ModelSerializer):
             )
         
         return data
-
-
 class CustomerPolicyPreferenceListSerializer(serializers.ModelSerializer):
     """Serializer for listing CustomerPolicyPreference with minimal data"""
     

@@ -9,15 +9,9 @@ from apps.policies.models import Policy
 from apps.email_provider.services import EmailProviderService
 
 logger = logging.getLogger(__name__)
-
 class EmailCampaignService:
-    """Service class for handling email campaigns (Synchronous Version)"""
-    
     @staticmethod
     def send_campaign_emails(campaign_id):
-        """
-        Send emails for a specific campaign immediately (Synchronous)
-        """
         try:
             import traceback
 
@@ -26,12 +20,10 @@ class EmailCampaignService:
             campaign = Campaign.objects.get(id=campaign_id)
             logger.info(f"Found campaign: {campaign.name}")
 
-            # Check if campaign has email channel
             if 'email' not in campaign.channels:
                 logger.warning(f"Campaign {campaign_id} does not include email channel")
                 return {"error": "Campaign does not include email channel"}
 
-            # Get pending recipients
             recipients = CampaignRecipient.objects.filter(
                 campaign=campaign,
                 email_status='pending'
@@ -49,15 +41,12 @@ class EmailCampaignService:
             for recipient in recipients:
                 try:
                     logger.info(f"Processing recipient {recipient.pk}: {recipient.customer.email}")
-
-                    # Send email to recipient
                     success = EmailCampaignService._send_individual_email(recipient)
 
                     if success:
                         sent_count += 1
                         logger.info(f"Email sent successfully to {recipient.customer.email}")
                     else:
-                        # Make sure failed status is set
                         recipient.email_status = 'failed'
                         recipient.save()
                         failed_count += 1
@@ -70,7 +59,6 @@ class EmailCampaignService:
                     recipient.save()
                     failed_count += 1
 
-            # Update campaign statistics using the model method
             campaign.update_campaign_statistics()
 
             if sent_count > 0:
@@ -80,9 +68,6 @@ class EmailCampaignService:
 
             logger.info(f"Campaign {campaign_id} email sending completed: {sent_count} sent, {failed_count} failed")
 
-            # NOTE: Delivery status updates are skipped because Celery is disabled.
-            # In a real production environment, we would schedule a check here.
-            
             return {
                 "success": True,
                 "sent_count": sent_count,
@@ -100,9 +85,6 @@ class EmailCampaignService:
     
     @staticmethod
     def _send_individual_email(recipient):
-        """
-        Send email to individual recipient with tracking using SendGrid
-        """
         try:
             import traceback
 
@@ -111,15 +93,12 @@ class EmailCampaignService:
 
             logger.info(f"Starting email send to {customer.email} for campaign {campaign.id}")
 
-            # Update recipient status to queued
             recipient.email_status = 'queued'
             recipient.save()
 
-            # Get email template content
             template_content = campaign.template.content if campaign.template else "Default email content"
             subject = campaign.template.subject if campaign.template else campaign.name
 
-            # Replace template variables
             email_content = EmailCampaignService._process_template(
                 template_content,
                 customer,
@@ -134,7 +113,6 @@ class EmailCampaignService:
             plain_text = re.sub(r'<[^>]+>', '', tracked_content)
             plain_text = plain_text.replace('&nbsp;', ' ').strip()
 
-            # Store the email content for debugging
             recipient.email_content = {
                 'html': tracked_content,
                 'plain': plain_text,
@@ -143,14 +121,11 @@ class EmailCampaignService:
 
             logger.info(f"Attempting to send email to {customer.email} using SendGrid")
 
-            # Use EmailProviderService
             email_service = EmailProviderService()
             
-            # Check specific provider first
             provider = getattr(campaign, 'email_provider', None)
             
             if not provider:
-                # Auto-select the Default (SendGrid) if the user didn't pick one
                 from apps.email_provider.models import EmailProviderConfig
                 provider = EmailProviderConfig.objects.filter(is_default=True, is_active=True).first()
             
@@ -161,7 +136,6 @@ class EmailCampaignService:
                 recipient.save()
                 return False
 
-            # Send email using SendGrid if provider is available
             if provider and provider.provider_type == 'sendgrid':
                 custom_args = {
                     'campaign_id': str(campaign.id),
@@ -188,7 +162,6 @@ class EmailCampaignService:
                     recipient.provider_message_id = result.get('message_id')
                     recipient.save()
                     
-                    # Update campaign statistics immediately
                     campaign.update_campaign_statistics()
                     
                     return True
@@ -197,7 +170,6 @@ class EmailCampaignService:
                     logger.error(f"SendGrid email failed to {customer.email}: {error_msg}")
                     raise Exception(f"SendGrid error: {error_msg}")
             else:
-                # Fallback to Django email if no SendGrid provider available
                 logger.warning("No SendGrid provider available, using Django email fallback")
                 return EmailCampaignService._send_individual_email_django_fallback(recipient, tracked_content, plain_text, subject)
 
@@ -210,9 +182,6 @@ class EmailCampaignService:
     
     @staticmethod
     def _send_individual_email_django_fallback(recipient, tracked_content, plain_text, subject):
-        """
-        Fallback method using Django's built-in email sending
-        """
         try:
             from django.core.mail import EmailMultiAlternatives
             import traceback

@@ -10,9 +10,6 @@ from .serializers import EmailInboxMessageSerializer
 
 @receiver(post_save, sender=EmailInboxMessage)
 def broadcast_new_email(sender, instance, created, **kwargs):
-    """
-    Triggers when a new email is saved to the DB.
-    """
     if created and instance.folder and instance.folder.folder_type in ['inbox', 'sent']:
         channel_layer = get_channel_layer()
         email_data = EmailInboxMessageSerializer(instance).data
@@ -33,11 +30,9 @@ def create_default_folders(sender, **kwargs):
     Automatically creates the standard system folders after database migration.
     """
 
-    # ✅ Run only for email_inbox app
     if sender.label != 'email_inbox':
         return
 
-    # ✅ CRITICAL: Ensure table exists before querying
     if EmailFolder._meta.db_table not in connection.introspection.table_names():
         return
 

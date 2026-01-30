@@ -2,7 +2,6 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from collections import OrderedDict
 
-
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 20
     page_size_query_param = 'page_size'
@@ -20,7 +19,6 @@ class StandardResultsSetPagination(PageNumberPagination):
             ('results', data)
         ]))
 
-
 class LargeResultsSetPagination(PageNumberPagination):
     page_size = 50
     page_size_query_param = 'page_size'
@@ -37,8 +35,6 @@ class LargeResultsSetPagination(PageNumberPagination):
             ('previous', self.get_previous_link()),
             ('results', data)
         ]))
-
-
 class SmallResultsSetPagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = 'page_size'

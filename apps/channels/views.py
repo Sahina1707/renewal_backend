@@ -1,4 +1,3 @@
-# pyright: reportAttributeAccessIssue=false
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -95,13 +94,11 @@ class ChannelViewSet(viewsets.ModelViewSet):
             'by_priority': {}
         }
         
-        # Count by channel type
         for choice in Channel.CHANNEL_TYPE_CHOICES:
             channel_type = choice[0]
             count = queryset.filter(channel_type=channel_type).count()
             stats['by_type'][channel_type] = count
         
-        # Count by priority
         for choice in Channel.PRIORITY_CHOICES:
             priority = choice[0]
             count = queryset.filter(priority=priority).count()
@@ -114,12 +111,10 @@ class ChannelViewSet(viewsets.ModelViewSet):
         serializer = ChannelCreateAPISerializer(data=request.data, context={'request': request})
 
         if serializer.is_valid():
-            # Respect provided status/priority; fall back to model defaults
             channel = serializer.save(
                 created_by=request.user
             )
 
-            # Return the created channel data
             response_serializer = ChannelCreateAPISerializer(channel, context={'request': request})
             return Response(
                 {
@@ -242,21 +237,18 @@ class ChannelViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
-            # Use request data directly since ID is now in query params
             update_data = request.data.copy()
 
             serializer = ChannelCreateAPISerializer(
                 channel,
                 data=update_data,
-                partial=True,  # Allow partial updates
+                partial=True,  
                 context={'request': request}
             )
 
             if serializer.is_valid():
-                # Update the channel with updated_by field
                 updated_channel = serializer.save(updated_by=request.user)
 
-                # Return the updated channel data
                 response_serializer = ChannelCreateAPISerializer(updated_channel, context={'request': request})
                 return Response(
                     {
@@ -300,7 +292,6 @@ class ChannelViewSet(viewsets.ModelViewSet):
                 )
 
             try:
-                # Convert to int to ensure proper type
                 channel_id = int(channel_id)
             except (ValueError, TypeError):
                 return Response(
@@ -324,21 +315,18 @@ class ChannelViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
-            # Use request data directly since ID is now in URL path
             update_data = request.data.copy()
 
             serializer = ChannelCreateAPISerializer(
                 channel,
                 data=update_data,
-                partial=True,  # Allow partial updates
+                partial=True,  
                 context={'request': request}
             )
 
             if serializer.is_valid():
-                # Update the channel with updated_by field
                 updated_channel = serializer.save(updated_by=request.user)
 
-                # Return the updated channel data
                 response_serializer = ChannelCreateAPISerializer(updated_channel, context={'request': request})
                 return Response(
                     {
@@ -385,7 +373,6 @@ class ChannelViewSet(viewsets.ModelViewSet):
                 )
 
             try:
-                # Check if channel exists (including deleted ones)
                 channel = Channel.objects.get(id=channel_id)
 
                 return Response(
@@ -442,7 +429,6 @@ class ChannelViewSet(viewsets.ModelViewSet):
                 )
 
             try:
-                # Convert to int to ensure proper type
                 channel_id = int(channel_id)
             except (ValueError, TypeError):
                 return Response(
@@ -455,7 +441,6 @@ class ChannelViewSet(viewsets.ModelViewSet):
                 )
 
             try:
-                # Check if channel exists (only active channels)
                 channel = self.get_queryset().get(id=channel_id)
 
             except Channel.DoesNotExist:
@@ -468,11 +453,9 @@ class ChannelViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
-            # Store channel info before deletion for response
             channel_name = channel.name
             channel_type = channel.channel_type
 
-            # Perform hard delete - permanently remove from database
             channel.hard_delete()
 
             return Response(
@@ -515,7 +498,6 @@ class ChannelViewSet(viewsets.ModelViewSet):
                 )
 
             try:
-                # Convert to int to ensure proper type
                 channel_id = int(channel_id)
             except (ValueError, TypeError):
                 return Response(
@@ -528,7 +510,6 @@ class ChannelViewSet(viewsets.ModelViewSet):
                 )
 
             try:
-                # Check if channel exists (only active channels)
                 channel = self.get_queryset().get(id=channel_id)
 
             except Channel.DoesNotExist:
@@ -615,7 +596,3 @@ class ChannelViewSet(viewsets.ModelViewSet):
                 {'success': True, 'message': 'Manager created successfully', 'manager_name': manager_name},
                 status=status.HTTP_201_CREATED
             )
-
-        
-
-

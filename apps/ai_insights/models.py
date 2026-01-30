@@ -5,8 +5,6 @@ from apps.customers.models import Customer
 from apps.policies.models import Policy
 
 User = get_user_model()
-
-
 class AIInsight(BaseModel):
     
     INSIGHT_TYPE_CHOICES = [
@@ -81,7 +79,6 @@ class AIInsight(BaseModel):
     def __str__(self):
         policy_info = f" - {self.policy.policy_number}" if self.policy else ""
         return f"{self.insight_title} for {self.customer.name}{policy_info}"
-
 
 class AIInsightHistory(BaseModel):
     
@@ -195,7 +192,6 @@ class AIConversation(BaseModel):
         self.message_count = self.messages.count()
         self.save(update_fields=['message_count'])
 
-
 class AIMessage(BaseModel):
     """Model to store individual messages in AI conversations"""
     
@@ -243,7 +239,6 @@ class AIMessage(BaseModel):
     
     def __str__(self):
         return f"{self.role}: {self.content[:50]}..."
-
 
 class AIAnalytics(BaseModel):
     """Model to store AI-generated analytics and insights"""

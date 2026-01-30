@@ -1,18 +1,9 @@
-"""
-Customer Payments models for the Intelipro Insurance Policy Renewal System.
-"""
-
 from django.db import models
 from django.core.validators import MinValueValidator
 from decimal import Decimal
 from apps.core.models import BaseModel
 from apps.customers.models import Customer
-
 class CustomerPayment(BaseModel):
-    """
-    Customer payment records for tracking policy renewal payments and transactions.
-    """
-    
     PAYMENT_STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('processing', 'Processing'),

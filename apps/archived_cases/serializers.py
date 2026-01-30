@@ -1,9 +1,7 @@
 from rest_framework import serializers
 from apps.renewals.models import RenewalCase
-
 class ArchiveCaseActionSerializer(serializers.ModelSerializer):
     case_ids = serializers.ListField(child=serializers.CharField(), write_only=True)
-
     class Meta:
         model = RenewalCase
         fields = ['case_ids', 'archived_reason', 'archived_date', 'is_archived']
@@ -46,8 +44,6 @@ class ArchivedCaseListSerializer(serializers.ModelSerializer):
 
     def get_agent(self, obj):
         return obj.assigned_to.get_full_name() if obj.assigned_to else "Unassigned"
-    
-
 class ArchiveSingleCaseSerializer(serializers.Serializer):
     is_archived = serializers.BooleanField(required=True)
     archived_reason = serializers.CharField(

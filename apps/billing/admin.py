@@ -1,15 +1,12 @@
 from django.contrib import admin
 from .models import BillingPeriod, UsageCharge, PlatformCharge, Invoice
-
 @admin.register(BillingPeriod)
 class BillingPeriodAdmin(admin.ModelAdmin):
     list_display = ('month', 'year', 'is_active')
     list_filter = ('year',)
-
 @admin.register(UsageCharge)
 class UsageChargeAdmin(admin.ModelAdmin):
     list_display = ('period', 'service_name', 'count', 'total_cost')
-    # We make these readonly because they should be updated by the system, not manually!
     readonly_fields = ('total_cost',) 
 
 @admin.register(PlatformCharge)
