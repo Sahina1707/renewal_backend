@@ -24,6 +24,6 @@ urlpatterns = [
     path('case-details/policy-types/', get_policy_types_dropdown_api, name='get-policy-types-dropdown'),
     path('case-details/agents/', get_agents_dropdown_api, name='get-agents-dropdown'),
 
+    # include outstanding amounts URLs
     path('', include('apps.outstanding_amounts.urls')),
-
 ]
