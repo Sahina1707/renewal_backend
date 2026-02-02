@@ -4,7 +4,6 @@ from datetime import timedelta
 from .models import ClosedCaseChatbot, ClosedCaseChatbotMessage, ClosedCaseChatbotAnalytics
 from .services import ClosedCaseChatbotAnalyticsService
 
-
 @shared_task
 def cleanup_old_chatbot_sessions():
     """
@@ -21,7 +20,6 @@ def cleanup_old_chatbot_sessions():
     old_sessions.delete()
     
     return f"Cleaned up {count} old chatbot sessions"
-
 
 @shared_task
 def generate_daily_analytics():

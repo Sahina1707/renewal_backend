@@ -1,6 +1,3 @@
-"""
-Signals for customer_payments app to automatically update payment_status in related models
-"""
 from django.db.models.signals import post_save, post_delete, pre_save
 from django.dispatch import receiver
 from django.db import transaction
@@ -9,12 +6,8 @@ from .models import CustomerPayment
 
 @receiver(post_save, sender=CustomerPayment)
 def update_payment_status_on_save(sender, instance, created, **kwargs):
-    """
-    Update payment_status in related RenewalCase when CustomerPayment is created or updated
-    """
     try:
         with transaction.atomic():
-            # Map CustomerPayment status to RenewalCase payment_status
             status_mapping = {
                 'completed': 'success',
                 'failed': 'failed',
@@ -26,10 +19,8 @@ def update_payment_status_on_save(sender, instance, created, **kwargs):
                 'overdue': 'failed',
             }
             
-            # Get the mapped status
             renewal_payment_status = status_mapping.get(instance.payment_status, 'pending')
             
-            # Update related RenewalCase if it exists
             if instance.renewal_case:
                 instance.renewal_case.payment_status = renewal_payment_status
                 instance.renewal_case.save(update_fields=['payment_status'])
@@ -51,9 +42,6 @@ def update_payment_status_on_save(sender, instance, created, **kwargs):
 
 @receiver(post_delete, sender=CustomerPayment)
 def update_payment_status_on_delete(sender, instance, **kwargs):
-    """
-    Update payment_status in related RenewalCase when CustomerPayment is deleted
-    """
     try:
         with transaction.atomic():
            
@@ -94,9 +82,6 @@ def update_payment_status_on_delete(sender, instance, **kwargs):
 
 @receiver(pre_save, sender=CustomerPayment)
 def update_payment_status_on_soft_delete(sender, instance, **kwargs):
-    """
-    Update payment_status in related RenewalCase when CustomerPayment is soft-deleted
-    """
     try:
       
         if instance.pk and instance.is_deleted:

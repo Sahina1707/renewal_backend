@@ -22,37 +22,22 @@ class EmailIntegrationService:
         pass
     
     def process_incoming_email_webhook(self, provider: str, raw_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Process incoming email webhook from email provider
-        
-        Args:
-            provider: Email provider name
-            raw_data: Raw webhook payload containing incoming email data
-        
-        Returns:
-            Dict with processing result
-        """
         try:
-            # Create webhook record for incoming email
             webhook = EmailWebhook.objects.create(
                 provider=provider,
                 event_type='incoming',
                 raw_data=raw_data
             )
             
-            # Process incoming email data
             processed_data = self._process_incoming_email_data(provider, raw_data)
             webhook.processed_data = processed_data
             
-            # Store the incoming email in the inbox
             if processed_data.get('email_data'):
                 from apps.email_inbox.services import EmailInboxService
                 inbox_service = EmailInboxService()
                 
-                # Extract only the supported parameters for receive_email
                 email_data = processed_data['email_data']
                 
-                # Filter out unsupported parameters
                 supported_params = {
                     'from_email': email_data.get('from_email', ''),
                     'to_email': email_data.get('to_email', ''),
@@ -112,36 +97,21 @@ class EmailIntegrationService:
             }
 
     def process_webhook(self, provider: str, event_type: str, raw_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Process incoming webhook from email provider
-        
-        Args:
-            provider: Email provider name
-            event_type: Type of webhook event
-            raw_data: Raw webhook payload
-        
-        Returns:
-            Dict with processing result
-        """
         try:
-            # Create webhook record
             webhook = EmailWebhook.objects.create(
                 provider=provider,
                 event_type=event_type,
                 raw_data=raw_data
             )
             
-            # Process webhook based on provider and event type
             processed_data = self._process_webhook_data(provider, event_type, raw_data)
             webhook.processed_data = processed_data
             
-            # Update email message status if applicable
             if processed_data.get('email_message_id'):
                 webhook.email_message_id = processed_data['email_message_id']
                 webhook.provider_message_id = processed_data.get('provider_message_id')
                 webhook.event_time = processed_data.get('event_time')
                 
-                # Update email message status
                 self._update_email_status_from_webhook(webhook, processed_data)
             
             webhook.status = 'processed'
@@ -189,8 +159,6 @@ class EmailIntegrationService:
     def _process_sendgrid_incoming_email(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
         """Process SendGrid incoming email data"""
         try:
-            # SendGrid incoming email webhook format
-            # Extract email data from the webhook payload
             email_data = {
                 'from_email': raw_data.get('from', ''),
                 'to_email': raw_data.get('to', ''),
@@ -264,7 +232,7 @@ class EmailIntegrationService:
             if not raw_data or not isinstance(raw_data, list):
                 return {'error': 'Invalid SendGrid webhook data'}
             
-            event = raw_data[0]  # Process first event
+            event = raw_data[0] 
             return {
                 'provider': 'sendgrid',
                 'event_type': event_type,
@@ -303,7 +271,6 @@ class EmailIntegrationService:
             if not email_message_id:
                 return
             
-            # Find email message by provider message ID
             email_message = EmailMessage.objects.filter(
                 provider_message_id=email_message_id
             ).first()
@@ -311,14 +278,13 @@ class EmailIntegrationService:
             if not email_message:
                 return
             
-            # Update status based on event type
             status_mapping = {
                 'delivered': 'delivered',
                 'bounced': 'bounced',
                 'complained': 'complained',
                 'unsubscribed': 'unsubscribed',
-                'opened': 'delivered',  # Keep as delivered, track opens separately
-                'clicked': 'delivered',  # Keep as delivered, track clicks separately
+                'opened': 'delivered', 
+                'clicked': 'delivered', 
             }
             
             new_status = status_mapping.get(webhook.event_type)
@@ -340,27 +306,15 @@ class EmailIntegrationService:
             logger.error(f"Error updating email status from webhook: {str(e)}")
     
     def execute_automation(self, automation_id: str, trigger_data: Dict[str, Any] = None) -> Dict[str, Any]:
-        """
-        Execute an email automation
-        
-        Args:
-            automation_id: ID of the automation to execute
-            trigger_data: Data that triggered the automation
-        
-        Returns:
-            Dict with execution result
-        """
         try:
             automation = EmailAutomation.objects.get(id=automation_id)
             
-            # Check if automation is active
             if not automation.is_active or automation.status != 'active':
                 return {
                     'success': False,
                     'message': 'Automation is not active'
                 }
             
-            # Check execution limits
             if automation.max_executions > 0 and automation.execution_count >= automation.max_executions:
                 return {
                     'success': False,
@@ -460,7 +414,7 @@ class EmailIntegrationService:
             from apps.email_operations.services import EmailOperationsService
             
             service = EmailOperationsService()
-            service.context = {'user': None}  # System user
+            service.context = {'user': None}
             
             # Merge trigger data with action config
             email_data = {**action_config, **trigger_data}
@@ -726,7 +680,6 @@ class EmailIntegrationService:
                     'message': 'Integration sync is disabled'
                 }
             
-            # Perform sync based on integration type
             if integration.integration_type == 'crm':
                 result = self._sync_crm_integration(integration, sync_type)
             elif integration.integration_type == 'helpdesk':
@@ -739,7 +692,6 @@ class EmailIntegrationService:
                     'message': f'Unsupported integration type: {integration.integration_type}'
                 }
             
-            # Update integration status
             if result['success']:
                 integration.status = 'active'
                 integration.last_sync = timezone.now()
@@ -769,8 +721,6 @@ class EmailIntegrationService:
     def _sync_crm_integration(self, integration: EmailIntegration, sync_type: str) -> Dict[str, Any]:
         """Sync CRM integration"""
         try:
-            # This would integrate with your CRM system
-            # For now, just return success
             return {
                 'success': True,
                 'message': 'CRM integration synced successfully',
@@ -787,8 +737,6 @@ class EmailIntegrationService:
     def _sync_helpdesk_integration(self, integration: EmailIntegration, sync_type: str) -> Dict[str, Any]:
         """Sync helpdesk integration"""
         try:
-            # This would integrate with your helpdesk system
-            # For now, just return success
             return {
                 'success': True,
                 'message': 'Helpdesk integration synced successfully',
@@ -805,8 +753,6 @@ class EmailIntegrationService:
     def _sync_analytics_integration(self, integration: EmailIntegration, sync_type: str) -> Dict[str, Any]:
         """Sync analytics integration"""
         try:
-            # This would integrate with your analytics platform
-            # For now, just return success
             return {
                 'success': True,
                 'message': 'Analytics integration synced successfully',

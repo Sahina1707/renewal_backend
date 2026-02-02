@@ -1,7 +1,5 @@
 from django.contrib import admin
 from .models import ClosedCaseChatbot, ClosedCaseChatbotMessage, ClosedCaseChatbotAnalytics
-
-
 @admin.register(ClosedCaseChatbot)
 class ClosedCaseChatbotAdmin(admin.ModelAdmin):
     list_display = [

@@ -4,10 +4,6 @@ from apps.customers.models import Customer
 from apps.renewals.models import RenewalCase
 from apps.clients.models import Client
 
-
-# -------------------------
-# 1. SETTINGS (Singleton)
-# -------------------------
 class DNCSettings(models.Model):
     enable_checking = models.BooleanField(default=True)
     block_contacts = models.BooleanField(default=True)
@@ -23,10 +19,6 @@ class DNCSettings(models.Model):
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
 
-
-# -------------------------
-# 2. DNC REGISTRY (MAIN)
-# -------------------------
 class DNCRegistry(models.Model):
 
     TYPE_CHOICES = [
@@ -63,7 +55,6 @@ class DNCRegistry(models.Model):
         related_name='dnc_records'
     )
 
-    # ✅ REAL CLIENT CONNECTION
     client = models.ForeignKey(
         Client,
         on_delete=models.SET_NULL,
@@ -88,8 +79,6 @@ class DNCRegistry(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
-
-        # Snapshot customer data
         if self.customer:
             self.customer_name = self.customer_name or (
                 getattr(self.customer, 'name', None)
@@ -98,11 +87,9 @@ class DNCRegistry(models.Model):
             self.phone_number = self.phone_number or getattr(self.customer, 'phone', '')
             self.email_address = self.email_address or getattr(self.customer, 'email', '')
 
-        # Policy → Client
         if not self.client and self.renewal_case and self.renewal_case.distribution_channel:
             self.client = self.renewal_case.distribution_channel
 
-        # No policy → random client
         if not self.client:
             self.client = Client.objects.filter(
                 is_active=True,
@@ -114,10 +101,6 @@ class DNCRegistry(models.Model):
     def __str__(self):
         return f"{self.customer_name} ({self.status})"
 
-
-# -------------------------
-# 3. OVERRIDE HISTORY
-# -------------------------
 class DNCOverrideLog(models.Model):
     dnc_entry = models.ForeignKey(
         DNCRegistry,
@@ -128,7 +111,7 @@ class DNCOverrideLog(models.Model):
     end_date = models.DateTimeField(null=True, blank=True)
     reason = models.TextField()
     authorized_by = models.CharField(max_length=100, default="System User")
-    created_at = models.DateTimeField(auto_now_add=True)  # ✅ FIXED
+    created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"Override for {self.dnc_entry.customer_name}"

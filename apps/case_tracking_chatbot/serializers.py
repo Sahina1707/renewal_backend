@@ -4,7 +4,6 @@ from apps.case_tracking_chatbot.models import (
     CaseTrackingChatbotMessage
 )
 
-
 class CaseTrackingChatbotMessageSerializer(serializers.ModelSerializer):
     """Serializer for CaseTrackingChatbotMessage"""
     

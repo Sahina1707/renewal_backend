@@ -8,5 +8,4 @@ router.register(r'inbox', EmailManagerInboxViewSet, basename='email-manager-inbo
 
 urlpatterns = router.urls + [
     path('', include(router.urls)),
-    # path('emails/send_email/', EmailManagerViewSet.as_view({'post': 'send_email'}), name='send-email'),
 ]

@@ -1,7 +1,3 @@
-"""
-Views for Customer Payments app.
-"""
-
 from rest_framework import status, viewsets
 from rest_framework.response import Response
 from django.db.models import Q
@@ -13,7 +9,6 @@ from .serializers import (
     CustomerPaymentUpdateSerializer,
     CustomerPaymentListSerializer
 )
-
 class CustomerPaymentViewSet(viewsets.ModelViewSet):
     queryset = CustomerPayment.objects.filter(is_deleted=False)
 
@@ -29,7 +24,6 @@ class CustomerPaymentViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = CustomerPayment.objects.filter(is_deleted=False)
 
-        # Apply filters
         renewal_case_id = self.request.query_params.get('renewal_case_id')
         if renewal_case_id:
             queryset = queryset.filter(renewal_case_id=renewal_case_id)
@@ -134,16 +128,11 @@ class CustomerPaymentViewSet(viewsets.ModelViewSet):
         ).order_by('-payment_date', '-created_at')
 
     def create(self, request, *args, **kwargs):
-        """
-        Store/Create new customer payment.
-        """
         try:
             serializer = self.get_serializer(data=request.data)
             if serializer.is_valid():
-                # Save the customer payment
                 customer_payment = serializer.save(created_by=request.user)
 
-                # Return success response with created data
                 response_serializer = CustomerPaymentSerializer(customer_payment)
                 return Response({
                     'success': True,
@@ -165,9 +154,6 @@ class CustomerPaymentViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def list(self, request, *args, **kwargs):
-        """
-        List all customer payments.
-        """
         try:
             queryset = self.get_queryset()
             serializer = self.get_serializer(queryset, many=True)

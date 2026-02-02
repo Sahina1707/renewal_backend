@@ -1,7 +1,5 @@
 from rest_framework import serializers
 from .models import CustomerInstallment
-
-
 class CustomerInstallmentSerializer(serializers.ModelSerializer):
     """Serializer for CustomerInstallment model"""
     
@@ -39,8 +37,6 @@ class CustomerInstallmentSerializer(serializers.ModelSerializer):
             'payment_transaction_id', 'payment_status', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
-
-
 class CustomerInstallmentCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating CustomerInstallment records"""
     
@@ -50,7 +46,6 @@ class CustomerInstallmentCreateSerializer(serializers.ModelSerializer):
             'customer', 'renewal_case', 'period', 'amount', 
             'due_date', 'status', 'payment'
         ]
-
 
 class CustomerInstallmentUpdateSerializer(serializers.ModelSerializer):
     """Serializer for updating CustomerInstallment records"""

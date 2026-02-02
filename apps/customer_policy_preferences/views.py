@@ -1,7 +1,3 @@
-"""
-Views for Customer Policy Preferences app.
-"""
-
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -12,7 +8,6 @@ from .serializers import (
     CustomerPolicyPreferenceCreateSerializer,
     CustomerPolicyPreferenceListSerializer
 )
-
 
 class CustomerPolicyPreferenceViewSet(viewsets.ModelViewSet):
     """
@@ -83,17 +78,11 @@ class CustomerPolicyPreferenceViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'])
     def store(self, request):
-        """
-        Store/Create new customer policy preference.
-        Simple API for storing customer policy preference with success response.
-        """
         try:
             serializer = CustomerPolicyPreferenceCreateSerializer(data=request.data)
             if serializer.is_valid():
-                # Save the customer policy preference
                 policy_preference = serializer.save(created_by=request.user)
 
-                # Return success response with created data
                 response_serializer = CustomerPolicyPreferenceSerializer(policy_preference)
                 return Response({
                     'success': True,
@@ -115,10 +104,6 @@ class CustomerPolicyPreferenceViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def list(self, request):
-        """
-        List all customer policy preferences.
-        Simple API for listing customer policy preferences with success response.
-        """
         try:
             # Get filtered queryset
             preferences = self.get_queryset()

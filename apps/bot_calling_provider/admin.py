@@ -7,8 +7,6 @@ from .models import (
     BotCallingProviderUsageLog,
     BotCallingProviderTestResult,
 )
-
-
 @admin.register(BotCallingProviderConfig)
 class BotCallingProviderConfigAdmin(admin.ModelAdmin):
     list_display = [
@@ -156,7 +154,6 @@ class BotCallingProviderConfigAdmin(admin.ModelAdmin):
 
     reset_monthly_usage.short_description = "Reset monthly usage"
 
-
 @admin.register(BotCallingProviderHealthLog)
 class BotCallingProviderHealthLogAdmin(admin.ModelAdmin):
     list_display = ['provider', 'is_healthy', 'response_time', 'checked_at']
@@ -167,8 +164,6 @@ class BotCallingProviderHealthLogAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('provider')
-
-
 @admin.register(BotCallingProviderUsageLog)
 class BotCallingProviderUsageLogAdmin(admin.ModelAdmin):
     list_display = [
@@ -199,7 +194,6 @@ class BotCallingProviderUsageLogAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('provider')
-
 
 @admin.register(BotCallingProviderTestResult)
 class BotCallingProviderTestResultAdmin(admin.ModelAdmin):

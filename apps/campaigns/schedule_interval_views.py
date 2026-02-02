@@ -5,7 +5,6 @@ from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 from django.http import Http404
-
 from .models import Campaign, CampaignScheduleInterval
 from .serializers import (
     CampaignScheduleIntervalSerializer,

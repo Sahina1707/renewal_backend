@@ -10,9 +10,6 @@ from .models import CaseLogsChatbot, CaseLogsChatbotMessage
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_suggestions(request):
-    """
-    Get quick suggestions for case logs chatbot
-    """
     suggestions = [
         "Show me my renewal case logs",
         "What is the status of my renewal case?",
@@ -41,11 +38,7 @@ def get_suggestions(request):
         'message': 'Quick suggestions for case logs analysis'
     })
 
-
 def get_case_logs_context(case_id=None, policy_id=None, user=None):
-    """
-    Get context data from case logs related tables for AI response
-    """
     try:
         context_data = {
             'case_info': {},
@@ -55,7 +48,6 @@ def get_case_logs_context(case_id=None, policy_id=None, user=None):
             'case_attachments': []
         }
         
-        # Try to get case information from renewals table
         try:
             from apps.renewals.models import RenewalCase
             if case_id:
@@ -78,7 +70,6 @@ def get_case_logs_context(case_id=None, policy_id=None, user=None):
                         'notes': getattr(renewal_case, 'notes', 'N/A')
                     }
                     
-                    # Get all renewal cases for this case number
                     for case in renewal_cases:
                         context_data['case_logs'].append({
                             'case_number': getattr(case, 'case_number', 'N/A'),
@@ -112,7 +103,6 @@ def get_case_logs_context(case_id=None, policy_id=None, user=None):
                         'notes': getattr(renewal_case, 'notes', 'N/A')
                     }
                     
-                    # Get all renewal cases for this policy
                     for case in renewal_cases:
                         context_data['case_logs'].append({
                             'case_number': getattr(case, 'case_number', 'N/A'),
@@ -127,7 +117,6 @@ def get_case_logs_context(case_id=None, policy_id=None, user=None):
                     context_data['no_case_found'] = True
                     context_data['policy_id'] = policy_id
             else:
-                # Get general renewal cases if no specific case/policy provided
                 renewal_cases = RenewalCase.objects.all()[:10]
                 for case in renewal_cases:
                     context_data['case_logs'].append({
@@ -144,7 +133,6 @@ def get_case_logs_context(case_id=None, policy_id=None, user=None):
         except Exception:
             pass
         
-        # Try to get case history
         try:
             from apps.case_history.models import CaseHistory
             if case_id:
@@ -160,7 +148,6 @@ def get_case_logs_context(case_id=None, policy_id=None, user=None):
         except Exception:
             pass
         
-        # Try to get case comments
         try:
             from apps.case_history.models import CaseComment
             if case_id:
@@ -187,11 +174,7 @@ def get_case_logs_context(case_id=None, policy_id=None, user=None):
             'error': str(e)
         }
 
-
 def is_case_logs_related_question(message):
-    """
-    Check if the question is related to case logs
-    """
     case_logs_keywords = [
         'case', 'log', 'logs', 'policy', 'status', 'history', 'activity',
         'timeline', 'update', 'comment', 'note', 'attachment', 'resolution',
@@ -204,21 +187,15 @@ def is_case_logs_related_question(message):
 
 
 def generate_related_suggestions(user_message, context_data, ai_response):
-    """
-    Generate 3 related suggestions based on the user's question and context
-    """
     suggestions = []
     
-    # Get case info if available
     case_info = context_data.get('case_info', {})
     case_number = case_info.get('case_number', '')
     status = case_info.get('status', '')
     payment_status = case_info.get('payment_status', '')
     
-    # Convert user message to lowercase for analysis
     message_lower = user_message.lower()
     
-    # Generate suggestions based on the question type and context
     if 'case logs' in message_lower or 'what is' in message_lower:
         if case_number:
             suggestions = [
@@ -304,7 +281,6 @@ def generate_related_suggestions(user_message, context_data, ai_response):
             ]
     
     else:
-        # Default suggestions based on context
         if case_number:
             suggestions = [
                 f"What is the current status of case {case_number}?",
@@ -318,20 +294,15 @@ def generate_related_suggestions(user_message, context_data, ai_response):
                 "Who is assigned to my case?"
             ]
     
-    # Ensure we return exactly 3 suggestions
     return suggestions[:3]
 
 
 def generate_ai_response(user_message, context_data):
-    """
-    Generate AI response using OpenAI API
-    """
     try:
         from openai import OpenAI
         
         client = OpenAI(api_key=settings.OPENAI_API_KEY)
         
-        # Build context summary
         context_summary = []
         
         if context_data.get('case_info'):
@@ -401,9 +372,6 @@ def generate_ai_response(user_message, context_data):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def send_request_get_response(request):
-    """
-    Send a request to chatbot and get AI response
-    """
     user_message = request.data.get('message', '')
     
     if not user_message:
@@ -454,7 +422,6 @@ def send_request_get_response(request):
     chatbot_session.interaction_count += 1
     chatbot_session.save()
     
-    # Generate related suggestions based on the response and context
     related_suggestions = generate_related_suggestions(user_message, context_data, ai_response)
     
     return Response({

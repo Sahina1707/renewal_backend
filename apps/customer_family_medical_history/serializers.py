@@ -1,7 +1,5 @@
 from rest_framework import serializers
 from .models import CustomerFamilyMedicalHistory
-
-
 class CustomerFamilyMedicalHistorySerializer(serializers.ModelSerializer):
     
     customer_name = serializers.CharField(source='customer.full_name', read_only=True)
@@ -46,7 +44,6 @@ class CustomerFamilyMedicalHistorySerializer(serializers.ModelSerializer):
             'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
-
 
 class CustomerFamilyMedicalHistoryCreateSerializer(serializers.ModelSerializer):
     

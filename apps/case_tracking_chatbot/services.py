@@ -8,7 +8,6 @@ from django.utils import timezone
 from django.db.models import Sum, Count, Q, Avg, Max, Min
 from django.contrib.auth import get_user_model
 
-# OpenAI imports
 try:
     import openai
     OPENAI_AVAILABLE = True
@@ -58,7 +57,6 @@ class CaseTrackingChatbotService:
     def get_case_tracking_data(self) -> Dict[str, Any]:
         """Get comprehensive data for case tracking analysis"""
         try:
-            # Get case statistics
             cases = RenewalCase.objects.filter(is_deleted=False)
             
             case_stats = {
@@ -77,7 +75,6 @@ class CaseTrackingChatbotService:
                 'uploaded_cases': cases.filter(status='uploaded').count(),
             }
             
-            # Get customer statistics
             customers = Customer.objects.filter(is_deleted=False)
             customer_stats = {
                 'total_customers': customers.count(),
@@ -88,26 +85,22 @@ class CaseTrackingChatbotService:
                 'hni_profile_customers': customers.filter(profile='HNI').count(),
             }
             
-            # Get case performance by status
             case_performance = cases.values('status').annotate(
                 count=Count('id'),
                 avg_amount=Avg('renewal_amount'),
                 total_amount=Sum('renewal_amount')
             )
             
-            # Get customer profile distribution
             customer_profiles = customers.values('profile').annotate(
                 count=Count('id')
             )
             
-            # Get recent cases
             recent_cases = cases.order_by('-created_at')[:10].values(
                 'case_number', 'status', 'renewal_amount', 'customer__first_name', 
                 'customer__last_name', 'customer__profile', 'customer__phone',
                 'policy__policy_number', 'policy__policy_type__name', 'created_at'
             )
             
-            # Get payment statistics
             payment_stats = cases.aggregate(
                 total_pending_amount=Sum('renewal_amount', filter=Q(payment_status='pending')),
                 total_success_amount=Sum('renewal_amount', filter=Q(payment_status='success')),
@@ -115,7 +108,6 @@ class CaseTrackingChatbotService:
                 avg_renewal_amount=Avg('renewal_amount')
             )
             
-            # Get communication statistics
             communication_stats = CommunicationLog.objects.aggregate(
                 total_communications=Count('id'),
                 successful_communications=Count('id', filter=Q(outcome__in=['successful', 'delivered', 'opened', 'clicked', 'replied'])),
@@ -146,7 +138,6 @@ class CaseTrackingChatbotService:
             }
         
         try:
-            # Classify the query type to determine what data to fetch
             query_type = self._classify_query(user_message)
             
             
@@ -159,17 +150,14 @@ class CaseTrackingChatbotService:
                     'timestamp': timezone.now().isoformat()
                 }
             
-            # Fetch relevant data based on query type
             dashboard_data = self.get_case_tracking_data()
             specialized_data = self._get_specialized_data(query_type, user_message)
             dashboard_data.update(specialized_data)
             
             system_prompt = self._create_system_prompt(dashboard_data, user, query_type)
             
-            # Build messages with conversation history
             messages = [{"role": "system", "content": system_prompt}]
             
-            # Add conversation history if available
             if conversation_history:
                 for msg in conversation_history:
                     messages.append({
@@ -177,7 +165,6 @@ class CaseTrackingChatbotService:
                         "content": msg['content']
                     })
             
-            # Add current user message
             messages.append({"role": "user", "content": user_message})
             
             response = self.openai_client.chat.completions.create(
@@ -215,7 +202,6 @@ class CaseTrackingChatbotService:
         """Classify the type of query to determine what data to fetch"""
         message_lower = user_message.lower()
         
-        # Case tracking keywords
         case_keywords = [
             'case', 'cases', 'case tracking', 'case status', 'case count', 'case number',
             'renewal case', 'renewal cases', 'case performance', 'case analysis',
@@ -227,7 +213,6 @@ class CaseTrackingChatbotService:
             'case progress', 'case update', 'case timeline', 'case log'
         ]
         
-        # Customer keywords
         customer_keywords = [
             'customer', 'customers', 'customer name', 'customer profile',
             'customer status', 'customer details', 'customer information',
@@ -241,7 +226,6 @@ class CaseTrackingChatbotService:
             'find customer', 'search customer', 'customer by name'
         ]
         
-        # Document keywords
         document_keywords = [
             'document', 'documents', 'document submission', 'document status',
             'submitted documents', 'document verification', 'document upload',
@@ -253,7 +237,6 @@ class CaseTrackingChatbotService:
             'document expiry', 'expired documents', 'document renewal'
         ]
         
-        # Policy keywords
         policy_keywords = [
             'policy', 'policies', 'policy number', 'policy status',
             'policy details', 'policy information', 'policy type',
@@ -266,7 +249,6 @@ class CaseTrackingChatbotService:
             'renewal status', 'renewal count', 'renewal statistics'
         ]
         
-        # Payment keywords
         payment_keywords = [
             'payment', 'payments', 'payment status', 'payment amount',
             'renewal amount', 'premium payment', 'payment success',
@@ -274,7 +256,6 @@ class CaseTrackingChatbotService:
             'outstanding amount', 'due amount', 'payment analytics'
         ]
         
-        # Communication keywords
         communication_keywords = [
             'communication', 'contact', 'call', 'email', 'sms', 'whatsapp',
             'communication log', 'contact history', 'interaction',
@@ -282,7 +263,6 @@ class CaseTrackingChatbotService:
             'communication effectiveness', 'contact attempts'
         ]
         
-        # Non-case tracking keywords that should be declined
         non_case_tracking_keywords = [
             'weather', 'joke', 'cook', 'recipe', 'homework', 'capital', 'news', 'sports',
             'movie', 'music', 'game', 'travel', 'restaurant', 'shopping', 'fashion',
@@ -299,20 +279,16 @@ class CaseTrackingChatbotService:
             'dna', 'biology', 'science', 'chemistry', 'physics', 'mathematics'
         ]
         
-        # First check for non-case tracking keywords (higher priority)
         if any(keyword in message_lower for keyword in non_case_tracking_keywords):
             return 'non_case_tracking'
         
-        # Check for renewal-specific questions (high priority)
         renewal_specific_keywords = ['renewed', 'renewal', 'renewed policies', 'recently renewed', 'customers renewed', 'how many renewed', 'renewal rate', 'renewal statistics']
         if any(keyword in message_lower for keyword in renewal_specific_keywords):
             return 'policy_analysis'
         
-        # Check for policy-related questions (including renewal keywords)
         elif any(keyword in message_lower for keyword in policy_keywords):
             return 'policy_analysis'
         
-        # Check for case-related questions
         elif any(keyword in message_lower for keyword in case_keywords):
             if any(keyword in message_lower for keyword in ['case performance', 'case analysis', 'case metrics']):
                 return 'case_performance'
@@ -321,27 +297,21 @@ class CaseTrackingChatbotService:
             else:
                 return 'case_general'
         
-        # Check for individual customer questions (higher priority)
         elif any(keyword in message_lower for keyword in ['first customer', 'last customer', 'customer list', 'all customers', 'list customers', 'specific customer', 'individual customer']):
             return 'individual_customer'
         
-        # Check for document-related questions (higher priority)
         elif any(keyword in message_lower for keyword in document_keywords):
             return 'document_analysis'
         
-        # Check for customer-related questions
         elif any(keyword in message_lower for keyword in customer_keywords):
             return 'customer_analysis'
         
-        # Check for payment-related questions
         elif any(keyword in message_lower for keyword in payment_keywords):
             return 'payment_analysis'
         
-        # Check for communication-related questions
         elif any(keyword in message_lower for keyword in communication_keywords):
             return 'communication_analysis'
         
-        # If none of the above, it's not related to case tracking
         else:
             return 'non_case_tracking'
     
@@ -381,7 +351,6 @@ class CaseTrackingChatbotService:
             today = datetime.now().date()
             thirty_days_ago = today - timedelta(days=30)
             
-            # Get case performance by status
             cases = RenewalCase.objects.filter(is_deleted=False)
             
             status_performance = cases.values('status').annotate(
@@ -390,7 +359,6 @@ class CaseTrackingChatbotService:
                 total_amount=Sum('renewal_amount')
             )
             
-            # Get case performance by time period
             time_performance = cases.filter(
                 created_at__gte=thirty_days_ago
             ).values('status').annotate(
@@ -398,7 +366,6 @@ class CaseTrackingChatbotService:
                 success_rate=Count('id', filter=Q(status__in=['completed', 'renewed'])) * 100.0 / Count('id')
             )
             
-            # Get case assignment performance
             assignment_performance = cases.filter(
                 assigned_to__isnull=False
             ).values('assigned_to__first_name', 'assigned_to__last_name').annotate(
@@ -422,7 +389,6 @@ class CaseTrackingChatbotService:
     def _get_case_workflow_data(self) -> Dict[str, Any]:
         """Get case workflow data"""
         try:
-            # Get case workflow stages
             cases = RenewalCase.objects.filter(is_deleted=False)
             
             workflow_stages = [
@@ -434,7 +400,6 @@ class CaseTrackingChatbotService:
                 {'stage': 'cancelled', 'count': cases.filter(status='cancelled').count()},
             ]
             
-            # Get average processing time by status
             processing_times = cases.values('status').annotate(
                 avg_days=Avg('updated_at') - Avg('created_at')
             )
@@ -453,7 +418,6 @@ class CaseTrackingChatbotService:
     def _get_case_general_data(self) -> Dict[str, Any]:
         """Get general case data"""
         try:
-            # Get basic case statistics
             cases = RenewalCase.objects.filter(is_deleted=False)
             
             case_stats = {
@@ -464,7 +428,6 @@ class CaseTrackingChatbotService:
                 'renewed_cases': cases.filter(status='renewed').count(),
             }
             
-            # Get recent cases for examples
             recent_cases = cases.order_by('-created_at')[:5].values(
                 'case_number', 'status', 'renewal_amount', 'customer__first_name', 
                 'customer__last_name', 'policy__policy_number', 'created_at'
@@ -484,7 +447,6 @@ class CaseTrackingChatbotService:
     def _get_customer_analysis_data(self) -> Dict[str, Any]:
         """Get customer analysis data"""
         try:
-            # Get customer statistics
             customers = Customer.objects.filter(is_deleted=False)
             
             customer_analysis = {
@@ -494,7 +456,6 @@ class CaseTrackingChatbotService:
                 'type_distribution': list(customers.values('customer_type').annotate(count=Count('id'))),
             }
             
-            # Get customer interaction stats
             interactions = customers.aggregate(
                 total_interactions=Count('interactions'),
                 avg_interactions_per_customer=Count('interactions') / Count('id') if customers.count() > 0 else 0
@@ -517,9 +478,7 @@ class CaseTrackingChatbotService:
             customers = Customer.objects.filter(is_deleted=False)
             message_lower = user_message.lower()
             
-            # Check for specific customer queries
             if 'first customer' in message_lower:
-                # Get the first customer (by creation date)
                 first_customer = customers.order_by('created_at').first()
                 if first_customer:
                     return {
@@ -545,7 +504,6 @@ class CaseTrackingChatbotService:
                     }
             
             elif 'last customer' in message_lower:
-                # Get the last customer (by creation date)
                 last_customer = customers.order_by('-created_at').first()
                 if last_customer:
                     return {
@@ -571,11 +529,10 @@ class CaseTrackingChatbotService:
                     }
             
             elif any(keyword in message_lower for keyword in ['customer list', 'all customers', 'list customers']):
-                # Get list of all customers
                 all_customers = customers.order_by('created_at').values(
                     'id', 'customer_code', 'first_name', 'last_name', 
                     'email', 'phone', 'customer_type', 'status', 'profile', 'created_at'
-                )[:20]  # Limit to first 20 customers
+                )[:20]  
                 
                 return {
                     'individual_customer': {
@@ -585,7 +542,6 @@ class CaseTrackingChatbotService:
                     }
                 }
             
-            # If no specific query matched, return empty
             return {'individual_customer': {}}
             
         except Exception as e:
@@ -599,7 +555,6 @@ class CaseTrackingChatbotService:
             
             message_lower = user_message.lower()
             
-            # Try to find customer by name in the message
             customer = None
             if 'angela lee' in message_lower:
                 try:
@@ -622,7 +577,6 @@ class CaseTrackingChatbotService:
             }
             
             if customer:
-                # Get documents from customers_files model
                 try:
                     documents = CustomerFile.objects.filter(
                         customer=customer,
@@ -639,14 +593,12 @@ class CaseTrackingChatbotService:
                     document_analysis['pending_documents'] = len([d for d in all_documents if not d.get('is_verified', False)])
                     document_analysis['expired_documents'] = 0
                     
-                    # Get document types
                     document_types = {}
                     for doc in all_documents:
                         doc_type = doc.get('document_type', 'Unknown')
                         document_types[doc_type] = document_types.get(doc_type, 0) + 1
                     document_analysis['document_types'] = document_types
                     
-                    # Get verification status
                     verification_status = {
                         'verified': document_analysis['verified_documents'],
                         'pending': document_analysis['pending_documents'],
@@ -654,8 +606,7 @@ class CaseTrackingChatbotService:
                     }
                     document_analysis['verification_status'] = verification_status
                     
-                    # Customer-specific document details
-                    document_analysis['customer_documents'] = all_documents[:10]  # Limit to 10 documents
+                    document_analysis['customer_documents'] = all_documents[:10]  
                     document_analysis['customer_name'] = f"{customer.first_name} {customer.last_name}"
                     document_analysis['customer_code'] = customer.customer_code
                     
@@ -663,7 +614,6 @@ class CaseTrackingChatbotService:
                     logger.error(f"Error fetching documents for customer {customer.id}: {str(e)}")
                     document_analysis['error'] = f"Error fetching documents: {str(e)}"
             else:
-                # If no specific customer found, get general document statistics
                 try:
                     docs_count = CustomerDocument.objects.filter(is_deleted=False).count()
                     verified_count = CustomerDocument.objects.filter(is_deleted=False, is_verified=True).count()
@@ -687,7 +637,6 @@ class CaseTrackingChatbotService:
     def _get_policy_analysis_data(self) -> Dict[str, Any]:
         """Get policy analysis data"""
         try:
-            # Get policy statistics from cases
             cases = RenewalCase.objects.filter(is_deleted=False)
             
             policy_analysis = {
@@ -713,7 +662,6 @@ class CaseTrackingChatbotService:
     def _get_payment_analysis_data(self) -> Dict[str, Any]:
         """Get payment analysis data"""
         try:
-            # Get payment statistics
             cases = RenewalCase.objects.filter(is_deleted=False)
             
             payment_analysis = {
@@ -735,7 +683,6 @@ class CaseTrackingChatbotService:
     def _get_communication_analysis_data(self) -> Dict[str, Any]:
         """Get communication analysis data"""
         try:
-            # Get communication statistics
             communications = CommunicationLog.objects.all()
             
             communication_analysis = {
@@ -757,10 +704,8 @@ class CaseTrackingChatbotService:
     def _create_system_prompt(self, dashboard_data: Dict[str, Any], user=None, query_type: str = 'general') -> str:
         """Create system prompt for case tracking chatbot"""
         
-        # Build specialized data context based on query type
         specialized_context = self._build_specialized_context(dashboard_data, query_type)
         
-        # Handle non-case tracking questions
         if query_type == 'non_case_tracking':
             return f"""
 You are an AI assistant for Renew-IQ's Case Tracking and Customer Management system. 
@@ -874,21 +819,18 @@ RESPONSE FORMAT:
         
         context = "\n\nCASE PERFORMANCE ANALYSIS:\n"
         
-        # Status performance
         status_performance = case_data.get('status_performance', [])
         if status_performance:
             context += "\nCASE STATUS PERFORMANCE:\n"
             for status in status_performance:
                 context += f"- {status.get('status', 'Unknown')}: {status.get('count', 0)} cases (Avg Amount: ₹{status.get('avg_amount', 0):.2f}, Total: ₹{status.get('total_amount', 0):.2f})\n"
         
-        # Time performance
         time_performance = case_data.get('time_performance', [])
         if time_performance:
             context += "\nCASE PERFORMANCE (30 days):\n"
             for time_data in time_performance:
                 context += f"- {time_data.get('status', 'Unknown')}: {time_data.get('count', 0)} cases, {time_data.get('success_rate', 0):.1f}% success rate\n"
         
-        # Assignment performance
         assignment_performance = case_data.get('assignment_performance', [])
         if assignment_performance:
             context += "\nASSIGNMENT PERFORMANCE:\n"
@@ -904,7 +846,6 @@ RESPONSE FORMAT:
         
         context = "\n\nCASE WORKFLOW ANALYSIS:\n"
         
-        # Workflow stages
         workflow_stages = workflow_data.get('workflow_stages', [])
         if workflow_stages:
             context += "\nCASE WORKFLOW STAGES:\n"
@@ -920,7 +861,6 @@ RESPONSE FORMAT:
         
         context = "\n\nCASE INFORMATION:\n"
         
-        # Case stats
         case_stats = case_data.get('case_stats', {})
         if case_stats:
             context += "\nCURRENT CASE STATISTICS:\n"
@@ -938,7 +878,6 @@ RESPONSE FORMAT:
             context += f"- Failed Cases: {case_stats.get('failed_cases', 0)}\n"
             context += f"- Uploaded Cases: {case_stats.get('uploaded_cases', 0)}\n"
         
-        # Recent cases
         recent_cases = case_data.get('recent_cases', [])
         if recent_cases:
             context += "\nRECENT CASES:\n"
@@ -955,14 +894,12 @@ RESPONSE FORMAT:
         
         context = "\n\nCUSTOMER ANALYSIS:\n"
         
-        # Profile distribution
         profile_distribution = customer_data.get('profile_distribution', [])
         if profile_distribution:
             context += "\nCUSTOMER PROFILE DISTRIBUTION:\n"
             for profile in profile_distribution:
                 context += f"- {profile.get('profile', 'Unknown')}: {profile.get('count', 0)} customers\n"
         
-        # Status distribution
         status_distribution = customer_data.get('status_distribution', [])
         if status_distribution:
             context += "\nCUSTOMER STATUS DISTRIBUTION:\n"
@@ -1033,24 +970,20 @@ RESPONSE FORMAT:
         
         context = "\n\nDOCUMENT ANALYSIS:\n"
         
-        # Basic document statistics
         context += f"TOTAL DOCUMENTS: {document_data.get('total_documents', 0)}\n"
         context += f"VERIFIED DOCUMENTS: {document_data.get('verified_documents', 0)}\n"
         context += f"PENDING DOCUMENTS: {document_data.get('pending_documents', 0)}\n"
         context += f"EXPIRED DOCUMENTS: {document_data.get('expired_documents', 0)}\n"
         
-        # Customer-specific information
         if document_data.get('customer_name'):
             context += f"\nCUSTOMER: {document_data.get('customer_name', 'Unknown')} (Code: {document_data.get('customer_code', 'N/A')})\n"
         
-        # Document types
         document_types = document_data.get('document_types', {})
         if document_types:
             context += "\nDOCUMENT TYPES:\n"
             for doc_type, count in document_types.items():
                 context += f"- {doc_type}: {count} documents\n"
         
-        # Verification status
         verification_status = document_data.get('verification_status', {})
         if verification_status:
             context += "\nVERIFICATION STATUS:\n"
@@ -1058,7 +991,6 @@ RESPONSE FORMAT:
             context += f"- Pending: {verification_status.get('pending', 0)} documents\n"
             context += f"- Expired: {verification_status.get('expired', 0)} documents\n"
         
-        # Individual documents
         customer_documents = document_data.get('customer_documents', [])
         if customer_documents:
             context += "\nDOCUMENT DETAILS:\n"
@@ -1071,7 +1003,6 @@ RESPONSE FORMAT:
                     context += f" - Expires: {doc.get('expiry_date')}"
                 context += "\n"
         
-        # Error information
         if document_data.get('error'):
             context += f"\nERROR: {document_data.get('error')}\n"
         
@@ -1084,26 +1015,22 @@ RESPONSE FORMAT:
         
         context = "\n\nPOLICY ANALYSIS:\n"
         
-        # Basic policy statistics
         context += f"TOTAL POLICIES: {policy_data.get('total_policies', 0)}\n"
         context += f"RENEWED POLICIES: {policy_data.get('renewed_policies', 0)}\n"
         context += f"RENEWAL RATE: {policy_data.get('renewal_rate', 0):.1f}%\n"
         
-        # Policy types
         policy_types = policy_data.get('policy_types', [])
         if policy_types:
             context += "\nPOLICY TYPES:\n"
             for policy_type in policy_types:
                 context += f"- {policy_type.get('policy__policy_type__name', 'Unknown')}: {policy_type.get('count', 0)} policies\n"
         
-        # Policy status distribution
         policy_status_dist = policy_data.get('policy_status_distribution', [])
         if policy_status_dist:
             context += "\nPOLICY STATUS DISTRIBUTION:\n"
             for status in policy_status_dist:
                 context += f"- {status.get('status', 'Unknown')}: {status.get('count', 0)} policies\n"
         
-        # Recently renewed customers
         recently_renewed = policy_data.get('recently_renewed_customers', [])
         if recently_renewed:
             context += "\nRECENTLY RENEWED CUSTOMERS:\n"
@@ -1127,7 +1054,6 @@ RESPONSE FORMAT:
         context += f"SUCCESS AMOUNT: ₹{payment_data.get('success_amount', 0):.2f}\n"
         context += f"FAILED AMOUNT: ₹{payment_data.get('failed_amount', 0):.2f}\n"
         
-        # Payment status distribution
         payment_status_dist = payment_data.get('payment_status_distribution', [])
         if payment_status_dist:
             context += "\nPAYMENT STATUS DISTRIBUTION:\n"
@@ -1147,7 +1073,6 @@ RESPONSE FORMAT:
         context += f"SUCCESSFUL COMMUNICATIONS: {comm_data.get('successful_communications', 0)}\n"
         context += f"FAILED COMMUNICATIONS: {comm_data.get('failed_communications', 0)}\n"
         
-        # Channel distribution
         channel_dist = comm_data.get('channel_distribution', [])
         if channel_dist:
             context += "\nCOMMUNICATION CHANNELS:\n"

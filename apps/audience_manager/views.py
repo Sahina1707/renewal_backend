@@ -14,11 +14,7 @@ from .serializers import (
     AudienceSerializer, AudienceCreateUpdateSerializer,
     AudienceContactSerializer, AudienceContactWriteSerializer
 )
-
-
-class AudienceViewSet(viewsets.ModelViewSet):
-    """ViewSet for managing Audiences and their contacts."""
-    
+class AudienceViewSet(viewsets.ModelViewSet):    
     queryset = Audience.objects.none() 
     permission_classes = [IsAuthenticated]
     
@@ -30,16 +26,8 @@ class AudienceViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return Audience.objects.filter(is_deleted=False).order_by('-last_updated')
 
-    # ... (Your other views: create, update, destroy, contacts) ...
-    # ... (No changes needed to those) ...
-
     @action(detail=True, methods=['post'], url_path='add-contacts')
     def add_contacts(self, request, pk=None):
-        """
-        Add one or more contacts manually.
-        Handles both a single object (dict) and a list of objects (list).
-        Now validates against duplicate emails AND phone numbers.
-        """
         audience = self.get_object()
         
         contacts_data = request.data
@@ -53,10 +41,6 @@ class AudienceViewSet(viewsets.ModelViewSet):
         validated_data = serializer.validated_data
         if not is_many:
             validated_data = [validated_data]
-
-        # --- THIS IS THE UPDATE ---
-        
-        # 1. Get existing emails AND phones for this audience
         existing_emails = set(AudienceContact.objects.filter(
             audience=audience, is_deleted=False, email__isnull=False
         ).values_list('email', flat=True))
@@ -70,13 +54,12 @@ class AudienceViewSet(viewsets.ModelViewSet):
             email = item.get('email')
             phone = item.get('phone')
             if email:
-                item['email'] = email.strip() # <--- ADDED!
+                item['email'] = email.strip() 
             if phone:
                 item['phone'] = phone.strip()
             email = item['email']
             phone = item['phone']
             
-            # 2. Check for duplicates
             is_duplicate = False
             if email and email in existing_emails:
                 is_duplicate = True
@@ -84,7 +67,6 @@ class AudienceViewSet(viewsets.ModelViewSet):
             if phone and phone in existing_phones:
                 is_duplicate = True
 
-            # 3. If not a duplicate, add to batch
             if not is_duplicate:
                 new_contacts.append(
                     AudienceContact(
@@ -93,17 +75,13 @@ class AudienceViewSet(viewsets.ModelViewSet):
                         **item
                     )
                 )
-                # Add to sets to prevent duplicates within the same request
                 if email:
                     existing_emails.add(email)
                 if phone:
                     existing_phones.add(phone)
         
-        # --- END UPDATE ---
-
         if new_contacts:
             AudienceContact.objects.bulk_create(new_contacts)
-            # Update audience stats
             audience.contact_count = audience.contacts.filter(is_deleted=False).count()
             audience.last_updated = timezone.now()
             audience.save()
@@ -122,17 +100,12 @@ class AudienceViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='upload-contacts')
     @parser_classes([MultiPartParser, FormParser])
     def upload_contacts(self, request, pk=None):
-        """
-        Handle contact bulk upload via CSV file.
-        Also updated to check both email and phone.
-        """
         audience = self.get_object()
         if 'file' not in request.FILES:
             return Response({'error': 'No file uploaded.'}, status=status.HTTP_400_BAD_REQUEST)
 
         file = request.FILES['file']
         
-        # ... (Your file hash check logic is good) ...
         hasher = hashlib.sha256()
         for chunk in file.chunks():
             hasher.update(chunk)
@@ -153,7 +126,6 @@ class AudienceViewSet(viewsets.ModelViewSet):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # --- UPDATE: Get existing emails AND phones ---
         existing_emails = set(AudienceContact.objects.filter(
             audience=audience, is_deleted=False, email__isnull=False
         ).values_list('email', flat=True))
@@ -167,10 +139,10 @@ class AudienceViewSet(viewsets.ModelViewSet):
             email = item.get('email')
             phone = item.get('phone')
             if email:
-                item['email'] = email.strip() # <--- ADDED!
-                email = item['email']         # Use the cleaned value
+                item['email'] = email.strip() 
+                email = item['email']         
             if phone:
-                item['phone'] = phone.strip() # <--- OPTIONAL BUT RECOMMENDED!
+                item['phone'] = phone.strip()
                 phone = item['phone']
             
             is_duplicate = False
@@ -185,8 +157,6 @@ class AudienceViewSet(viewsets.ModelViewSet):
                     existing_emails.add(email)
                 if phone:
                     existing_phones.add(phone)
-        # --- END UPDATE ---
-
         if new_contacts:
             AudienceContact.objects.bulk_create(new_contacts, ignore_conflicts=True)
             
@@ -196,7 +166,7 @@ class AudienceViewSet(viewsets.ModelViewSet):
             if 'uploaded_files' not in audience.metadata:
                 audience.metadata['uploaded_files'] = {}
             audience.metadata['uploaded_files'][file_hash] = file.name
-            audience.save(update_fields=['contact_count', 'last_updated', 'metadata']) # Save all fields in one go
+            audience.save(update_fields=['contact_count', 'last_updated', 'metadata'])
 
             return Response({
                 'success': True,
@@ -209,45 +179,32 @@ class AudienceViewSet(viewsets.ModelViewSet):
             'success': True,
             'message': 'No new contacts were added. They may already exist in the audience or the file was empty.'
         }, status=status.HTTP_200_OK)
-    # Inside AudienceViewSet
 
     def perform_destroy(self, instance):
-        """
-        Soft delete the Audience instead of removing it from DB.
-        """
         if hasattr(instance, 'soft_delete'):
             instance.soft_delete(user=self.request.user)
         else:
-            # Fallback if specific method doesn't exist
             instance.is_deleted = True
             instance.metadata['deleted_by'] = self.request.user.id
             instance.metadata['deleted_at'] = str(timezone.now())
             instance.save()
 
-class AudienceContactViewSet(viewsets.ModelViewSet):
-    """ViewSet for managing individual AudienceContacts."""
-    
+class AudienceContactViewSet(viewsets.ModelViewSet):    
     queryset = AudienceContact.objects.filter(is_deleted=False)
     serializer_class = AudienceContactSerializer
     permission_classes = [IsAuthenticated]
     
     def perform_create(self, serializer):
         contact = serializer.save(created_by=self.request.user)
-        # Update stats helper
         self._update_audience_stats(contact.audience)
 
     def perform_destroy(self, instance):
-        """
-        Soft delete the contact explicitly.
-        This fixes the Foreign Key Constraint error immediately.
-        """
         instance.is_deleted = True
         instance.save()
         
         self._update_audience_stats(instance.audience)
 
     def _update_audience_stats(self, audience):
-        """Helper to update counts on the parent audience"""
         audience.contact_count = AudienceContact.objects.filter(
             audience=audience, 
             is_deleted=False

@@ -9,32 +9,25 @@ from apps.core.models import AuditLog
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-
 class RequestLoggingMiddleware(MiddlewareMixin):
     def process_request(self, request):
-        """Start timing the request"""
         request.start_time = time.time()
         return None
     
     def process_response(self, request, response):
         """Log the request details"""
         try:
-            # Calculate request duration
             duration = time.time() - getattr(request, 'start_time', time.time())
             
-            # Skip logging for static files and admin
             if (request.path.startswith('/static/') or 
                 request.path.startswith('/admin/') or
                 request.path.startswith('/media/')):
                 return response
             
-            # Get user info
             user = request.user if hasattr(request, 'user') and request.user.is_authenticated else None
             
-            # Get client IP
             ip_address = self.get_client_ip(request)
             
-            # Log API requests
             if request.path.startswith('/api/'):
                 log_data = {
                     'method': request.method,
@@ -50,23 +43,18 @@ class RequestLoggingMiddleware(MiddlewareMixin):
                     'multipart/form-data' not in request.content_type and
                     'application/octet-stream' not in request.content_type):
                     try:
-                        # Only try to read body if it hasn't been read yet
                         if hasattr(request, '_body') and request._body is not None:
                             body = json.loads(request._body.decode('utf-8'))
-                            # Remove sensitive fields
                             sensitive_fields = ['password', 'token', 'secret', 'key']
                             for field in sensitive_fields:
                                 if field in body:
                                     body[field] = '***REDACTED***'
                             log_data['request_body'] = body
                     except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
-                        # Skip logging body if there's any issue reading it
                         pass
                 
-                # Log to file
                 logger.info(f"API Request: {json.dumps(log_data)}")
                 
-                # Create audit log for important actions
                 if (response.status_code < 400 and 
                     request.method in ['POST', 'PUT', 'PATCH', 'DELETE'] and
                     user):
@@ -109,19 +97,13 @@ class RequestLoggingMiddleware(MiddlewareMixin):
 
 
 class TimezoneMiddleware(MiddlewareMixin):
-    """
-    Middleware to set timezone based on user preferences.
-    """
-    
     def process_request(self, request):
         """Set timezone for the request"""
         try:
             if hasattr(request, 'user') and request.user.is_authenticated:
-                # Get user's timezone preference
                 user_timezone = getattr(request.user, 'timezone', 'UTC')
                 timezone.activate(user_timezone)
             else:
-                # Check for timezone in headers (for mobile apps)
                 client_timezone = request.META.get('HTTP_X_TIMEZONE')
                 if client_timezone:
                     timezone.activate(client_timezone)
@@ -132,16 +114,9 @@ class TimezoneMiddleware(MiddlewareMixin):
             timezone.deactivate()
         
         return None
-
-
 class SecurityHeadersMiddleware(MiddlewareMixin):
-    """
-    Middleware to add security headers to responses.
-    """
-    
     def process_response(self, request, response):
         """Add security headers"""
-        # Content Security Policy
         response['Content-Security-Policy'] = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
@@ -152,7 +127,6 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
             "frame-ancestors 'none';"
         )
         
-        # Other security headers
         response['X-Content-Type-Options'] = 'nosniff'
         response['X-Frame-Options'] = 'DENY'
         response['X-XSS-Protection'] = '1; mode=block'
@@ -170,32 +144,22 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
         
         return response
 
-
 class RateLimitMiddleware(MiddlewareMixin):
-    """
-    Simple rate limiting middleware.
-    """
-    
     def process_request(self, request):
-        """Check rate limits"""
         try:
-            # Skip rate limiting for certain paths
             if (request.path.startswith('/static/') or 
                 request.path.startswith('/admin/') or
                 request.path.startswith('/media/')):
                 return None
             
-            # Get client identifier
             client_id = self.get_client_identifier(request)
             
-            # Check rate limit (simplified implementation)
             from django.core.cache import cache
             from django.http import HttpResponse
             
             cache_key = f"rate_limit:{client_id}:{request.path}"
             current_requests = cache.get(cache_key, 0)
             
-            # Allow 100 requests per minute per endpoint
             if current_requests >= 100:
                 return HttpResponse(
                     json.dumps({
@@ -206,7 +170,6 @@ class RateLimitMiddleware(MiddlewareMixin):
                     status=429
                 )
             
-            # Increment counter
             cache.set(cache_key, current_requests + 1, 60) 
             
         except Exception as e:
@@ -219,7 +182,6 @@ class RateLimitMiddleware(MiddlewareMixin):
         if hasattr(request, 'user') and request.user.is_authenticated:
             return f"user:{request.user.id}"
         else:
-            # Use IP address for anonymous users
             x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
             if x_forwarded_for:
                 ip = x_forwarded_for.split(',')[0]

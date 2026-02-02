@@ -1,8 +1,3 @@
-"""
-API views for Customer Insights endpoints.
-Simplified design with single main endpoint and consolidated functionality.
-"""
-
 from rest_framework import status, viewsets, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -189,9 +184,7 @@ class CustomerInsightsViewSet(viewsets.ModelViewSet):
                 profile='HNI'
             ).count()
             
-            # Customers with claims (mock data)
             customers_with_claims = Claim.objects.values('customer_id').distinct().count()            
-            # Average satisfaction rating (from JSON fields)
             avg_satisfaction = 0.0
             total_premiums = 0.0
             payment_reliability_avg = 0.0
@@ -281,7 +274,6 @@ class CustomerInsightsViewSet(viewsets.ModelViewSet):
             limit = filters.get('limit', 50)
             offset = filters.get('offset', 0)
             
-            # Build query filters
             queryset = Customer.objects.filter(is_deleted=False)
             
             if filters.get('customer_segment'):
@@ -304,7 +296,6 @@ class CustomerInsightsViewSet(viewsets.ModelViewSet):
                     customer_insights__communication_insights__engagement_level=filters['engagement_level']
                 )
             
-            # Apply date filters if provided
             if filters.get('date_from') or filters.get('date_to'):
                 date_filter = Q()
                 if filters.get('date_from'):
@@ -313,10 +304,8 @@ class CustomerInsightsViewSet(viewsets.ModelViewSet):
                     date_filter &= Q(customer_insights__calculated_at__lte=filters['date_to'])
                 queryset = queryset.filter(date_filter)
             
-            # Get paginated results
             customers = queryset.distinct()[offset:offset + limit]
             
-            # Build summary data
             summary_data = []
             for customer in customers:
                 try:
@@ -360,7 +349,6 @@ class CustomerInsightsViewSet(viewsets.ModelViewSet):
     def get_payment_schedule(self, request, case_number=None):
         """Get payment schedule for a specific customer using case number"""
         try:
-            # Get customer via RenewalCase using case_number
             try:
                 from apps.renewals.models import RenewalCase
                 renewal_case = RenewalCase.objects.select_related('customer').get(case_number=case_number)
@@ -372,7 +360,6 @@ class CustomerInsightsViewSet(viewsets.ModelViewSet):
                     'data': None
                 }, status=status.HTTP_404_NOT_FOUND)
             
-            # Get payment schedule using the service
             from .services import CustomerInsightsService
             service = CustomerInsightsService()
             payment_schedule_data = service.get_payment_schedule(customer)
@@ -393,13 +380,11 @@ class CustomerInsightsViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
-    # Detailed Communication History Endpoint
     @action(detail=False, methods=['get'], url_path='customer/(?P<case_number>[^/.]+)/communication-history')
     def get_communication_history_detail(self, request, case_number=None):
         """Get detailed communication history for a specific customer using Case Number"""
         try:
             from apps.renewals.models import RenewalCase
-            # Retrieve customer via RenewalCase
             renewal_case = RenewalCase.objects.select_related('customer').get(case_number=case_number)
             customer = renewal_case.customer
             
@@ -414,13 +399,11 @@ class CustomerInsightsViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'error': f'Failed to get communication history: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    # --- ADDED: Detailed Claims History Endpoint ---
     @action(detail=False, methods=['get'], url_path='customer/(?P<case_number>[^/.]+)/claims-history')
     def get_claims_history_detail(self, request, case_number=None):
         """Get detailed claims history for a specific customer using Case Number"""
         try:
             from apps.renewals.models import RenewalCase
-            # Retrieve customer via RenewalCase
             renewal_case = RenewalCase.objects.select_related('customer').get(case_number=case_number)
             customer = renewal_case.customer
 

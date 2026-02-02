@@ -4,16 +4,13 @@ from .models import DNCSettings, DNCRegistry, DNCOverrideLog
 from apps.customers.models import Customer
 from apps.renewals.models import RenewalCase
 
-
 class DNCSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = DNCSettings
         fields = '__all__'
-
-
 class DNCRegistrySerializer(serializers.ModelSerializer):
     client_name = serializers.SerializerMethodField()
-    client_id = serializers.IntegerField(source="client.id", read_only=True)  # ✅ NEW
+    client_id = serializers.IntegerField(source="client.id", read_only=True) 
 
     effective_date = serializers.DateTimeField(
         format="%Y-%m-%d %H:%M:%S", required=False, allow_null=True
@@ -21,13 +18,12 @@ class DNCRegistrySerializer(serializers.ModelSerializer):
     expiry_date = serializers.DateTimeField(
         format="%Y-%m-%d %H:%M:%S", required=False, allow_null=True
     )
-
     class Meta:
         model = DNCRegistry
         fields = [
             'id',
             'customer',
-            'client_id',          # ✅ NEW
+            'client_id',         
             'client_name',
             'customer_name',
             'phone_number',
@@ -43,7 +39,6 @@ class DNCRegistrySerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['customer', 'client_id']
 
-    # ✅ VALIDATION (UNCHANGED)
     def validate(self, attrs):
         phone = attrs.get('phone_number')
         email = attrs.get('email_address')
@@ -60,20 +55,15 @@ class DNCRegistrySerializer(serializers.ModelSerializer):
         attrs['_linked_customer'] = customer
         return attrs
 
-    # ✅ CREATE (UNCHANGED)
     def create(self, validated_data):
         customer = validated_data.pop('_linked_customer', None)
         validated_data['customer'] = customer
         return super().create(validated_data)
 
-    # ✅ FIXED + CORRECT CLIENT LOGIC
     def get_client_name(self, obj):
         try:
-            # 1️⃣ If client already assigned (random or real)
             if obj.client:
                 return obj.client.name
-
-            # 2️⃣ Fallback via policy
             if obj.customer:
                 policy = RenewalCase.objects.filter(customer=obj.customer).first()
                 if policy and policy.distribution_channel:
@@ -82,7 +72,6 @@ class DNCRegistrySerializer(serializers.ModelSerializer):
             return "Client Pending"
         except Exception:
             return "N/A"
-
 
 class DNCOverrideLogSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(

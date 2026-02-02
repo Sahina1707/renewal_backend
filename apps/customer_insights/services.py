@@ -1,7 +1,3 @@
-"""
-Customer Insights services for data aggregation and calculations.
-"""
-
 from django.db import models
 from django.utils import timezone
 from datetime import datetime, timedelta
@@ -61,7 +57,6 @@ class CustomerInsightsService:
             defaults={'is_cached': False}
         )
         
-        # Check if reliability data needs backfilling
         needs_recalculation_for_reliability = False
         if insight_record.is_cached and insight_record.payment_insights:
             payment_insights = insight_record.payment_insights
@@ -117,39 +112,22 @@ class CustomerInsightsService:
         }
 
     def calculate_profile_insights(self, customer: Customer) -> Dict[str, Any]:
-        """
-        Calculate Customer Profiling section data.
-        Matches Screenshot: 
-        - Row 1: Payment History (On-time %, Tenure, Rating, YTD Paid)
-        - Row 2: Policy Information (Active, Family, Expired)
-        """
-        # ---------------------------------------------------------
-        # 1. Policy Information (The Middle Row in your Screenshot)
-        # ---------------------------------------------------------
         policies = Policy.objects.filter(customer=customer, is_deleted=False)
         active_policies = policies.filter(status='active').count()
         expired_policies = policies.filter(status__in=['expired', 'cancelled', 'lapsed']).count()
-        
-        # Logic for "Family Policies"
-        # We look for 'family' in the policy type name. If your logic is different, change this line.
         try:
              family_policies = policies.filter(policy_type__name__icontains='family').count()
         except Exception:
-             family_policies = 0 # Fallback if specific field missing
+             family_policies = 0 
 
-        # Portfolio breakdown (kept for backward compatibility)
         portfolio = {}
         for policy in policies:
             policy_type_name = policy.policy_type.name if policy.policy_type else 'Unknown'
             portfolio[policy_type_name] = portfolio.get(policy_type_name, 0) + 1
 
-        # ---------------------------------------------------------
-        # 2. Payment History Stats (The Top Row in your Screenshot)
-        # ---------------------------------------------------------
         payments = CustomerPayment.objects.filter(customer=customer, is_deleted=False)
         total_payments_count = payments.count()
         
-        # Calculate On-time %
         on_time_count = payments.filter(
             payment_status='completed',
             payment_date__lte=models.F('due_date')
@@ -157,7 +135,6 @@ class CustomerInsightsService:
         
         on_time_percentage = int((on_time_count / total_payments_count * 100)) if total_payments_count > 0 else 0
         
-        # Calculate Customer Tenure (e.g., "5 years")
         years_as_customer = 0
         if hasattr(customer, 'first_policy_date') and customer.first_policy_date:
             years_as_customer = (self.today - customer.first_policy_date).days // 365
@@ -168,7 +145,6 @@ class CustomerInsightsService:
         
         customer_tenure = f"{years_as_customer} years" if years_as_customer > 0 else "New Customer"
         
-        # Calculate Payment Rating (e.g., "Excellent")
         if on_time_percentage >= 95:
             payment_rating = "Excellent"
         elif on_time_percentage >= 80:
@@ -178,18 +154,11 @@ class CustomerInsightsService:
         else:
             payment_rating = "Poor"
             
-        # Calculate YTD Paid (e.g., "₹4,850")
-        # Calculates total paid ONLY in the current year
         ytd_paid = payments.filter(
             payment_date__year=self.now.year,
             payment_status='completed'
         ).aggregate(total=models.Sum('payment_amount'))['total'] or 0
 
-        # ---------------------------------------------------------
-        # 3. Additional Data & Return Structure
-        # ---------------------------------------------------------
-        
-        # Customer Segment logic (HNI/Premium/Standard)
         total_premium_value = sum(p.premium_amount for p in policies)
         if active_policies >= 3 and total_premium_value >= 50000:
             segment = "HNI"
@@ -205,20 +174,17 @@ class CustomerInsightsService:
         engagement = "High" if recent_comms >= 5 else ("Medium" if recent_comms >= 2 else "Low")
 
         return {
-            # THIS KEY MATCHES THE TOP ROW "PAYMENT HISTORY"
             "payment_stats": {
                 "on_time_percentage": on_time_percentage,
                 "customer_tenure": customer_tenure,
                 "payment_rating": payment_rating,
                 "total_paid_ytd": float(ytd_paid)
             },
-            # THIS KEY MATCHES THE MIDDLE ROW "POLICY INFORMATION"
             "policy_info": {
                 "active_policies": active_policies,
                 "family_policies": family_policies,
                 "expired_policies": expired_policies
             },
-            # Other general info
             "customer_segment": segment,
             "engagement_level": engagement,
             "policy_portfolio": portfolio,
@@ -634,12 +600,6 @@ class CustomerInsightsService:
         }
 
     def get_claims_history(self, customer: Customer) -> Dict[str, Any]:
-        """
-        Get detailed claims history (100% Database Driven). 
-        Fetches Claim details, calculates summary metrics, and retrieves 
-        Timeline Events from the related model.
-        """
-        # Fetch Claims and related Timeline Events in one optimized query
         claims = Claim.objects.filter(customer=customer, is_deleted=False).select_related('policy').prefetch_related('timeline_events').order_by('-incident_date')
 
         total_claims = claims.count()
@@ -650,11 +610,9 @@ class CustomerInsightsService:
         
         approval_rate = (approved_claims_list.count() / total_claims * 100) if total_claims > 0 else 0
         
-        # Calculate Average Processing Time
         processing_times = []
         for claim in approved_claims_list:
             if claim.reported_date and claim.incident_date:
-                # Calculate processing days based on dates from the Claim model
                 processing_days = (claim.reported_date - claim.incident_date).days
                 if processing_days > 0: processing_times.append(processing_days)
         
@@ -667,7 +625,7 @@ class CustomerInsightsService:
         for claim in claims:
             timeline_events = [
                 {"date": event.date.isoformat(), "title": event.title, "description": event.description}
-                for event in claim.timeline_events.all() # Fetches events from the new DB table
+                for event in claim.timeline_events.all()
             ]
 
             adjuster_name = getattr(claim, 'adjuster_name', "Not Assigned") 
@@ -683,8 +641,8 @@ class CustomerInsightsService:
                 "claim_number": claim.claim_number, 
                 "adjuster": adjuster_name,
                 "rejection_reason": claim.remarks if claim.status == 'rejected' else "",
-                "timeline_events": timeline_events, # 100% Dynamic Timeline
-                "document_attachments": random.randint(1, 5), # You might still want to fetch this dynamically
+                "timeline_events": timeline_events, 
+                "document_attachments": random.randint(1, 5), 
                 "priority": "High" if float(claim.claim_amount) > 50000 else "Medium"
             })
 

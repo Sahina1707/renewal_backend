@@ -252,7 +252,6 @@ class CustomerFamilyMedicalHistory(BaseModel):
         if self.premium_loading:
             return self.premium_loading
         
-        # Base loading on risk score
         risk_score = self.risk_score
         
         if risk_score <= 2:

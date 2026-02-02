@@ -1,11 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
-
-
 class CaseLogsChatbot(models.Model):
-    """
-    Model for storing case logs chatbot interactions and data
-    """
     case_id = models.CharField(max_length=100, unique=True, help_text="Unique identifier for the case")
     policy_id = models.CharField(max_length=100, help_text="Policy ID associated with the case")
     customer_id = models.CharField(max_length=100, help_text="Customer ID associated with the case")
@@ -18,13 +13,11 @@ class CaseLogsChatbot(models.Model):
         ('Critical', 'Critical')
     ], default='Medium', help_text="Priority level of the case")
     
-    # Chatbot specific fields
     chatbot_session_id = models.CharField(max_length=255, unique=True, help_text="Unique session ID for chatbot interaction")
     last_interaction = models.DateTimeField(auto_now=True, help_text="Last time customer interacted with chatbot")
     interaction_count = models.PositiveIntegerField(default=0, help_text="Number of interactions with chatbot")
     is_active = models.BooleanField(default=True, help_text="Whether chatbot is active for this case")
     
-    # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -36,12 +29,7 @@ class CaseLogsChatbot(models.Model):
     
     def __str__(self):
         return f"{self.case_id} - {self.case_type} - {self.case_status}"
-
-
 class CaseLogsChatbotMessage(models.Model):
-    """
-    Model for storing individual chatbot messages and responses
-    """
     chatbot_session = models.ForeignKey(
         CaseLogsChatbot, 
         on_delete=models.CASCADE, 
@@ -55,7 +43,6 @@ class CaseLogsChatbotMessage(models.Model):
     content = models.TextField(help_text="Message content")
     timestamp = models.DateTimeField(auto_now_add=True)
     is_helpful = models.BooleanField(null=True, blank=True, help_text="User feedback on message helpfulness")
-    
     class Meta:
         db_table = 'case_logs_chatbot_messages'
         verbose_name = 'Case Logs Chatbot Message'

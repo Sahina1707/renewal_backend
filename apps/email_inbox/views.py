@@ -278,7 +278,6 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
     def archive(self, request, pk=None):
         email_message = self.get_object()
         
-        # --- THE FIX: Create folder if it doesn't exist ---
         archive_folder, _ = EmailFolder.objects.get_or_create(
             folder_type='archive',
             defaults={
@@ -315,7 +314,7 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
         )
         
         email_message = EmailInboxMessage.objects.create(
-            from_email=from_email,  # <--- Now uses the correct user email
+            from_email=from_email,  
             to_emails=data['to_emails'],
             cc_emails=data.get('cc_emails', []),
             bcc_emails=data.get('bcc_emails', []),
@@ -380,20 +379,12 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def dashboard_stats(self, request):
-        """
-        Returns light summary for the Dashboard Home.
-        Includes: Total, Unread, SLA Breaches, Categories (Refund/Complaint etc.)
-        """
         service = EmailInboxService()
         data = service.get_dashboard_summary(request.user)
         return Response(data)
 
     @action(detail=False, methods=['get'])
     def analytics_report(self, request):
-        """
-        Returns heavy details for the Analytics Page.
-        Includes: Agent Performance Table, Campaign Stats, Satisfaction Score.
-        """
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
         date_range = request.query_params.get('date_range', '').strip().rstrip('/')
@@ -417,9 +408,6 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='export_analytics')
     def export_analytics(self, request):
-        """
-        Exports the full analytics report (Summary, Agents, Campaigns) to CSV.
-        """
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
         date_range = request.query_params.get('date_range', '').strip().rstrip('/')
@@ -445,7 +433,6 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
         
         writer = csv.writer(response)
         
-        # 1. Summary Section
         writer.writerow(['--- SUMMARY METRICS ---'])
         summary = data.get('summary', {})
         for key, value in summary.items():
@@ -453,7 +440,6 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
         
         writer.writerow([]) 
         
-        # 2. Agent Performance Section
         writer.writerow(['--- AGENT PERFORMANCE ---'])
         agents = data.get('agent_performance', [])
         if agents:
@@ -465,7 +451,6 @@ class EmailInboxMessageViewSet(viewsets.ModelViewSet):
         
         writer.writerow([])
 
-        # 3. Campaign Performance Section
         writer.writerow(['--- CAMPAIGN PERFORMANCE ---'])
         campaigns_data = data.get('campaign_performance', {})
         

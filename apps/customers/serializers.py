@@ -31,10 +31,8 @@ class CustomerSerializer(serializers.ModelSerializer):
         """Customize the representation to include additional computed fields"""
         data = super().to_representation(instance)
 
-        # Add computed fields
         data['full_name'] = instance.full_name
 
-        # Add agent summary if assigned
         if instance.assigned_agent:
             data['agent_summary'] = {
                 'id': instance.assigned_agent.id,
@@ -61,7 +59,6 @@ class CustomerListSerializer(serializers.ModelSerializer):
             'city', 'state', 'assigned_agent', 'assigned_agent_name',
             'created_at', 'updated_at'
         ]
-
 
 class AgentAssignmentSerializer(serializers.Serializer):
     """Serializer for agent assignment requests"""

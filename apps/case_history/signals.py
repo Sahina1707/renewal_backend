@@ -1,12 +1,9 @@
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 from django.contrib.auth import get_user_model
-
 from .models import Case, CaseHistory, CaseComment
 
 User = get_user_model()
-
-
 @receiver(post_save, sender=Case)
 def create_case_history_on_save(sender, instance, created, **kwargs):
     if created:
@@ -14,12 +11,10 @@ def create_case_history_on_save(sender, instance, created, **kwargs):
     else:
         pass
 
-
 @receiver(post_save, sender=CaseComment)
 def create_comment_history_on_save(sender, instance, created, **kwargs):
     if created:
         pass
-
 
 @receiver(pre_save, sender=Case)
 def track_case_changes(sender, instance, **kwargs):
@@ -62,11 +57,7 @@ def create_validation_history(case, validation_result, user=None):
         metadata={'validation_result': validation_result}
     )
 
-
 def create_assignment_history(case, agent, user=None):
-    """
-    Create history entry for case assignment.
-    """
     if agent:
         description = f"Case assigned to agent {agent.get_full_name()}"
         new_value = str(agent.id)

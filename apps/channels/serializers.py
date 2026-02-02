@@ -3,7 +3,6 @@ from django.db.models import Sum
 from .models import Channel
 from apps.target_audience.models import TargetAudience
 
-
 class ChannelSerializer(serializers.ModelSerializer):
     """Serializer for Channel model"""
 
@@ -12,7 +11,7 @@ class ChannelSerializer(serializers.ModelSerializer):
     is_active = serializers.BooleanField(read_only=True)
 
     target_audience_id = serializers.PrimaryKeyRelatedField(
-        queryset=TargetAudience.objects.all(),  # type: ignore[attr-defined]
+        queryset=TargetAudience.objects.all(),
         source='target_audience',
         required=False,
         allow_null=True
@@ -112,7 +111,6 @@ class ChannelListSerializer(serializers.ModelSerializer):
         return data
 
 
-
 class ChannelCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating channels"""
     
@@ -149,7 +147,7 @@ class ChannelCreateAPISerializer(serializers.ModelSerializer):
     """Serializer specifically for the new channel creation API"""
 
     target_audience_id = serializers.PrimaryKeyRelatedField(
-        queryset=TargetAudience.objects.all(),  # type: ignore[attr-defined]
+        queryset=TargetAudience.objects.all(),  
         source='target_audience',
         required=False,
         allow_null=True,
@@ -310,7 +308,7 @@ class ChannelCreateAPISerializer(serializers.ModelSerializer):
         if target_audience_name_input:
             target_audience_name_input = target_audience_name_input.strip()
             if target_audience_name_input:
-                target_audience, created = TargetAudience.objects.get_or_create(  # type: ignore[attr-defined]
+                target_audience, created = TargetAudience.objects.get_or_create( 
                     name__iexact=target_audience_name_input,
                     defaults={
                         'name': target_audience_name_input,
@@ -330,7 +328,7 @@ class ChannelCreateAPISerializer(serializers.ModelSerializer):
         if target_audience_name_input:
             target_audience_name_input = target_audience_name_input.strip()
             if target_audience_name_input:
-                target_audience, created = TargetAudience.objects.get_or_create(  # type: ignore[attr-defined]
+                target_audience, created = TargetAudience.objects.get_or_create(  
                     name__iexact=target_audience_name_input,
                     defaults={
                         'name': target_audience_name_input,

@@ -1,7 +1,3 @@
-"""
-Customer models for the Intelipro Insurance Policy Renewal System.
-"""
-
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.validators import RegexValidator, EmailValidator
@@ -10,8 +6,6 @@ from apps.core.models import BaseModel
 import uuid
 
 User = get_user_model()
-
-
 class CustomerSegment(BaseModel):
     """Model for customer segmentation"""
     
@@ -33,7 +27,6 @@ class CustomerSegment(BaseModel):
     def get_customer_count(self):
         """Get number of customers in this segment"""
         return self.customers.filter(is_deleted=False).count()
-
 
 class Customer(BaseModel):
     """Main customer model"""
@@ -277,10 +270,8 @@ class Customer(BaseModel):
             total=models.Sum('premium_amount')
         )['total'] or 0
 
-        # Calculate lifetime value (simplified)
         self.lifetime_value = self.total_premium
 
-        # Update profile based on policy count
         if self.total_policies > 1:
             self.profile = 'HNI'
         else:
@@ -452,23 +443,6 @@ class CustomerInteraction(BaseModel):
     followup_date = models.DateTimeField(null=True, blank=True)
     followup_notes = models.TextField(blank=True)
     
-    # Related records (commented out until those apps are created)
-    # related_policy = models.ForeignKey(
-    #     'policies.Policy',
-    #     on_delete=models.SET_NULL,
-    #     null=True,
-    #     blank=True,
-    #     related_name='interactions'
-    # )
-    # related_claim = models.ForeignKey(
-    #     'claims.Claim',
-    #     on_delete=models.SET_NULL,
-    #     null=True,
-    #     blank=True,
-    #     related_name='interactions'
-    # )
-    
-    # Attachments
     attachments = models.ManyToManyField(
         'uploads.FileUpload',
         blank=True,

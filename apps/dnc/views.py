@@ -2,24 +2,17 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, viewsets
 from django.db.models import Q
-
 from .models import DNCSettings, DNCRegistry, DNCOverrideLog
 from .serializers import (
     DNCSettingsSerializer,
     DNCRegistrySerializer,
     DNCOverrideLogSerializer
 )
-
 from .services import evaluate_dnc
-
 from apps.customers.models import Customer
 import csv
 import io
 
-
-# =====================================================
-# 1. SETTINGS API
-# =====================================================
 class DNCSettingsView(APIView):
     def get(self, request):
         settings = DNCSettings.get_settings()
@@ -42,10 +35,6 @@ class DNCSettingsView(APIView):
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
-# =====================================================
-# 2. REGISTRY LIST & CREATE (STRICT VALIDATION)
-# =====================================================
 class DNCRegistryViewSet(viewsets.ModelViewSet):
     queryset = DNCRegistry.objects.all().order_by('-created_at')
     serializer_class = DNCRegistrySerializer
@@ -138,11 +127,6 @@ class DNCRegistryViewSet(viewsets.ModelViewSet):
         serializer.save()
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-
-# =====================================================
-# 3. OVERRIDE API (GLOBAL + ENTRY LEVEL ENFORCED)
-# =====================================================
 class DNCOverrideView(APIView):
     def get(self, request):
         logs = DNCOverrideLog.objects.all().order_by('-created_at')
@@ -156,7 +140,6 @@ class DNCOverrideView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
-        # ✅ FIX: fail-safe ID handling
         entry_id = request.data.get('dnc_entry_id') or request.data.get('entry_id')
         override_type = request.data.get('override_type')
         reason = request.data.get('reason')
@@ -164,10 +147,8 @@ class DNCOverrideView(APIView):
 
         try:
             dnc_entry = DNCRegistry.objects.get(id=entry_id)
-
             settings = DNCSettings.get_settings()
 
-            # ✅ FIX: correct settings field
             if not settings.allow_overrides:
                 return Response(
                     {"error": "DNC override is disabled globally"},
@@ -206,11 +187,6 @@ class DNCOverrideView(APIView):
 
         except DNCRegistry.DoesNotExist:
             return Response({"error": "Entry not found"}, status=404)
-
-
-# =====================================================
-# 4. DNC EVALUATION API
-# =====================================================
 class DNCEvaluateView(APIView):
     def post(self, request):
         phone_number = request.data.get("phone_number")
@@ -233,10 +209,6 @@ class DNCEvaluateView(APIView):
 
         return Response(result, status=status.HTTP_200_OK)
 
-
-# =====================================================
-# 5. STATISTICS API
-# =====================================================
 class DNCStatisticsView(APIView):
     def get(self, request):
         return Response({
@@ -246,10 +218,6 @@ class DNCStatisticsView(APIView):
             "gov_entries": DNCRegistry.objects.filter(source='Government Registry').count(),
         })
 
-
-# =====================================================
-# 6. BULK UPLOAD API
-# =====================================================
 class BulkUploadView(APIView):
     def post(self, request):
         file = request.FILES.get('file')

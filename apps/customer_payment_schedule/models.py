@@ -1,18 +1,9 @@
-"""
-Customer Payment Schedule models for the Intelipro Insurance Policy Renewal System.
-"""
-
 from django.db import models
 from django.core.validators import MinValueValidator
 from decimal import Decimal
 from apps.core.models import BaseModel
 from apps.renewals.models import RenewalCase
-
-
 class PaymentSchedule(BaseModel):
-    """
-    Payment schedule records for tracking scheduled payments for policy renewals.
-    """
     
     PAYMENT_STATUS_CHOICES = [
         ('pending', 'Pending'),
@@ -43,7 +34,6 @@ class PaymentSchedule(BaseModel):
         ('enach', 'E-NACH'),
     ]
     
-    # Foreign Keys
     renewal_case = models.ForeignKey(
         RenewalCase,
         on_delete=models.CASCADE,
@@ -51,7 +41,6 @@ class PaymentSchedule(BaseModel):
         help_text="Renewal case this payment schedule belongs to"
     )
     
-    # Schedule Details
     due_date = models.DateField(
         help_text="Date when payment is due"
     )
@@ -76,7 +65,6 @@ class PaymentSchedule(BaseModel):
         help_text="Preferred payment method for this schedule"
     )
     
-    # Additional Schedule Information
     installment_number = models.PositiveIntegerField(
         default=1,
         help_text="Installment number in the payment series"
@@ -92,7 +80,6 @@ class PaymentSchedule(BaseModel):
         help_text="Description or notes about this payment schedule"
     )
     
-    # Reminder Settings
     reminder_sent = models.BooleanField(
         default=False,
         help_text="Whether reminder has been sent for this payment"
@@ -109,7 +96,6 @@ class PaymentSchedule(BaseModel):
         help_text="Number of reminders sent"
     )
     
-    # Auto Payment Settings
     auto_payment_enabled = models.BooleanField(
         default=False,
         help_text="Whether auto payment is enabled for this schedule"
@@ -122,7 +108,6 @@ class PaymentSchedule(BaseModel):
         help_text="Auto payment method if enabled"
     )
     
-    # Payment Processing Information
     payment_gateway = models.CharField(
         max_length=50,
         blank=True,
@@ -135,13 +120,11 @@ class PaymentSchedule(BaseModel):
         help_text="Gateway-specific schedule ID"
     )
     
-    # Grace Period
     grace_period_days = models.PositiveIntegerField(
         default=0,
         help_text="Grace period in days after due date"
     )
     
-    # Late Fee Information
     late_fee_applicable = models.BooleanField(
         default=False,
         help_text="Whether late fee is applicable"
@@ -161,7 +144,6 @@ class PaymentSchedule(BaseModel):
         help_text="Late fee percentage of amount due"
     )
     
-    # Discount Information
     early_payment_discount = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -174,7 +156,6 @@ class PaymentSchedule(BaseModel):
         help_text="Days before due date for early payment discount"
     )
     
-    # Processing Information
     processed_date = models.DateTimeField(
         null=True,
         blank=True,
@@ -194,7 +175,6 @@ class PaymentSchedule(BaseModel):
         help_text="Transaction reference from payment gateway"
     )
     
-    # Failure Information
     failure_reason = models.TextField(
         blank=True,
         help_text="Reason for payment failure"
@@ -222,7 +202,6 @@ class PaymentSchedule(BaseModel):
         help_text="Next retry attempt date"
     )
     
-    # Rescheduling Information
     original_due_date = models.DateField(
         null=True,
         blank=True,
@@ -239,7 +218,6 @@ class PaymentSchedule(BaseModel):
         help_text="Number of times payment has been rescheduled"
     )
     
-    # Customer Communication
     customer_notified = models.BooleanField(
         default=False,
         help_text="Whether customer has been notified about this schedule"
@@ -256,7 +234,6 @@ class PaymentSchedule(BaseModel):
         help_text="Whether customer has acknowledged the schedule"
     )
     
-    # Notes and Comments
     internal_notes = models.TextField(
         blank=True,
         help_text="Internal notes for staff"
@@ -497,7 +474,6 @@ class PaymentSchedule(BaseModel):
         
         self.retry_count += 1
         
-        # Schedule next retry if within limits
         if self.can_retry:
             from django.utils import timezone
             self.next_retry_date = timezone.now() + timezone.timedelta(days=1)

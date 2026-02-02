@@ -14,11 +14,7 @@ from .serializers import (
     OutstandingInstallmentSerializer
 )
 
-
 class CustomerInstallmentViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for managing customer installments.
-    """
     queryset = CustomerInstallment.objects.all()
     serializer_class = CustomerInstallmentSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
@@ -39,22 +35,18 @@ class CustomerInstallmentViewSet(viewsets.ModelViewSet):
         """Filter queryset based on query parameters"""
         queryset = super().get_queryset()
         
-        # Filter by customer if provided
         customer_id = self.request.query_params.get('customer')
         if customer_id:
             queryset = queryset.filter(customer=customer_id)
         
-        # Filter by renewal_case if provided
         case_id = self.request.query_params.get('renewal_case')
         if case_id:
             queryset = queryset.filter(renewal_case_id=case_id)
         
-        # Filter by status if provided
         status_filter = self.request.query_params.get('status')
         if status_filter:
             queryset = queryset.filter(status=status_filter)
         
-        # Filter by date range if provided
         due_date_from = self.request.query_params.get('due_date_from')
         due_date_to = self.request.query_params.get('due_date_to')
         
@@ -67,7 +59,6 @@ class CustomerInstallmentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def mark_as_paid(self, request, pk=None):
-        """Mark installment as paid with payment reference"""
         installment = self.get_object()
         payment_id = request.data.get('payment_id')
         
@@ -138,7 +129,6 @@ class CustomerInstallmentViewSet(viewsets.ModelViewSet):
         customer_id = request.query_params.get('customer')
         case_id = request.query_params.get('renewal_case')
         
-        # Get summary data
         summary_data = CustomerInstallment.get_outstanding_summary(customer_id, case_id)
         
         serializer = OutstandingSummarySerializer(summary_data)
@@ -150,12 +140,10 @@ class CustomerInstallmentViewSet(viewsets.ModelViewSet):
         customer_id = request.query_params.get('customer')
         case_id = request.query_params.get('renewal_case')
         
-        # Get outstanding installments
         outstanding_installments = CustomerInstallment.get_outstanding_installments(
             customer_id, case_id
         ).select_related('customer', 'renewal_case', 'renewal_case__policy', 'renewal_case__policy__policy_type')
         
-        # Order by due date (oldest first for priority)
         outstanding_installments = outstanding_installments.order_by('due_date')
         
         serializer = OutstandingInstallmentSerializer(outstanding_installments, many=True)
@@ -175,15 +163,12 @@ class CustomerInstallmentViewSet(viewsets.ModelViewSet):
             from apps.renewals.models import RenewalCase
             renewal_case = RenewalCase.objects.get(case_number=case_number)
             
-            # Get outstanding installments for this case
             outstanding_installments = CustomerInstallment.get_outstanding_installments(
                 case_id=renewal_case.id
             ).select_related('customer', 'renewal_case', 'renewal_case__policy', 'renewal_case__policy__policy_type')
             
-            # Get summary for this case
             summary_data = CustomerInstallment.get_outstanding_summary(case_id=renewal_case.id)
             
-            # Serialize data
             summary_serializer = OutstandingSummarySerializer(summary_data)
             installments_serializer = OutstandingInstallmentSerializer(outstanding_installments, many=True)
             
@@ -213,7 +198,6 @@ class CustomerInstallmentViewSet(viewsets.ModelViewSet):
             customer_id, case_id
         ).filter(status='overdue').select_related('customer', 'renewal_case')
         
-        # Order by days overdue (most overdue first)
         overdue_installments = overdue_installments.order_by('due_date')
         
         serializer = OutstandingInstallmentSerializer(overdue_installments, many=True)
@@ -224,7 +208,6 @@ class CustomerInstallmentViewSet(viewsets.ModelViewSet):
         """Update status of pending installments that are now overdue"""
         updated_count = 0
         
-        # Get all pending installments
         pending_installments = CustomerInstallment.objects.filter(status='pending')
         
         for installment in pending_installments:

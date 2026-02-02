@@ -153,7 +153,6 @@ class CaseLogSerializer(serializers.ModelSerializer):
             return obj.updated_by.get_full_name() or obj.updated_by.username
         return None
 
-
 class CommentHistorySerializer(serializers.ModelSerializer):
     """Simplified serializer for comment history - only essential fields: status, sub_status, work step, next follow-up, next action plan"""
     status = serializers.CharField(source='renewal_case.status', read_only=True)
@@ -188,7 +187,6 @@ class CommentHistorySerializer(serializers.ModelSerializer):
 
 
 class CaseDetailsSerializer(serializers.Serializer):
-    """Serializer for fetching case details for editing"""
 
     case_id = serializers.IntegerField(source='id', read_only=True)
     case_number = serializers.CharField(read_only=True)
@@ -205,7 +203,6 @@ class CaseDetailsSerializer(serializers.Serializer):
 
 
 class EditCaseDetailsSerializer(serializers.Serializer):
-    """Serializer for updating case details"""
 
     customer_name = serializers.CharField(max_length=200, required=False, help_text="Customer's full name")
     email = serializers.EmailField(required=False, help_text="Customer's email address")
@@ -269,9 +266,6 @@ class CaseEditFormDataSerializer(serializers.Serializer):
     agents = AgentDropdownSerializer(many=True)
 
 class CaseTrackingSerializer(serializers.ModelSerializer):
-    """
-    Serializer for case tracking list view - includes all fields shown in frontend table
-    """
     id = serializers.IntegerField(read_only=True)
     case_number = serializers.CharField(read_only=True)
     batch_id = serializers.CharField(source='batch_code', read_only=True)
@@ -410,7 +404,6 @@ class CaseTrackingSerializer(serializers.ModelSerializer):
         if obj.created_at:
             return obj.created_at.strftime('%d/%m/%Y')
         return None
-
 
 class CaseDetailSerializer(serializers.ModelSerializer):
 

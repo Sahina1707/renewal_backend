@@ -9,8 +9,11 @@ from apps.customers.models import Customer
 from apps.policies.models import Policy
 from apps.renewals.models import RenewalCase
 from apps.email_provider.models import EmailProviderConfig
-# FIXED: Removed task import
-# from .tasks import send_scheduled_campaign_email
+from apps.target_audience.models import TargetAudience
+from .models import CampaignScheduleInterval
+from apps.templates.models import Template
+from apps.email_provider.models import EmailProviderConfig
+from django.utils import timezone
 
 try:
     from apps.sms_provider.models import SmsProvider
@@ -24,8 +27,6 @@ except ImportError:
 
 class CampaignSerializer(serializers.ModelSerializer):
     simplified_status = serializers.SerializerMethodField()
-    
-    # Add provider names for display in UI
     email_provider_name = serializers.SerializerMethodField()
     sms_provider_name = serializers.SerializerMethodField()
     whatsapp_provider_name = serializers.SerializerMethodField()
@@ -47,7 +48,6 @@ class CampaignSerializer(serializers.ModelSerializer):
             'open_rate', 'click_rate', 'response_rate',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'delivery_rate', 'open_rate', 'click_rate', 'response_rate', 'created_by']
-        # Filter out None values dynamically
         fields = [f for f in fields if f is not None]
 
     def get_simplified_status(self, obj):
@@ -66,12 +66,7 @@ class CampaignSerializer(serializers.ModelSerializer):
         if hasattr(obj, 'whatsapp_provider') and obj.whatsapp_provider:
             return obj.whatsapp_provider.name
         return "System Default"
-
-
 class CampaignCreateSerializer(serializers.Serializer):
-    """Serializer for creating campaigns based on uploaded policy files"""
-
-    # Required fields
     file_upload_id = serializers.IntegerField(help_text="ID of the uploaded policy file from file_uploads table")
     campaign_name = serializers.CharField(max_length=200, required=False, help_text="Campaign name (defaults to file name if not provided)")
     campaign_type_id = serializers.IntegerField(help_text="ID of campaign type (should be email type)")
@@ -92,8 +87,6 @@ class CampaignCreateSerializer(serializers.Serializer):
         allow_null=True,
         help_text="ID of specific WhatsApp provider. Leave null for default."
     )
-
-    # Target audience options
     TARGET_AUDIENCE_CHOICES = [
         ('pending_renewals', 'Pending Renewals'),
         ('expired_policies', 'Expired Policies'),
@@ -109,7 +102,6 @@ class CampaignCreateSerializer(serializers.Serializer):
         help_text="Type of target audience to filter (required for date-based logic)"
     )
 
-    # Scheduling options
     SCHEDULE_CHOICES = [
         ('immediate', 'Send Immediately'),
         ('scheduled', 'Schedule for Later'),
@@ -124,13 +116,9 @@ class CampaignCreateSerializer(serializers.Serializer):
         allow_null=True,
         help_text="When to send the campaign (required if schedule_type is 'scheduled')"
     )
-
-    # Optional fields
     description = serializers.CharField(max_length=500, required=False, help_text="Campaign description")
     subject_line = serializers.CharField(max_length=200, required=False, help_text="Email subject line")
     send_immediately = serializers.BooleanField(required=False, default=False, help_text="Send emails immediately after creating campaign")
-    
-    # Advanced Scheduling
     enable_advanced_scheduling = serializers.BooleanField(
         required=False,
         default=False,
@@ -144,7 +132,6 @@ class CampaignCreateSerializer(serializers.Serializer):
     )
 
     def validate_file_upload_id(self, value):
-        """Validate that the file upload exists and is completed"""
         try:
             file_upload = FileUpload.objects.get(id=value)
             if file_upload.upload_status != 'completed':
@@ -154,7 +141,6 @@ class CampaignCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("File upload not found")
 
     def validate_campaign_type_id(self, value):
-        """Validate that campaign type exists and is email type"""
         try:
             campaign_type = CampaignType.objects.get(id=value)
             if 'email' not in campaign_type.default_channels:
@@ -164,7 +150,6 @@ class CampaignCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Campaign type not found")
 
     def validate_template_id(self, value):
-        """Validate that template exists and is email template"""
         try:
             template = Template.objects.get(id=value)
             if template.channel is not None and template.channel != 'email':
@@ -176,7 +161,6 @@ class CampaignCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Template not found")
 
     def validate_target_audience_id(self, value):
-        """Validate that the target audience exists (optional)"""
         if value is None:
             return value
         try:
@@ -187,7 +171,6 @@ class CampaignCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Target audience not found")
 
     def validate_email_provider_id(self, value):
-        """Validate that the communication provider exists and is active"""
         if value is None:
             return value
         try:
@@ -199,7 +182,6 @@ class CampaignCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Email provider not found")
 
     def validate_sms_provider_id(self, value):
-        """Validate that the SMS provider exists and is active"""
         if not value:
             return value
         try:
@@ -221,18 +203,15 @@ class CampaignCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("WhatsApp provider not found or app not installed")
 
     def validate(self, data):
-        """Validate the entire serializer data"""
         schedule_type = data.get('schedule_type', 'immediate')
         scheduled_at = data.get('scheduled_at')
         
-        # Validate scheduled campaigns
         if schedule_type == 'scheduled':
             if not scheduled_at:
                 raise serializers.ValidationError({
                     'scheduled_at': 'Scheduled time is required when schedule_type is "scheduled"'
                 })
             
-            # Check if scheduled time is in the future
             from django.utils import timezone
             if scheduled_at <= timezone.now():
                 raise serializers.ValidationError({
@@ -242,7 +221,6 @@ class CampaignCreateSerializer(serializers.Serializer):
         return data
 
     def validate_schedule_intervals(self, value):
-        """Validate schedule intervals data"""
         if not value:
             return value
         
@@ -275,11 +253,9 @@ class CampaignCreateSerializer(serializers.Serializer):
                 for condition in interval['trigger_conditions']:
                     if condition not in valid_conditions:
                         raise serializers.ValidationError(f"Interval {i+1}: Invalid trigger condition '{condition}'. Must be one of {valid_conditions}")
-        
         return value
 
     def create(self, validated_data):
-        """Create campaign and recipients based on target audience"""
         file_upload = FileUpload.objects.get(id=validated_data['file_upload_id'])
         campaign_type = CampaignType.objects.get(id=validated_data['campaign_type_id'])
         template = Template.objects.get(id=validated_data['template_id'])
@@ -297,7 +273,6 @@ class CampaignCreateSerializer(serializers.Serializer):
             from apps.target_audience.models import TargetAudience
             target_audience = TargetAudience.objects.get(id=validated_data['target_audience_id'])
 
-        # Handle communication provider
         email_provider = None
         if validated_data.get('email_provider_id'):
             email_provider = EmailProviderConfig.objects.get(id=validated_data['email_provider_id'])
@@ -315,7 +290,6 @@ class CampaignCreateSerializer(serializers.Serializer):
                 whatsapp_provider = WhatsAppProvider.objects.get(id=validated_data['whatsapp_provider_id'])
             except (ImportError, WhatsAppProvider.DoesNotExist): pass
 
-        # Determine campaign status based on schedule type
         schedule_type = validated_data.get('schedule_type', 'immediate')
         scheduled_at = validated_data.get('scheduled_at')
         
@@ -326,7 +300,6 @@ class CampaignCreateSerializer(serializers.Serializer):
             campaign_status = 'draft'
             started_at = timezone.now()
 
-        # Create the campaign with proper relationships
         campaign_data = {
             'name': campaign_name,
             'campaign_type': campaign_type,
@@ -349,7 +322,6 @@ class CampaignCreateSerializer(serializers.Serializer):
             'assigned_to': self._get_assigned_agent()
         }
 
-        # Remove keys that might not exist in model if apps aren't installed
         if not hasattr(Campaign, 'sms_provider'):
             campaign_data.pop('sms_provider', None)
         if not hasattr(Campaign, 'whatsapp_provider'):
@@ -357,11 +329,9 @@ class CampaignCreateSerializer(serializers.Serializer):
 
         campaign = Campaign.objects.create(**campaign_data)
 
-        # Create advanced scheduling intervals if enabled
         if validated_data.get('enable_advanced_scheduling') and validated_data.get('schedule_intervals'):
             self._create_schedule_intervals(campaign, validated_data['schedule_intervals'])
 
-        # Determine target audience type for recipient creation
         target_audience_type_for_recipients = validated_data.get('target_audience_type', 'all_customers')
         if validated_data.get('target_audience_id') and target_audience:
             target_audience_type_for_recipients = 'all_customers'
@@ -371,9 +341,7 @@ class CampaignCreateSerializer(serializers.Serializer):
         campaign.target_count = target_count
         campaign.save()
 
-        # Handle email sending based on schedule type
         if schedule_type == 'immediate' and validated_data.get('send_immediately', False):
-            # Send emails immediately
             try:
                 from .services import EmailCampaignService
                 import logging
@@ -417,7 +385,6 @@ class CampaignCreateSerializer(serializers.Serializer):
             campaign.save()
             
         elif schedule_type == 'scheduled' and scheduled_at:
-            # FIXED: Removed Celery scheduling
             import logging
             logger = logging.getLogger(__name__)
             logger.info(f"Campaign {campaign.pk} saved as scheduled for {scheduled_at}. Background task scheduling is currently disabled.")
@@ -427,8 +394,6 @@ class CampaignCreateSerializer(serializers.Serializer):
         return campaign
 
     def _get_or_create_target_audience(self, target_audience_type, file_upload):
-        """Get or create target audience based on type"""
-        from apps.target_audience.models import TargetAudience
 
         audience_name_map = {
             'pending_renewals': f"Pending Renewals - {file_upload.original_filename}",
@@ -651,7 +616,7 @@ class CampaignCreateSerializer(serializers.Serializer):
                             policy=recipient_data.policy,
                             email_status=recipient_data.email_status,
                             whatsapp_status=recipient_data.whatsapp_status,
-                            sms_status=recipient_data.sms_status, # type: ignore
+                            sms_status=recipient_data.sms_status, 
                             tracking_id=tracking_id,
                             created_by=self.context['request'].user
                         )
@@ -681,11 +646,7 @@ class CampaignCreateSerializer(serializers.Serializer):
 
     def _create_schedule_intervals(self, campaign, schedule_intervals):
         """Create CampaignScheduleInterval objects for advanced scheduling intervals"""
-        from .models import CampaignScheduleInterval
-        from apps.templates.models import Template
-        from apps.email_provider.models import EmailProviderConfig
-        from django.utils import timezone
-        
+       
         created_intervals = []
         
         for i, interval_data in enumerate(schedule_intervals, 1):
@@ -731,8 +692,6 @@ class CampaignCreateSerializer(serializers.Serializer):
             return base_time + timedelta(weeks=delay_value)
         else:
             return base_time
-
- 
 class CampaignScheduleIntervalSerializer(serializers.ModelSerializer):
     """Serializer for CampaignScheduleInterval model"""
     
@@ -740,10 +699,7 @@ class CampaignScheduleIntervalSerializer(serializers.ModelSerializer):
     template_name = serializers.CharField(source='template.name', read_only=True)
     channel_display = serializers.CharField(source='get_channel_display', read_only=True)
     delay_description = serializers.CharField(source='get_delay_description', read_only=True)
-    created_by_name = serializers.CharField(source='created_by.full_name', read_only=True)
-    
-    # FIXED: Removed provider_name
-    
+    created_by_name = serializers.CharField(source='created_by.full_name', read_only=True)    
     class Meta:
         model = CampaignScheduleInterval
         fields = [ 
@@ -759,8 +715,6 @@ class CampaignScheduleIntervalSerializer(serializers.ModelSerializer):
             'channel_display', 'delay_description', 'created_by_name',
             'is_sent', 'sent_at', 'created_at', 'updated_at'
         ]
-
-
 class CampaignScheduleIntervalCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating CampaignScheduleInterval"""
     class Meta:
@@ -811,7 +765,6 @@ class CampaignScheduleIntervalCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data['created_by'] = self.context['request'].user if 'request' in self.context else SimpleLazyObject(lambda: get_user_model().objects.first())
         return super().create(validated_data)
-
 
 class CampaignScheduleIntervalUpdateSerializer(serializers.ModelSerializer):
     """Serializer for updating CampaignScheduleInterval"""

@@ -176,18 +176,15 @@ class CustomerViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def available_agents(self, request):
         """Get list of available agents for assignment"""
-        # Get users who can be agents (based on role or status)
         agents = User.objects.filter(
             status='active',
             is_active=True
         ).select_related('role')
 
-        # Optional: Filter by role if you want only specific roles
         role_filter = request.query_params.get('role')
         if role_filter:
             agents = agents.filter(role__name__icontains=role_filter)
 
-        # Get agent workload (number of assigned customers)
         agents_with_workload = agents.annotate(
             assigned_customers_count=Count('assigned_customers')
         ).order_by('assigned_customers_count', 'first_name')
@@ -436,7 +433,6 @@ class CustomerViewSet(viewsets.ModelViewSet):
             with transaction.atomic():
                 for customer in unassigned_customers:
                     try:
-                        # Get the next agent in round-robin fashion
                         agent = available_agents[agent_index % available_agents.count()]
 
                         customer.assigned_agent = agent

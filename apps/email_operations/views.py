@@ -89,7 +89,6 @@ class EmailMessageViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        # Send the email using the service (service will create the record)
         service = EmailOperationsService()
         service.context = {'user': request.user}
         

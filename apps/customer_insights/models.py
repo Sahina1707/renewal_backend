@@ -1,16 +1,9 @@
-"""
-Customer Insights models for the Intelipro Insurance Policy Renewal System.
-Simplified design with single insights table and JSON storage.
-"""
-
 from django.db import models
 from django.contrib.auth import get_user_model
 from apps.core.models import BaseModel
 from apps.customers.models import Customer
 
 User = get_user_model()
-
-
 class CustomerInsight(BaseModel):
     """Main customer insights aggregation - simplified single table approach"""
     
@@ -26,7 +19,6 @@ class CustomerInsight(BaseModel):
         help_text="When these insights were last calculated"
     )
     
-    # All insights stored in JSON format
     payment_insights = models.JSONField(
         default=dict,
         help_text="Payment-related insights and metrics"
@@ -47,7 +39,6 @@ class CustomerInsight(BaseModel):
         help_text="Customer profile and behavioral insights"
     )
     
-    # Cache flags for performance
     is_cached = models.BooleanField(
         default=False,
         help_text="Whether insights are cached and up-to-date"
@@ -78,10 +69,3 @@ class CustomerInsight(BaseModel):
             return True
         from django.utils import timezone
         return timezone.now() > self.cache_expires_at
-
-
-
-
-
-
-

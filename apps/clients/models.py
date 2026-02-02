@@ -1,10 +1,7 @@
 from django.db import models
 from django.db.models import Q
 from apps.core.models import BaseModel
-
-
 class Client(BaseModel):
-
     INSURANCE_TYPES = [
         ("life", "Life Insurance"),
         ("health", "Health Insurance"),
@@ -12,8 +9,6 @@ class Client(BaseModel):
         ("home", "Home Insurance"),
         ("car", "Car Insurance"),
     ]
-
-    # ❌ DO NOT use unique=True here
     name = models.CharField(max_length=255)
     code = models.CharField(max_length=50)
 
@@ -31,7 +26,6 @@ class Client(BaseModel):
 
     class Meta:
         constraints = [
-            # ✅ Only ONE active (not deleted) client
             models.UniqueConstraint(
                 fields=["name", "code"],
                 condition=Q(is_deleted=False),

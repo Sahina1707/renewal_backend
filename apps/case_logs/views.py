@@ -6,7 +6,6 @@ from apps.renewals.models import RenewalCase
 from .models import CaseLog
 from .serializers import CaseLogSerializer
 
-
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def search_case_logs_by_case_number_api(request: HttpRequest) -> Response:
@@ -113,7 +112,6 @@ def search_case_logs_by_policy_number_api(request: HttpRequest) -> Response:
             'assigned_to'
         ).filter(policy__policy_number__iexact=policy_number).order_by('-created_at')
 
-        # Convert to list to evaluate once and avoid multiple DB hits
         renewal_cases_list = list(renewal_cases)
 
         if not renewal_cases_list:

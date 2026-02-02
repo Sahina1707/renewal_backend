@@ -25,13 +25,10 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS('🚀 Starting SendGrid Integration Test'))
         self.stdout.write('=' * 50)
         
-        # Test 1: Check SendGrid provider
         self.test_sendgrid_provider()
         
-        # Test 2: Test email sending
         self.test_sendgrid_send_email(options['test_email'])
         
-        # Test 3: Test campaign integration if campaign ID provided
         if options['campaign_id']:
             self.test_campaign_email_integration(options['campaign_id'])
         
@@ -68,7 +65,6 @@ class Command(BaseCommand):
         
         email_service = EmailProviderService()
         
-        # Get available provider
         provider = email_service.get_available_provider()
         
         if not provider:
@@ -78,7 +74,6 @@ class Command(BaseCommand):
         if provider.provider_type != 'sendgrid':
             self.stdout.write(self.style.WARNING(f'⚠️  Using {provider.provider_type} provider instead of SendGrid'))
         
-        # Test email sending
         result = email_service.send_email(
             to_emails=[test_email],
             subject="Test Email from Insurance System",
@@ -106,7 +101,6 @@ class Command(BaseCommand):
             campaign = Campaign.objects.get(id=campaign_id)
             self.stdout.write(f'✅ Found campaign: {campaign.name}')
             
-            # Check if campaign has recipients
             recipients = CampaignRecipient.objects.filter(
                 campaign=campaign,
                 email_status='pending'
@@ -119,7 +113,6 @@ class Command(BaseCommand):
             recipient = recipients.first()
             self.stdout.write(f'✅ Found recipient: {recipient.customer.email}')
             
-            # Test sending email to this recipient
             self.stdout.write('📤 Testing email sending to campaign recipient...')
             
             success = EmailCampaignService._send_individual_email(recipient)

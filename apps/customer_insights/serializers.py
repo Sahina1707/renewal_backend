@@ -1,14 +1,7 @@
-"""
-Serializers for Customer Insights API endpoints.
-Updated to support nested Customer Profile structure from the video.
-"""
-
 from rest_framework import serializers
 from django.utils import timezone
 from .models import CustomerInsight
 from apps.customers.models import Customer
-
-# --- 1. Helper Serializers (Defined First) ---
 
 class CustomerBasicInfoSerializer(serializers.Serializer):
     """Serializer for basic customer information"""
@@ -98,8 +91,6 @@ class ClaimHistorySerializer(serializers.Serializer):
     priority = serializers.CharField(required=False)
 
 
-# --- 2. Response Serializers ---
-
 class PaymentHistoryResponseSerializer(serializers.Serializer):
     """Serializer for payment history response"""
     yearly_breakdown = YearlyPaymentSummarySerializer(many=True)
@@ -121,29 +112,20 @@ class PaymentScheduleResponseSerializer(serializers.Serializer):
     upcoming_payments = PaymentScheduleSerializer(many=True)
     next_payment = PaymentScheduleSerializer(required=False)
 
-
-# --- 3. Main Insights Serializers ---
-
 class CustomerInsightsResponseSerializer(serializers.Serializer):
-    """Main serializer for customer insights response"""
     customer_info = CustomerBasicInfoSerializer()
     
-    # Specific sections
     payment_insights = serializers.DictField()
     communication_insights = serializers.DictField()
     claims_insights = serializers.DictField()
     
-    # Profile can be a flexible Dict or use nested serializers if you strictly enforce structure
     profile_insights = serializers.DictField() 
     
-    # Detailed Data Lists
     payment_schedule = serializers.DictField()
     payment_history = serializers.DictField()
     
-    # Meta
     calculated_at = serializers.DateTimeField()
     is_cached = serializers.BooleanField()
-
 class CustomerInsightSerializer(serializers.ModelSerializer):
     """Serializer for CustomerInsight model"""
     customer = CustomerBasicInfoSerializer(read_only=True)
@@ -156,7 +138,6 @@ class CustomerInsightSerializer(serializers.ModelSerializer):
             'is_cached', 'cache_expires_at', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'calculated_at']
-
 class CustomerInsightsSummarySerializer(serializers.Serializer):
     """Serializer for dashboard summary"""
     customer_id = serializers.IntegerField()

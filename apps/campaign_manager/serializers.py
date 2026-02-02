@@ -12,7 +12,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
 class SequenceStepSerializer(serializers.ModelSerializer):
     template = serializers.PrimaryKeyRelatedField(queryset=Template.objects.all())
     class Meta:
@@ -21,7 +20,6 @@ class SequenceStepSerializer(serializers.ModelSerializer):
             'id', 'template', 'channel', 'step_order', 'delay_minutes',
             'delay_hours', 'delay_days', 'delay_weeks', 'trigger_condition'
         ]
-
 class CampaignSerializer(serializers.ModelSerializer):
     sequence_steps = SequenceStepSerializer(many=True, source='cm_sequence_steps')
     audience = serializers.PrimaryKeyRelatedField(queryset=Audience.objects.all())
@@ -29,7 +27,6 @@ class CampaignSerializer(serializers.ModelSerializer):
     
     total_contacts = serializers.SerializerMethodField()
     log_counts = serializers.SerializerMethodField()
-
     class Meta:
         model = Campaign
         fields = [
@@ -57,35 +54,19 @@ class CampaignSerializer(serializers.ModelSerializer):
             "clicked": logs.filter(status=CampaignLog.LogStatus.CLICKED).count(),
         }
     def create(self, validated_data):
-        """
-        Only save the data. Do NOT send emails here. 
-        The View will handle the sending via Celery.
-        """
-        # Extract the steps data
         steps_data = validated_data.pop('cm_sequence_steps')
-        
-        # 1. Check if this is scheduled for the future
         scheduled_date = validated_data.get('scheduled_date')
         if scheduled_date and scheduled_date > timezone.now():
             validated_data['status'] = Campaign.CampaignStatus.SCHEDULED
         else:
-            # Initially set to DRAFT. 
-            # The View will change this to ACTIVE and start the background task.
             validated_data['status'] = Campaign.CampaignStatus.DRAFT 
-            
-        # 2. Save the Campaign to the Database
         campaign = Campaign.objects.create(**validated_data)
-        
-        # 3. Save the Steps to the Database
         for step_data in steps_data:
             SequenceStep.objects.create(campaign=campaign, **step_data)
             
         return campaign    
     
     def update(self, instance, validated_data):
-        """
-        Update an existing campaign.
-        """
         steps_data = validated_data.pop('cm_sequence_steps', None)
 
         if instance.status == Campaign.CampaignStatus.ACTIVE and steps_data is not None:
@@ -93,7 +74,6 @@ class CampaignSerializer(serializers.ModelSerializer):
                 "Cannot edit steps on an active campaign. Please pause the campaign first."
             )
 
-        # Update standard fields
         instance.name = validated_data.get('name', instance.name)
         instance.description = validated_data.get('description', instance.description)
         instance.campaign_type = validated_data.get('campaign_type', instance.campaign_type)

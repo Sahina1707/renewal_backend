@@ -23,8 +23,6 @@ router.register(r'analytics', EmailIntegrationAnalyticsViewSet, basename='email-
 
 urlpatterns = [
     path('', include(router.urls)),
-    # Webhook endpoints for receiving incoming emails
     path('webhooks/sendgrid/incoming/', sendgrid_incoming_webhook, name='sendgrid-incoming-webhook'),
-    # Webhook endpoint for SendGrid event tracking (delivered, open, click, bounce, etc.)
     path('webhooks/sendgrid/events/', sendgrid_events_webhook, name='sendgrid-events-webhook'),
 ]
