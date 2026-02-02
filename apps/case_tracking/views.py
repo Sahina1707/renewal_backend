@@ -169,8 +169,9 @@ class CaseTrackingViewSet(viewsets.ReadOnlyModelViewSet):
                 'total_batches': len(batch_summary)
             })
 
-    @action(detail=True, methods=['patch', 'put'], url_path='quick-edit/(?P<case_id>[^/.]+)')
-    def quick_edit(self, request, case_id=None):
+    @action(detail=True, methods=['patch', 'put'], url_path='quick-edit')
+    def quick_edit(self, request, pk=None):
+        case_id = pk
         try:
             case = get_object_or_404(
                 RenewalCase.objects.select_related('customer', 'policy'),
